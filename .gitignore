@@ -1,3 +1,5 @@
 *.DS_Store
-/cached_images
 *.pyc
+/cached_images_single
+/cached_images_temporal
+
