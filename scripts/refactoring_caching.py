@@ -21,6 +21,7 @@ TRANSFORMS = transforms.Compose([
 def cache_validation(   dataset_dir: Path,
                         cached_images_path: Path,
                         annotations_path: Path,
+                        temporal: bool,
                         force_recache: bool) -> None:
     """
     Validate existing cache; if invalid or forced, recache images.
@@ -43,7 +44,7 @@ def cache_validation(   dataset_dir: Path,
     with open(annotations_path, 'r') as f:
         annotations = json.load(f)
 
-    cache_images(dataset_dir, cached_images_path, annotations)
+    cache_images(dataset_dir, cached_images_path, annotations, temporal)
 
 # ==========================================
 # ---------- CACHING FUNCTIONS --------------
@@ -51,7 +52,8 @@ def cache_validation(   dataset_dir: Path,
 
 def cache_images(   dataset_dir: Path,
                     cached_images_path: Path,
-                    annotations: dict) -> None:
+                    annotations: dict,
+                    temporal: bool) -> None:
     """
     Create folder structure and cache images.
     """  
@@ -62,47 +64,60 @@ def cache_images(   dataset_dir: Path,
     test = annotations['test']
     _cache_split(dataset = train,
                  out_dir = cached_images_path / 'train',
-                 dataset_dir = dataset_dir / 'train')
+                 dataset_dir = dataset_dir / 'train',
+                 temporal = temporal)
     _cache_split(dataset = val,
                  out_dir = cached_images_path / 'val',
-                 dataset_dir = dataset_dir / 'val')
+                 dataset_dir = dataset_dir / 'val',
+                 temporal = temporal)
     _cache_split(dataset = test,
                  out_dir = cached_images_path / 'test',
-                 dataset_dir = dataset_dir / 'test')
+                 dataset_dir = dataset_dir / 'test',
+                 temporal = temporal)
 
 
 def _cache_split(dataset: dict,
                  out_dir: Path,
-                 dataset_dir: Path) -> None:
+                 dataset_dir: Path,
+                 temporal: bool) -> None:
     """Helper function to cache one dataset split."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    preprocess_and_cache_centre_crop(dataset, out_dir, dataset_dir)
+    preprocess_and_cache_centre_crop(dataset, out_dir, dataset_dir, temporal)
 
 # ================================================================
 # ---------- IMAGE PREPROCESSING (CENTRE CROP) -------------
 # ================================================================
 def preprocess_and_cache_centre_crop(dataset: dict,
                                      cache_dir: Path,
-                                     dataset_dir: Path) -> None:
+                                     dataset_dir: Path,
+                                     temporal: bool) -> None:
     """Simple fixed crop; resize + normalise; save tensor."""
     for dp_idx in tqdm(dataset, desc="Caching centre-crop images"):
         dp = dataset[dp_idx]
-        frames= []
-        for frame in dp['frames']:
-            image_path = dataset_dir / frame
+        if temporal:
+            frames= []
+            for frame in dp['frames']:
+                image_path = dataset_dir / frame
+                image = Image.open(image_path).convert("RGB")
+                img_cropped = image.crop((187, 0, 667, 480))
+                tensor = TRANSFORMS(img_cropped)
+                frames.append(tensor)
+
+            frames_tensor = torch.stack(frames, dim=0) 
+            _save_tensor(dp, frames_tensor, cache_dir)
+        else:
+            dp = dataset[dp_idx]
+            image_path = dataset_dir / dp_idx
             image = Image.open(image_path).convert("RGB")
             img_cropped = image.crop((187, 0, 667, 480))
             tensor = TRANSFORMS(img_cropped)
-            frames.append(tensor)
-
-        frames_tensor = torch.stack(frames, dim=0) 
-        _save_tensor(dp, frames_tensor, cache_dir)
+            _save_tensor(dp, tensor, cache_dir)
 
     print(f"✓ Cached {len(dataset)} images to {cache_dir}")
 
 
-def _save_tensor(data_point: dict, tensors: list[torch.Tensor], cache_dir: Path) -> None:
+def _save_tensor(data_point: dict, tensors: torch.Tensor, cache_dir: Path) -> None:
     """Save image + label as `.pt` file."""
     save_name = f"{data_point['frames'][-1].split('.')[0]}.pt"
     vid_id = torch.tensor(data_point['annotations']['video_id'])

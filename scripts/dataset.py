@@ -4,7 +4,7 @@ from PIL import Image
 from pathlib import Path
 import random
 
-class CachedDatasetTempMultilabel(torch.utils.data.Dataset):
+class CachedDatasetTemporal(torch.utils.data.Dataset):
     def __init__(self, cache_dir, label_criterion = (None, None)):
         label_idx, mode = label_criterion
 
@@ -37,7 +37,7 @@ class CachedDatasetTempMultilabel(torch.utils.data.Dataset):
             elif self.label_criterion[1] == 'hard':
                 return data['image'], torch.round(data['label'][self.label_criterion[0]]), data['vid_id'], data['frame_id']
 
-class CachedDatasetEncoderPretraining(torch.utils.data.Dataset):
+class CachedDatasetSingle(torch.utils.data.Dataset):
     def __init__(self, cache_dir, label_criterion = (None, None)):
         idx, mode = label_criterion
 
