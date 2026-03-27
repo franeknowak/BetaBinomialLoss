@@ -4,8 +4,9 @@ import torch.nn as nn
 
 from scripts.lora import inject_lora_into_dinov3_qkv
 
-def build_dino_encoder( repository_path,
-                        imnt_weights_path,
+repository_path = '../dinov3'
+
+def build_dino_encoder( imnt_weights_path = None,
                         lora = {'r': 6, 'last_blocks': 6, 'alpha': 12},
                         partial_training_blocks = 6):
     
