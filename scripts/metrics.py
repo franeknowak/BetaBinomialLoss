@@ -11,29 +11,34 @@ def p_k_ge_2_from_a(a0: torch.Tensor, a1: torch.Tensor, eps: float = 1e-12):
     return 3.0 * E2 - 2.0 * E3
 
 @torch.no_grad()
-def update_model_output_dict(output, model_output_dict, class_keys=("C1", "C2", "C3")):
+def update_model_output_dict(output, model_output_dict, class_keys=("C1", "C2", "C3"), evidential = False):
     """
     output: indexable like [C1_alpha, C2_alpha, C3_alpha], each alpha shape (B, K)
     train_output_dict: dict to be updated in-place (and returned)
     """
     for i, key in enumerate(class_keys):
-        alpha = output[i]  # shape (B, 2) = [a0, a1]
+        if evidential:
+            alpha = output[i]  # shape (B, 2) = [a0, a1]
 
-        a0 = alpha[:, 0]
-        a1 = alpha[:, 1]
+            a0 = alpha[:, 0]
+            a1 = alpha[:, 1]
 
-        S = a0 + a1
+            S = a0 + a1
 
-        prob = p_k_ge_2_from_a(a0, a1)
-        uncert = 2.0 / S
+            prob = p_k_ge_2_from_a(a0, a1)
+            uncert = 2.0 / S
 
+        else:
+            prob = torch.sigmoid(output[:,i])
+        
         pred = torch.round(prob)      
 
         # detach+cpu once each, then append
         bucket = model_output_dict[key]
         bucket["probs"].append(prob.detach().cpu())
         bucket["preds"].append(pred.detach().cpu())
-        bucket["uncerts"].append(uncert.detach().cpu())
+        if evidential:
+            bucket["uncerts"].append(uncert.detach().cpu())
 
     return model_output_dict
 
@@ -82,10 +87,11 @@ def calculate_binary_metrics(y_true, y_pred, y_pred_probs):
 
     return accuracy, balanced_accuracy, average_precision
 
-def calculate_evidential_metrics(model_output_dict, class_keys=("C1", "C2", "C3")):
+def calculate_metrics(model_output_dict, class_keys=("C1", "C2", "C3"), evidential = False):
     # Concat the lists in output_dict to form a single tensor
     for c in class_keys:
-        for key in ['probs', 'preds', 'uncerts']:
+        desired = ['probs', 'preds', 'uncerts'] if evidential else ['probs', 'preds']
+        for key in desired:
             model_output_dict[c][key] = torch.cat(model_output_dict[c][key], dim=0)
     model_output_dict['labels'] = torch.round(torch.cat(model_output_dict['labels'], dim=0)).squeeze(1)
     model_output_dict['vid_ids'] = torch.cat(model_output_dict['vid_ids'], dim=0)
@@ -115,17 +121,22 @@ def calculate_evidential_metrics(model_output_dict, class_keys=("C1", "C2", "C3"
         results['avg_bacc']+=balanced_accuracy
         results['mAP']+=average_precision
 
-        uncert_pos = float(model_output_dict[key]['uncerts'][model_output_dict['labels'][:,i] == 1.0].mean())
-        uncert_neg = float(model_output_dict[key]['uncerts'][model_output_dict['labels'][:,i] == 0.0].mean())
-        results['avg_uncert_pos']+=uncert_pos
-        results['avg_uncert_neg']+=uncert_neg
+        if evidential:
+            uncert_pos = float(model_output_dict[key]['uncerts'][model_output_dict['labels'][:,i] == 1.0].mean())
+            uncert_neg = float(model_output_dict[key]['uncerts'][model_output_dict['labels'][:,i] == 0.0].mean())
+            results['avg_uncert_pos']+=uncert_pos
+            results['avg_uncert_neg']+=uncert_neg
 
     # Get averages across classes
     results['avg_accuracy']/=n
     results['avg_bacc']/=n
     results['mAP']/=n
-    results['avg_uncert_neg']/=n
-    results['avg_uncert_pos']/=n
+    if evidential:
+        results['avg_uncert_neg']/=n
+        results['avg_uncert_pos']/=n
+    else:
+        results.pop('avg_uncert_pos', None)
+        results.pop('avg_uncert_neg', None)
 
     # Round to four significatnt numbers
     for key in results.keys():
