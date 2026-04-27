@@ -3,9 +3,7 @@ import sys
 import torch.nn as nn
 import timm
 
-from scripts.lora import inject_lora_into_dinov3_qkv
-
-def build_swinv2_encoder(frozen_stages):
+def build_swinv2_encoder(frozen_stages = 0):
     
     # Initialise the encoder
     backbone = timm.create_model(   'swinv2_base_window12to24_192to384.ms_in22k_ft_in1k',
@@ -16,9 +14,8 @@ def build_swinv2_encoder(frozen_stages):
     
     # Create classifier head
     in_feats = 1024
-    backbone.head = nn.Sequential( nn.Linear(in_feats, in_feats),
-                                nn.GELU(),
-                                nn.Linear(in_feats, 3))
+    backbone.head = nn.Sequential(  SpatialPool(),
+                                    nn.Linear(in_feats, 3))
     for p in backbone.parameters():
         p.requires_grad = False
 
@@ -72,3 +69,8 @@ def _print_param_summary(model: nn.Module) -> None:
         f"[SwinV2] Params — total: {total:,}  |  "
         f"trainable: {trainable:,}  ({100 * trainable / total:.2f} %)"
     )
+
+class SpatialPool(nn.Module):
+    def forward(self, x):
+        # x: (batch, 12, 12, 1024)
+        return x.mean(dim=(1, 2))  # → (batch, 1024)
