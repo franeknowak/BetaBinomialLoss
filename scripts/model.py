@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scripts.dino_encoder import build_dino_encoder
+from scripts.swinv2_encoder import build_swinv2_encoder
 class EvidentialHead(nn.Module):
     def __init__(self, in_feats):
         super().__init__()
@@ -55,16 +56,22 @@ class SequenceEvidentialModel(nn.Module):
 def build_model(backbone_dict,
                 classifier_dict):
     if backbone_dict['dino'] is not None:
+        embed_dim = 768
         encoder = build_dino_encoder(**backbone_dict['dino']['kwargs'])
         pretrained_encoder_weights = torch.load(backbone_dict['dino']['backbone_weights'], map_location='cpu')
         encoder.load_state_dict(pretrained_encoder_weights)
 
+    if backbone_dict['swin'] is not None:
+        embed_dim = 1024
+        encoder = build_dino_encoder(**backbone_dict['swin']['kwargs'])
+        pretrained_encoder_weights = torch.load(backbone_dict['swin']['backbone_weights'], map_location='cpu')
+        encoder.load_state_dict(pretrained_encoder_weights)
     encoder.head = nn.Identity()
 
     for p in encoder.parameters():
         p.requires_grad = False
     
     if classifier_dict['temporal_processing'] == 'gated_pooling' and classifier_dict['head'] == 'evidential':
-        model = SequenceEvidentialModel(encoder)
+        model = SequenceEvidentialModel(encoder, embed_dim=embed_dim)
 
     return model
