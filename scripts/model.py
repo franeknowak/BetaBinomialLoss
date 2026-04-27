@@ -30,11 +30,16 @@ class GatedPooling(nn.Module):
         weights = torch.softmax(scores, dim=1)
         pooled = (z * weights.unsqueeze(-1)).sum(dim=1)  # [B, D]
         return pooled
-    
+
+class SpatialPool(nn.Module):
+    def forward(self, x):
+        # x: (batch, 12, 12, 1024)
+        return x.mean(dim=(1, 2))  # → (batch, 1024)
+
 class SequenceEvidentialModel(nn.Module):
     def __init__(self, frozen_encoder, embed_dim=768, num_labels=3):
         super().__init__()
-        self.encoder = frozen_encoder        # DINOv3 (frozen)
+        self.encoder = frozen_encoder       
         self.pool = GatedPooling(embed_dim)
         self.heads = nn.ModuleList(
             [EvidentialHead(embed_dim) for _ in range(num_labels)]
@@ -45,7 +50,9 @@ class SequenceEvidentialModel(nn.Module):
         x = x.view(B*T, C, H, W)
 
         with torch.no_grad():
-            z = self.encoder(x)              # [B*T, D]
+            z = self.encoder(x)              # [B*T, 12, 12, 1024]
+            if hasattr(self.encoder, 'spatial_pool'): # Test which avoids applying to dino
+                z = self.encoder.spatial_pool(z) # [B*T, D]
 
         z = z.view(B, T, -1)                 # [B, T, D]
         z_seq = self.pool(z)                 # [B, D]
@@ -63,9 +70,10 @@ def build_model(backbone_dict,
 
     if backbone_dict['swin'] is not None:
         embed_dim = 1024
-        encoder = build_dino_encoder(**backbone_dict['swin']['kwargs'])
+        encoder = build_swinv2_encoder(**backbone_dict['swin']['kwargs'])
         pretrained_encoder_weights = torch.load(backbone_dict['swin']['backbone_weights'], map_location='cpu')
         encoder.load_state_dict(pretrained_encoder_weights)
+        encoder.spatial_pool = SpatialPool()
     encoder.head = nn.Identity()
 
     for p in encoder.parameters():
