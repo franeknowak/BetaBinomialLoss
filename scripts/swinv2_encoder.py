@@ -3,10 +3,11 @@ import sys
 import torch.nn as nn
 import timm
 
-def build_swinv2_encoder(frozen_stages = 0):
+def build_swinv2_encoder(variant: str = 'swinv2_base_window12to24_192to384.ms_in22k_ft_in1k',
+                         frozen_stages: int = 0):
     
     # Initialise the encoder
-    backbone = timm.create_model(   'swinv2_base_window12to24_192to384.ms_in22k_ft_in1k',
+    backbone = timm.create_model(   variant,
                                     pretrained=True,
                                     num_classes=0,   # removes classifier head
                                     global_pool=""   # keeps spatial features

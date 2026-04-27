@@ -8,21 +8,23 @@ from torchvision import transforms
 import shutil 
 from typing import List, Tuple
 
-IMAGE_SIZE = (384, 384)
 DATASET_MEAN = (0.454315, 0.290313, 0.299898)
 DATASET_STD = (0.167318, 0.156652, 0.150197)
 EXPECTED_COUNTS = 11090
 
-TRANSFORMS = transforms.Compose([
-    transforms.Resize(IMAGE_SIZE),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=DATASET_MEAN, std=DATASET_STD),
-])
+def get_transforms(image_size):
+    TRANSFORMS = transforms.Compose([
+       transforms.Resize((image_size, image_size)),
+       transforms.ToTensor(),
+       transforms.Normalize(mean=DATASET_MEAN, std=DATASET_STD),])
+    return TRANSFORMS
+
 def cache_validation(   dataset_dir: Path,
                         cached_images_path: Path,
                         annotations_path: Path,
                         temporal: bool,
-                        force_recache: bool) -> None:
+                        force_recache: bool,
+                        image_size) -> None:
     """
     Validate existing cache; if invalid or forced, recache images.
     """
@@ -44,7 +46,7 @@ def cache_validation(   dataset_dir: Path,
     with open(annotations_path, 'r') as f:
         annotations = json.load(f)
 
-    cache_images(dataset_dir, cached_images_path, annotations, temporal)
+    cache_images(dataset_dir, cached_images_path, annotations, temporal, image_size)
 
 # ==========================================
 # ---------- CACHING FUNCTIONS --------------
@@ -53,7 +55,8 @@ def cache_validation(   dataset_dir: Path,
 def cache_images(   dataset_dir: Path,
                     cached_images_path: Path,
                     annotations: dict,
-                    temporal: bool) -> None:
+                    temporal: bool,
+                    image_size: int) -> None:
     """
     Create folder structure and cache images.
     """  
@@ -65,11 +68,13 @@ def cache_images(   dataset_dir: Path,
     _cache_split(dataset = train,
                  out_dir = cached_images_path / 'train',
                  dataset_dir = dataset_dir / 'train',
-                 temporal = temporal)
+                 temporal = temporal,
+                 image_size = image_size)
     _cache_split(dataset = val,
                  out_dir = cached_images_path / 'val',
                  dataset_dir = dataset_dir / 'val',
-                 temporal = temporal)
+                 temporal = temporal,
+                 image_size = image_size)
     _cache_split(dataset = test,
                  out_dir = cached_images_path / 'test',
                  dataset_dir = dataset_dir / 'test',
@@ -83,7 +88,7 @@ def _cache_split(dataset: dict,
     """Helper function to cache one dataset split."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    preprocess_and_cache_centre_crop(dataset, out_dir, dataset_dir, temporal)
+    preprocess_and_cache_centre_crop(dataset, out_dir, dataset_dir, temporal, image_size)
 
 # ================================================================
 # ---------- IMAGE PREPROCESSING (CENTRE CROP) -------------
@@ -91,7 +96,9 @@ def _cache_split(dataset: dict,
 def preprocess_and_cache_centre_crop(dataset: dict,
                                      cache_dir: Path,
                                      dataset_dir: Path,
-                                     temporal: bool) -> None:
+                                     temporal: bool,
+                                     image_size: int) -> None:
+    TRANSFORMS = get_transforms(image_size)
     """Simple fixed crop; resize + normalise; save tensor."""
     for dp_idx in tqdm(dataset, desc="Caching centre-crop images"):
         dp = dataset[dp_idx]
