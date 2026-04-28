@@ -33,11 +33,6 @@ def build_swinv2_encoder(variant: str = 'swinv2_base_window12to24_192to384.ms_in
             for p in backbone.layers[stage_idx].parameters():
                 p.requires_grad = True
  
-        # Also unfreeze the patch-embedding norm inside frozen stages?
-        # (Optional — comment in if you need it.)
-        # for p in backbone.patch_embed.parameters():
-        #     p.requires_grad = True
- 
         # Always unfreeze the final encoder LayerNorm
         for p in backbone.norm.parameters():
             p.requires_grad = True

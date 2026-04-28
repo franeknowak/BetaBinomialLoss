@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scripts.dino_encoder import build_dino_encoder
-from scripts.swinv2_encoder import build_swinv2_encoder
+from scripts.encoder_swinv2 import build_swinv2_encoder
 class EvidentialHead(nn.Module):
     def __init__(self, in_feats):
         super().__init__()
