@@ -14,9 +14,8 @@ def build_swinv2_encoder(variant: str = 'swinv2_base_window12to24_192to384.ms_in
                                     )
     
     # Create classifier head
-    in_feats = 1024
     backbone.head = nn.Sequential(  SpatialPool(),
-                                    nn.Linear(in_feats, 3))
+                                    nn.Linear(backbone.num_features, 3))
     for p in backbone.parameters():
         p.requires_grad = False
 
