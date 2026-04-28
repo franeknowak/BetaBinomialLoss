@@ -7,7 +7,7 @@ CHECKPOINT_DIR: './weights'
 
 # SWINV2 ENCODER PARAMS
 ENCODER:
-  NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
+  NAME: "swinv2_small_window8_256.ms_in1k" #Param: 49.7M, Activ: 40.1M
   FROZEN_STAGES: 0
 
 DATA:
