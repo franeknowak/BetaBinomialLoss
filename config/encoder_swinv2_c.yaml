@@ -1,7 +1,7 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "SwinV2_encoder_pretraining_"
+EXPERIMENT_NAME: "SwinV2_encoder_pretraining_c_"
 SEED: 0
-DATASET_DIR: "../dataset/endoscapes"
+DATASET_DIR: "../SwinCVS/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
