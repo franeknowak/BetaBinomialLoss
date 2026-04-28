@@ -2,36 +2,62 @@ import torch
 from torch.utils.data import Dataset
 from PIL import Image
 from pathlib import Path
+import json
 import random
 
-class CachedDataset(torch.utils.data.Dataset):
-    def __init__(self, cache_dir, label_criterion = (None, None)):
+class EndoscapesDataset(torch.utils.data.Dataset):
+    def __init__(self,
+                 split,
+                 transforms,
+                 temporal,
+                 label_criterion = (None, None),
+                 annotations_path = 'config/reformatted_annotations_frames.json',
+                 dataset_path = '../dataset/Endoscapes'):
+        
         label_idx, mode = label_criterion
-
         assert label_idx in (None, 0, 1, 2), \
             f"Invalid value for label criterion selection: {label_idx!r}. Expected 'None' if using standard label value or '0', '1', '2' if specifying the criterion."
         assert mode in ('soft', 'hard'), \
             f"Invalid value for label criterion selection: {mode!r}. Expected 'soft' if using standard label value or 'hard' if majority rounding"
         
-        self.cache_dir = Path(cache_dir)
-        self.files = sorted(self.cache_dir.glob("*.pt"))
+        with open(annotations_path) as f:
+            annotations = json.load(f)[split] # Split disclosed here
+        
+        self.split = split
         self.label_criterion = label_criterion
+        self.temporal = temporal
+        self.dataset_path = dataset_path
+        self.transforms = transforms
+        self.keys = list(annotations.keys())
+        self.annotations = annotations
 
     def __len__(self):
-        return len(self.files)
+        return len(self.annotations)
+    
+    def load_frame(self, filename):
+        path_to_image = Path(self.dataset_path) / self.split / filename
+        img = Image.open(path_to_image).convert('RGB')
+        if self.transforms:
+            img = self.transforms(img)
+        return img
 
     def __getitem__(self, idx):
-        data = torch.load(self.files[idx])
+        data_point = self.annotations[self.keys[idx]]
 
-        # Multilabel
-        if self.label_criterion[0] is None:
-            if self.label_criterion[1] == 'soft':
-                return data['image'], data['label'], data['vid_id'], data['frame_id']
-            elif self.label_criterion[1] == 'hard':
-                return data['image'], torch.round(data['label']), data['vid_id'], data['frame_id']
-        # Individual label
+        frames = data_point['frames']
+        ann = data_point['annotations']
+        label = torch.tensor(ann['ds'], dtype=torch.float32)
+        if self.label_criterion[1] == 'hard':
+            label = torch.round(label)
+        if self.label_criterion[0] is not None:
+            label = label[self.label_criterion[0]]
+
+        vid_id = ann['video_id']
+        frame_id = ann['frame_id']
+
+        if self.temporal:
+            image = torch.stack([self.load_frame(f) for f in frames], dim=0)  # [T, C, H, W]
         else:
-            if self.label_criterion[1] == 'soft':
-                return data['image'], data['label'][self.label_criterion[0]], data['vid_id'], data['frame_id']
-            elif self.label_criterion[1] == 'hard':
-                return data['image'], torch.round(data['label'][self.label_criterion[0]]), data['vid_id'], data['frame_id']
+            image = self.load_frame(frames[-1])  # [C, H, W]
+
+        return image, label, vid_id, frame_id
