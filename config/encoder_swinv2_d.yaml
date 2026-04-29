@@ -36,7 +36,7 @@ DATA:
 
 # TRAINING PARAMS
 TRAIN:
-  EPOCHS: 10
+  EPOCHS: 20
   BATCH_SIZE: 4
   GRADIENT_ACC_BATCH_SIZE: 32
   EARLY_PATIENCE: 3
@@ -44,6 +44,12 @@ TRAIN:
     NAME: 'adamw'
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
-    WEIGHT_DECAY: 0.02
-    ENCODER_LR: 0.0001
-    CLASSIFIER_LR: 0.0001
+    WEIGHT_DECAY: 0.05
+  WARMUP_EPOCHS: 1
+  ENCODER_LR:
+    TARGET: 1e-5
+    END: 1e-6
+  CLASSIFIER_LR:
+    TARGET: 1e-4
+    END: 1e-5 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
+

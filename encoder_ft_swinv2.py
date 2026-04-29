@@ -13,6 +13,7 @@ from torchvision.transforms import v2
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.encoder_swinv2 import build_swinv2_encoder
+from scripts.helper_functions import get_schedulers
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
 warnings.filterwarnings("ignore")
@@ -103,12 +104,18 @@ for name, param in model.named_parameters():
     else:
         backbone_params.append(param)
 
-optimizer = optim.AdamW(    [{"params": backbone_params, "lr": CONFIG['TRAIN']['OPTIMIZER']['ENCODER_LR']},
-                             {"params": head_params, "lr": CONFIG['TRAIN']['OPTIMIZER']['CLASSIFIER_LR']}],
-                             betas = CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
-                             eps = CONFIG['TRAIN']['OPTIMIZER']['EPS'],
-                             weight_decay=CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY'])
+ENC_LR = CONFIG['TRAIN']['ENCODER_LR']
+CLS_LR = CONFIG['TRAIN']['CLASSIFIER_LR']
+
+optimizer = optim.AdamW(    [{"params": backbone_params, "lr": ENC_LR['TARGET']},
+                             {"params": head_params,     "lr": CLS_LR['TARGET']}],
+                             betas        = CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
+                             eps          = CONFIG['TRAIN']['OPTIMIZER']['EPS'],
+                             weight_decay = CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY'])
 model.to(device)
+
+ACCUMULATION_STEPS, warmup_scheduler, cosine_scheduler = get_schedulers(optimizer, CONFIG, len(train_dataloader))
+
 
 class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
 bce_loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
@@ -123,7 +130,6 @@ best_epoch = 0
 epochs_without_improvement = 0
 
 EPOCHS = CONFIG['TRAIN']['EPOCHS']
-ACCUMULATION_STEPS = CONFIG['TRAIN']['GRADIENT_ACC_BATCH_SIZE'] // CONFIG['TRAIN']['BATCH_SIZE']
 
 for epoch in range(EPOCHS):
         print(f"Epoch: {epoch+1:02}/{EPOCHS:02}")
@@ -154,6 +160,8 @@ for epoch in range(EPOCHS):
 
                 if (idx + 1) % ACCUMULATION_STEPS == 0 or (idx + 1) == len_train_loader:
                         optimizer.step()
+                        if epoch < CONFIG['TRAIN']['WARMUP_EPOCHS']:
+                                warmup_scheduler.step()
                         optimizer.zero_grad()
 
                 # Populate the output dict with probs and preds per batch per class
@@ -248,6 +256,15 @@ for epoch in range(EPOCHS):
         with open(Path('./results') / f'{EXPERIMENT_NAME}_results.json', 'w') as file:
                 json.dump(results_dict, file, indent=4)
 
+        # Cosine LR deacay
+        if epoch >= CONFIG['TRAIN']['WARMUP_EPOCHS']:
+                cosine_scheduler.step()
+
+        # Log the current lr of each param group for visibility
+        enc_lr_now = optimizer.param_groups[0]['lr']
+        cls_lr_now = optimizer.param_groups[1]['lr']
+        print(f"LR — Encoder: {enc_lr_now:.2e}  |  Classifier: {cls_lr_now:.2e}\n")
+
         # Save weights of the best epoch
         if results['avg_bacc'] >= best_bacc_across_epochs:
                 best_bacc_across_epochs = results['avg_bacc']
@@ -262,6 +279,8 @@ for epoch in range(EPOCHS):
                 if epochs_without_improvement >= CONFIG['TRAIN']['EARLY_PATIENCE']:
                         print(f"Early stopping triggered. Best epoch was {best_epoch} with BAcc {best_bacc_across_epochs:.4f}")
                         break
+        
+        
 
 print(f"Testing @ epoch {best_epoch}")
 test_loss_sum = 0.0
