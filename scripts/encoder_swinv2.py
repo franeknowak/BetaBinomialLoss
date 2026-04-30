@@ -3,21 +3,25 @@ import sys
 import torch.nn as nn
 import timm
 
-def build_swinv2_encoder(variant: str,
-                         frozen_stages: int = 0):
+def build_swinv2_encoder(CONFIG):
+    
+    variant = CONFIG['MODEL']['ENCODER']['NAME']
+    frozen_stages = CONFIG['MODEL']['ENCODER']['FROZEN_STAGES']
+    encoder_drop_path_rate = CONFIG['MODEL']['ENCODER']['DROP_PATH_RATE']
+    fc_dropout = CONFIG['MODEL']['CLASSIFIER']['FC_DROPOUT']
     
     # Initialise the encoder
     backbone = timm.create_model(   variant,
                                     pretrained=True,
                                     num_classes=0,
                                     global_pool="",
-                                    drop_path_rate=0.1
+                                    drop_path_rate=encoder_drop_path_rate
                                     )
     
     # Create classifier head
     backbone.head = nn.Sequential(  SpatialPool(),
                                     nn.LayerNorm(backbone.num_features),  # stabilises the pooled features
-                                    nn.Dropout(p=0.3),
+                                    nn.Dropout(p=fc_dropout),
                                     nn.Linear(backbone.num_features, 3))
     for p in backbone.parameters():
         p.requires_grad = False
