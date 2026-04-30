@@ -6,9 +6,13 @@ ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
 # SWINV2 ENCODER PARAMS
-ENCODER:
-  NAME: "swinv2_small_window8_256.ms_in1k" #Param: 49.7M, Activ: 40.1M
-  FROZEN_STAGES: 0
+MODEL:
+  ENCODER:
+    NAME: "swinv2_small_window8_256.ms_in1k" #Param: 49.7M, Activ: 40.1M
+    FROZEN_STAGES: 2
+    DROP_PATH_RATE: 0.1
+  CLASSIFIER:
+    FC_DROPOUT: 0.5
 
 DATA:
   DATASET_NAME: "ENDOSCAPES"
@@ -47,8 +51,8 @@ TRAIN:
     WEIGHT_DECAY: 0.05
   WARMUP_EPOCHS: 1
   ENCODER_LR:
-    TARGET: 0.00001 #1e-5
-    END: 0.000001 #1e-6
+    TARGET: 0.000001
+    END: 0.0000001
   CLASSIFIER_LR:
-    TARGET: 0.0001 #1e-4
-    END: 0.00001 #1e-5 This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
+    TARGET: 0.0001
+    END: 0.00001 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
