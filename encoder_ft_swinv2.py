@@ -89,8 +89,7 @@ test_dataloader =   DataLoader( dataset_test,
 ############################################################################################
 ############################################################################################
 # Init Backbone
-model = build_swinv2_encoder(CONFIG['ENCODER']['NAME'],
-                             CONFIG['ENCODER']['FROZEN_STAGES'])
+model = build_swinv2_encoder(CONFIG)
 
 # Separate parameter groups for adjusted learning rate
 backbone_params = []
