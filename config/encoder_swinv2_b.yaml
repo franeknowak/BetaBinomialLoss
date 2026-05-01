@@ -10,7 +10,7 @@ MODEL:
   ENCODER:
     NAME: "swinv2_base_window12to16_192to256.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 84.7M
     FROZEN_STAGES: 2
-    DROP_PATH_RATE: 0.1
+    DROP_PATH_RATE: 0.2
   CLASSIFIER:
     FC_DROPOUT: 0.5
 
@@ -51,8 +51,8 @@ TRAIN:
     WEIGHT_DECAY: 0.05
   WARMUP_EPOCHS: 1
   ENCODER_LR:
-    TARGET: 0.000001
-    END: 0.0000001
+    TARGET: 0.000005
+    END: 0.0000005
   CLASSIFIER_LR:
     TARGET: 0.0001
     END: 0.00001 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
