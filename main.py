@@ -125,6 +125,7 @@ if CONFIG['TRAIN']['LOSS'] == 'bce':
 else:
         raise NotImplementedError(f"Provided loss ({name}) is outside the set of implemented options: 'bce', 'bbl'")
 
+"""
 ############################################################################################
 ############################################################################################
 # MODEL TRAINING AND EVALUATION
@@ -351,3 +352,4 @@ results['saved'] = {'C1': { 'probs':     test_output_dict['C1']['probs'].tolist(
 results_dict[f"Epoch {best_epoch} Test"] = results
 with open(Path('./results') / f'{EXPERIMENT_NAME}_results.json', 'w') as file:
     json.dump(results_dict, file, indent=4)
+"""

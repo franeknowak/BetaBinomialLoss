@@ -11,7 +11,7 @@ MODEL:
     NAME: "swinv2_base_window12to16_192to256.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
     FROZEN_STAGES: 2
     DROP_PATH_RATE: 0.1
-    FT_WEIGHTS: "weights/swinv2_base_window12to16_192to256.ms_in22k_ft_in1k_ft_ENDS.pt"
+    FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
     NAME: 'gated_pooling'
     TEMPORAL_DROPOUT: 0.2
@@ -56,8 +56,8 @@ TRAIN:
   LOSS: 'bce'
   WARMUP_EPOCHS: 1
   TEMPORAL_LR:
-    TARGET: 0.000001
-    END: 0.0000001
+    TARGET: 0.0001
+    END: 0.00001
   CLASSIFIER_LR:
     TARGET: 0.0001
     END: 0.00001 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway

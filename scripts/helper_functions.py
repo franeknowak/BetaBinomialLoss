@@ -26,9 +26,15 @@ def get_schedulers(optimizer, CONFIG, len_train_dataloader):
 
         # Cosine has to go first because at __init__ it automatically takes a step
         # Putting it after warmup would store lr=0 as base, messing it up
+        try:
+            # This works if we are settin up the scheduler for encoder pretraining
+            eta_min = CONFIG['TRAIN']['ENCODER_LR']['END']
+        except:
+            # This works for the main experiment with temporal part
+            eta_min = CONFIG['TRAIN']['TEMPORAL_LR']['END']
         cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(  optimizer,
                                                                         T_max   = max(1, _decay_epochs),
-                                                                        eta_min = CONFIG['TRAIN']['ENCODER_LR']['END'])
+                                                                        eta_min = eta_min)
         
         #
         warmup_scheduler = torch.optim.lr_scheduler.LinearLR(   optimizer,
