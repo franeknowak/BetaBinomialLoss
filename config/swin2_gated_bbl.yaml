@@ -11,7 +11,7 @@ MODEL:
     NAME: "swinv2_base_window12to16_192to256.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
     FROZEN_STAGES: 2
     DROP_PATH_RATE: 0.1
-    FT_WEIGHTS: "weights/swinv2_base_window12to16_192to256.ms_in22k_ft_in1k_ft_ends.pt"
+    FT_WEIGHTS: "weights/swinv2_base_window12to16_192to256.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
     NAME: 'gated_pooling'
     TEMPORAL_DROPOUT: 0.2
@@ -53,6 +53,7 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
+  LOSS: 'bce'
   WARMUP_EPOCHS: 1
   TEMPORAL_LR:
     TARGET: 0.000001

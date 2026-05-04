@@ -93,47 +93,18 @@ model = build_model(CONFIG)
 inspect_model(model)
 
 # Separate parameter groups for adjusted learning rate
-temporal_params = []
-head_params = []
-
-for name, param in model.named_parameters():
-    if not param.requires_grad:
-        continue
-    if name.startswith("head"):
-        head_params.append(param)
-    else:
-        backbone_params.append(param)
-
-ENC_LR = CONFIG['TRAIN']['ENCODER_LR']
-CLS_LR = CONFIG['TRAIN']['CLASSIFIER_LR']
-
-optimizer = optim.AdamW(    [{"params": backbone_params, "lr": ENC_LR['TARGET']},
-                             {"params": head_params,     "lr": CLS_LR['TARGET']}],
-                             betas        = CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
-                             eps          = CONFIG['TRAIN']['OPTIMIZER']['EPS'],
-                             weight_decay = CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY'])
-model.to(device)
-
-ACCUMULATION_STEPS, warmup_scheduler, cosine_scheduler = get_schedulers(optimizer, CONFIG, len(train_dataloader))
-
-
-class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
-bce_loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
-
-"""
-# Separate parameter groups for adjusted learning rate
 temporal_params   = []
 classifier_params = []
 
 for name, param in model.named_parameters():
-    if not param.requires_grad:
-        continue
-    if name.startswith("temporal"):
-        temporal_params.append(param)
-    elif name.startswith("heads"):
-        classifier_params.append(param)
-    else:
-        raise ValueError(f"Unexpected trainable parameter outside temporal/heads: {name}")
+        if not param.requires_grad:
+                continue
+        if name.startswith("temporal"):
+                temporal_params.append(param)
+        elif name.startswith("heads"):
+                classifier_params.append(param)
+        else:
+                raise ValueError(f"Unexpected trainable parameter outside temporal/heads: {name}")
 
 TEMP_LR = CONFIG['TRAIN']['TEMPORAL_LR']
 CLS_LR  = CONFIG['TRAIN']['CLASSIFIER_LR']
@@ -148,10 +119,11 @@ model.to(device)
 ACCUMULATION_STEPS, warmup_scheduler, cosine_scheduler = get_schedulers(optimizer, CONFIG, len(train_dataloader))
 
 
-class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
-bce_loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
-
-"""
+if CONFIG['TRAIN']['LOSS'] == 'bce':
+        class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
+        loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
+else:
+        raise NotImplementedError(f"Provided loss ({name}) is outside the set of implemented options: 'bce', 'bbl'")
 
 ############################################################################################
 ############################################################################################
@@ -188,7 +160,7 @@ for epoch in range(EPOCHS):
 
                 output = model(images)
 
-                train_loss_per_acc_batch = bce_loss(output, labels) / ACCUMULATION_STEPS
+                train_loss_per_acc_batch = loss(output, labels) / ACCUMULATION_STEPS
                 train_loss_per_acc_batch.backward()
 
                 if (idx + 1) % ACCUMULATION_STEPS == 0 or (idx + 1) == len_train_loader:
@@ -247,7 +219,7 @@ for epoch in range(EPOCHS):
 
                         output = model(images)
 
-                        val_loss_per_batch = bce_loss(output, labels) 
+                        val_loss_per_batch = loss(output, labels) 
 
                         val_output_dict = update_model_output_dict(output, val_output_dict)
                         val_output_dict['labels'].append(labels.detach().cpu())
@@ -339,7 +311,7 @@ with torch.inference_mode():
         
         output = model(images)
 
-        test_loss_per_batch = bce_loss(output, labels)
+        test_loss_per_batch = loss(output, labels)
 
         test_output_dict = update_model_output_dict(output, test_output_dict)
         test_output_dict['labels'].append(labels.detach().cpu())
