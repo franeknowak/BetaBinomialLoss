@@ -93,3 +93,33 @@ def inspect_model(model):
         z2 = model.encoder(x)
     print(f"Encoder deterministic in train: {torch.allclose(z1, z2)} "
           f"(False = DropPath is firing on frozen encoder)")
+
+def dummy_output_dict(uncerts = False):
+    """Creates a dummy output_dict used in training and eval"""
+    output_dict = { 'C1':  {'probs':     [],
+                            'preds':     []},
+                    'C2':  {'probs':     [],
+                            'preds':     []},
+                    'C3':  {'probs':     [],
+                            'preds':     []},
+                    'labels':            [],
+                    'vid_ids':           [],
+                    'frame_ids':         []}
+    
+    if uncerts:
+        for criterion in ['C1', 'C2', 'C3']:
+            output_dict[criterion]['uncerts'] = []
+    return output_dict
+
+def _split_decay_params(named_params):
+    "picks up layernorms and biases from the model. prevents from applying weight decay"
+    decay, no_decay = [], []
+    for name, param in named_params:
+        if not param.requires_grad:
+            continue
+        # Exclude biases and 1D params (LayerNorm weights) from decay
+        if param.ndim <= 1 or name.endswith(".bias"):
+            no_decay.append(param)
+        else:
+            decay.append(param)
+    return decay, no_decay

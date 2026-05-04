@@ -1,7 +1,7 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "swin2_gated_bbl_a_"
+EXPERIMENT_NAME: "swin2_gated_bbl_"
 SEED: 0
-DATASET_DIR: "../SwinCVS/endoscapes"
+DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
@@ -44,7 +44,7 @@ DATA:
 
 # TRAINING PARAMS
 TRAIN:
-  EPOCHS: 25
+  EPOCHS: 1
   BATCH_SIZE: 4
   GRADIENT_ACC_BATCH_SIZE: 32
   EARLY_PATIENCE: 3
@@ -53,7 +53,18 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
-  LOSS: 'bce'
+  LOSS: 'bbl'
+  BBL_PARAMS:
+    WEIGHTS:
+      C1: [3.1985, 0.5926]     # C1: (1, 1)
+      C2: [4.4615, 0.5631]     # C2: (1, 1)
+      C3: [2.7952, 0.6089]     # C3: (1, 1)
+    USE_KL: True
+    PRIOR_ALPHA:
+      NU: 2
+      PI_C1: 0.1563
+      PI_C2: 0.1121
+      PI_C3: 0.1789
   WARMUP_EPOCHS: 1
   TEMPORAL_LR:
     TARGET: 0.0001

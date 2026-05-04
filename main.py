@@ -13,7 +13,8 @@ from torchvision.transforms import v2
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.model import build_model
-from scripts.helper_functions import get_schedulers, inspect_model
+from scripts.helper_functions import get_schedulers, inspect_model, dummy_output_dict, _split_decay_params
+from scripts.bbkl_loss import total_bb_loss
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
 warnings.filterwarnings("ignore")
@@ -92,40 +93,58 @@ test_dataloader =   DataLoader( dataset_test,
 model = build_model(CONFIG)
 inspect_model(model)
 
-# Separate parameter groups for adjusted learning rate
-temporal_params   = []
-classifier_params = []
+# Split temporal and classifier parameters
+temporal_decay, temporal_no_decay = _split_decay_params(
+    [(n, p) for n, p in model.named_parameters() if n.startswith("temporal")]
+)
+classifier_decay, classifier_no_decay = _split_decay_params(
+    [(n, p) for n, p in model.named_parameters() if n.startswith("heads")]
+)
 
-for name, param in model.named_parameters():
-        if not param.requires_grad:
-                continue
-        if name.startswith("temporal"):
-                temporal_params.append(param)
-        elif name.startswith("heads"):
-                classifier_params.append(param)
-        else:
-                raise ValueError(f"Unexpected trainable parameter outside temporal/heads: {name}")
+# Sanity check: nothing trainable outside temporal/heads
+expected = sum(p.numel() for p in temporal_decay + temporal_no_decay
+                                  + classifier_decay + classifier_no_decay)
+actual = sum(p.numel() for p in model.parameters() if p.requires_grad)
+assert expected == actual, f"Parameter accounting mismatch: {expected} vs {actual}"
 
 TEMP_LR = CONFIG['TRAIN']['TEMPORAL_LR']
 CLS_LR  = CONFIG['TRAIN']['CLASSIFIER_LR']
 
-optimizer = optim.AdamW(    [{"params": temporal_params,   "lr": TEMP_LR['TARGET']},
-                             {"params": classifier_params, "lr": CLS_LR['TARGET']}],
-                             betas        = CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
-                             eps          = CONFIG['TRAIN']['OPTIMIZER']['EPS'],
-                             weight_decay = CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY'])
+WD = CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY']
+
+optimizer = optim.AdamW(
+    [
+        {"params": temporal_decay,      "lr": TEMP_LR['TARGET'], "weight_decay": WD},
+        {"params": temporal_no_decay,   "lr": TEMP_LR['TARGET'], "weight_decay": 0.0},
+        {"params": classifier_decay,    "lr": CLS_LR['TARGET'],  "weight_decay": WD},
+        {"params": classifier_no_decay, "lr": CLS_LR['TARGET'],  "weight_decay": 0.0},
+    ],
+    betas=CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
+    eps=CONFIG['TRAIN']['OPTIMIZER']['EPS'],
+)
 model.to(device)
 
 ACCUMULATION_STEPS, warmup_scheduler, cosine_scheduler = get_schedulers(optimizer, CONFIG, len(train_dataloader))
 
+LOSS_NAME = CONFIG['TRAIN']['LOSS']
+if LOSS_NAME == 'bce':
+        EVIDENTIAL = False
+        raise NotImplementedError(f"Provided loss ({LOSS_NAME}) is not implemented")
+        #class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
+        #loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
+elif LOSS_NAME == 'bbl':
+        EVIDENTIAL = True
+        BBL_WEIGHTS = CONFIG['TRAIN']['BBL_PARAMS']['WEIGHTS']
+        USE_KL = CONFIG['TRAIN']['BBL_PARAMS']['USE_KL']
+        PRIOR_ALPHA = CONFIG['TRAIN']['BBL_PARAMS']['PRIOR_ALPHA']
+        if USE_KL and PRIOR_ALPHA is not None:
+                PRIOR_ALPHA = { 'C1': ((1-PRIOR_ALPHA['PI_C1'])*PRIOR_ALPHA['NU'], PRIOR_ALPHA['PI_C1']*PRIOR_ALPHA['NU']),
+                                'C2': ((1-PRIOR_ALPHA['PI_C2'])*PRIOR_ALPHA['NU'], PRIOR_ALPHA['PI_C2']*PRIOR_ALPHA['NU']),
+                                'C3': ((1-PRIOR_ALPHA['PI_C3'])*PRIOR_ALPHA['NU'], PRIOR_ALPHA['PI_C3']*PRIOR_ALPHA['NU'])}
 
-if CONFIG['TRAIN']['LOSS'] == 'bce':
-        class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
-        loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
 else:
-        raise NotImplementedError(f"Provided loss ({name}) is outside the set of implemented options: 'bce', 'bbl'")
+        raise NotImplementedError(f"Provided loss ({LOSS_NAME}) is outside the set of implemented options: 'bce', 'bbl'")
 
-"""
 ############################################################################################
 ############################################################################################
 # MODEL TRAINING AND EVALUATION
@@ -139,29 +158,27 @@ EPOCHS = CONFIG['TRAIN']['EPOCHS']
 
 for epoch in range(EPOCHS):
         print(f"Epoch: {epoch+1:02}/{EPOCHS:02}")
+
         print("Training")
         train_loss_sum = 0.0
         len_train_loader = len(train_dataloader)
-        train_output_dict = {'C1':  {'probs':     [],
-                                     'preds':     []},
-                             'C2':  {'probs':     [],
-                                     'preds':     []},
-                             'C3':  {'probs':     [],
-                                     'preds':     []},
-                             'labels':            [],
-                             'vid_ids':           [],
-                             'frame_ids':         []}
+        train_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
+
         model.train()
         optimizer.zero_grad()
+        #torch.cuda.synchronize()
+
         for idx, (images, labels, vid_id, frame_id) in enumerate(train_dataloader):
                 print(f'\r{idx+1}/{len_train_loader}', end='', flush=True)
 
                 images, labels = images.to(device), labels.to(device)
-                torch.cuda.synchronize()
-
                 output = model(images)
-
-                train_loss_per_acc_batch = loss(output, labels) / ACCUMULATION_STEPS
+                train_loss_per_acc_batch= total_bb_loss(output,
+                                                        labels,
+                                                        weights = BBL_WEIGHTS,
+                                                        use_kl = USE_KL,
+                                                        prior_alpha = PRIOR_ALPHA) / ACCUMULATION_STEPS
+                
                 train_loss_per_acc_batch.backward()
 
                 if (idx + 1) % ACCUMULATION_STEPS == 0 or (idx + 1) == len_train_loader:
@@ -171,13 +188,14 @@ for epoch in range(EPOCHS):
                         optimizer.zero_grad()
 
                 # Populate the output dict with probs and preds per batch per class
-                train_output_dict = update_model_output_dict(output, train_output_dict)
+                train_output_dict = update_model_output_dict(output, train_output_dict, evidential = EVIDENTIAL)
                 train_output_dict['labels'].append(labels.detach().cpu())
                 train_output_dict['vid_ids'].append(vid_id)
                 train_output_dict['frame_ids'].append(frame_id)
                 train_loss_sum += train_loss_per_acc_batch.item() * ACCUMULATION_STEPS
+                if idx == 7: break
 
-        results, train_output_dict = calculate_metrics(train_output_dict)
+        results, train_output_dict = calculate_metrics(train_output_dict, evidential = EVIDENTIAL)
 
         avg_train_loss = train_loss_sum / len_train_loader
         results['loss'] = round(avg_train_loss, 4)
@@ -202,33 +220,31 @@ for epoch in range(EPOCHS):
         print('Validation')
         val_loss_sum = 0.0
         len_val_loader = len(val_dataloader)
-        val_output_dict = {     'C1':  {'probs':     [],
-                                        'preds':     []},
-                                'C2':  {'probs':     [],
-                                        'preds':     []},
-                                'C3':  {'probs':     [],
-                                        'preds':     []},
-                                'labels':            [],
-                                'vid_ids':           [],
-                                'frame_ids':         []}
+        val_output_dict = dummy_output_dict(uncerts = EVIDENTIAL)
+
         model.eval()
+        #torch.cuda.synchronize()
+
         with torch.inference_mode():
                 for idx, (images, labels, vid_id, frame_id) in enumerate(val_dataloader):
                         print(f'\r{idx+1}/{len_val_loader}', end='', flush=True)
+
                         images, labels = images.to(device), labels.to(device)
-                        torch.cuda.synchronize()
-
                         output = model(images)
+                        val_loss_per_batch = total_bb_loss(output,
+                                                           labels,
+                                                           weights = BBL_WEIGHTS,
+                                                           use_kl = USE_KL,
+                                                           prior_alpha = PRIOR_ALPHA)
 
-                        val_loss_per_batch = loss(output, labels) 
-
-                        val_output_dict = update_model_output_dict(output, val_output_dict)
+                        val_output_dict = update_model_output_dict(output, val_output_dict, evidential = EVIDENTIAL)
                         val_output_dict['labels'].append(labels.detach().cpu())
                         val_output_dict['vid_ids'].append(vid_id)
                         val_output_dict['frame_ids'].append(frame_id)
                         val_loss_sum += val_loss_per_batch.item()
+                        if idx == 2: break
 
-        results, val_output_dict = calculate_metrics(val_output_dict)
+        results, val_output_dict = calculate_metrics(val_output_dict, evidential = EVIDENTIAL)
         avg_val_loss = val_loss_sum / len_val_loader
         results['loss'] = round(avg_val_loss, 4)
         print(f"\n--- Validation Metrics ---")
@@ -256,6 +272,10 @@ for epoch in range(EPOCHS):
                                 'labels':            val_output_dict['labels'].tolist(),
                                 'vid_ids':           val_output_dict['vid_ids'].tolist(),
                                 'frame_ids':         val_output_dict['frame_ids'].tolist()}
+        if (LOSS_NAME == 'bbl'):
+               results['saved']['C1']['uncerts'] = val_output_dict['C1']['uncerts'].tolist()
+               results['saved']['C2']['uncerts'] = val_output_dict['C2']['uncerts'].tolist()       
+               results['saved']['C3']['uncerts'] = val_output_dict['C3']['uncerts'].tolist()        
         results_dict[f"Epoch {epoch+1} Val"] = results
 
         # Save results
@@ -268,11 +288,11 @@ for epoch in range(EPOCHS):
 
         # Log the current lr of each param group for visibility
         enc_lr_now = optimizer.param_groups[0]['lr']
-        cls_lr_now = optimizer.param_groups[1]['lr']
+        cls_lr_now = optimizer.param_groups[2]['lr']
         print(f"LR — Encoder: {enc_lr_now:.2e}  |  Classifier: {cls_lr_now:.2e}\n")
 
         # Save weights of the best epoch
-        if results['avg_bacc'] >= best_bacc_across_epochs:
+        if results['avg_bacc'] > best_bacc_across_epochs:
                 best_bacc_across_epochs = results['avg_bacc']
                 best_epoch = epoch+1
                 epochs_without_improvement = 0
@@ -286,41 +306,38 @@ for epoch in range(EPOCHS):
                         print(f"Early stopping triggered. Best epoch was {best_epoch} with BAcc {best_bacc_across_epochs:.4f}")
                         break
         
-        
-
 print(f"Testing @ epoch {best_epoch}")
 test_loss_sum = 0.0
 len_test_loader = len(test_dataloader)
-test_output_dict = {    'C1':  {'probs':     [],
-                                'preds':     []},
-                        'C2':  {'probs':     [],
-                                'preds':     []},
-                        'C3':  {'probs':     [],
-                                'preds':     []},
-                        'labels':            [],
-                        'vid_ids':           [],
-                        'frame_ids':         []}
+test_output_dict = dummy_output_dict(uncerts = EVIDENTIAL)
+
 checkpoint = torch.load(checkpoint_path, map_location=device)
 model.load_state_dict(checkpoint)
 model.to(device)
+
 model.eval()
+#torch.cuda.synchronize()
+
 with torch.inference_mode():
     for idx, (images, labels, vid_id, frame_id) in enumerate(test_dataloader):
         print(f'\r{idx+1}/{len_test_loader}', end='', flush=True)
+
         images, labels = images.to(device), labels.to(device)
-        torch.cuda.synchronize()
-        
         output = model(images)
+        test_loss_per_batch = total_bb_loss(output,
+                                            labels,
+                                            weights = BBL_WEIGHTS,
+                                            use_kl = USE_KL,
+                                            prior_alpha = PRIOR_ALPHA)
 
-        test_loss_per_batch = loss(output, labels)
-
-        test_output_dict = update_model_output_dict(output, test_output_dict)
+        test_output_dict = update_model_output_dict(output, test_output_dict, evidential = EVIDENTIAL)
         test_output_dict['labels'].append(labels.detach().cpu())
         test_output_dict['vid_ids'].append(vid_id)
         test_output_dict['frame_ids'].append(frame_id)
         test_loss_sum += test_loss_per_batch.item()
+        if idx == 2: break
 
-results, test_output_dict = calculate_metrics(test_output_dict)
+results, test_output_dict = calculate_metrics(test_output_dict, evidential = EVIDENTIAL)
 avg_test_loss = test_loss_sum / len_test_loader
 results['loss'] = round(avg_test_loss, 4)
 
@@ -348,8 +365,11 @@ results['saved'] = {'C1': { 'probs':     test_output_dict['C1']['probs'].tolist(
                     'labels':            test_output_dict['labels'].tolist(),
                     'vid_ids':           test_output_dict['vid_ids'].tolist(),
                     'frame_ids':         test_output_dict['frame_ids'].tolist()}
-
+if (LOSS_NAME == 'bbl'):
+       results['saved']['C1']['uncerts'] = test_output_dict['C1']['uncerts'].tolist()
+       results['saved']['C2']['uncerts'] = test_output_dict['C2']['uncerts'].tolist()       
+       results['saved']['C3']['uncerts'] = test_output_dict['C3']['uncerts'].tolist()    
 results_dict[f"Epoch {best_epoch} Test"] = results
+
 with open(Path('./results') / f'{EXPERIMENT_NAME}_results.json', 'w') as file:
     json.dump(results_dict, file, indent=4)
-"""
