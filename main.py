@@ -14,7 +14,7 @@ from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.model import build_model
 from scripts.helper_functions import get_schedulers, inspect_model, dummy_output_dict, _split_decay_params
-from scripts.bbkl_loss import total_bb_loss
+from scripts.build_loss import build_loss_fn
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
 warnings.filterwarnings("ignore")
@@ -126,24 +126,8 @@ model.to(device)
 
 ACCUMULATION_STEPS, warmup_scheduler, cosine_scheduler = get_schedulers(optimizer, CONFIG, len(train_dataloader))
 
-LOSS_NAME = CONFIG['TRAIN']['LOSS']
-if LOSS_NAME == 'bce':
-        EVIDENTIAL = False
-        raise NotImplementedError(f"Provided loss ({LOSS_NAME}) is not implemented")
-        #class_weights = torch.tensor(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CLASS_WEIGHTS']).to(device) # weights, specific to BCE, taken from official endoscapes implementation repository
-        #loss = nn.BCEWithLogitsLoss(weight=class_weights).to(device)
-elif LOSS_NAME == 'bbl':
-        EVIDENTIAL = True
-        BBL_WEIGHTS = CONFIG['TRAIN']['BBL_PARAMS']['WEIGHTS']
-        USE_KL = CONFIG['TRAIN']['BBL_PARAMS']['USE_KL']
-        PRIOR_ALPHA = CONFIG['TRAIN']['BBL_PARAMS']['PRIOR_ALPHA']
-        if USE_KL and PRIOR_ALPHA is not None:
-                PRIOR_ALPHA = { 'C1': ((1-PRIOR_ALPHA['PI_C1'])*PRIOR_ALPHA['NU'], PRIOR_ALPHA['PI_C1']*PRIOR_ALPHA['NU']),
-                                'C2': ((1-PRIOR_ALPHA['PI_C2'])*PRIOR_ALPHA['NU'], PRIOR_ALPHA['PI_C2']*PRIOR_ALPHA['NU']),
-                                'C3': ((1-PRIOR_ALPHA['PI_C3'])*PRIOR_ALPHA['NU'], PRIOR_ALPHA['PI_C3']*PRIOR_ALPHA['NU'])}
-
-else:
-        raise NotImplementedError(f"Provided loss ({LOSS_NAME}) is outside the set of implemented options: 'bce', 'bbl'")
+loss_fn = build_loss_fn(CONFIG, device)
+EVIDENTIAL = (CONFIG['TRAIN']['LOSS'] == 'bbl')
 
 ############################################################################################
 ############################################################################################
@@ -173,11 +157,7 @@ for epoch in range(EPOCHS):
 
                 images, labels = images.to(device), labels.to(device)
                 output = model(images)
-                train_loss_per_acc_batch= total_bb_loss(output,
-                                                        labels,
-                                                        weights = BBL_WEIGHTS,
-                                                        use_kl = USE_KL,
-                                                        prior_alpha = PRIOR_ALPHA) / ACCUMULATION_STEPS
+                train_loss_per_acc_batch= loss_fn(output, labels) / ACCUMULATION_STEPS
                 
                 train_loss_per_acc_batch.backward()
 
@@ -231,11 +211,7 @@ for epoch in range(EPOCHS):
 
                         images, labels = images.to(device), labels.to(device)
                         output = model(images)
-                        val_loss_per_batch = total_bb_loss(output,
-                                                           labels,
-                                                           weights = BBL_WEIGHTS,
-                                                           use_kl = USE_KL,
-                                                           prior_alpha = PRIOR_ALPHA)
+                        val_loss_per_batch = loss_fn(output, labels)
 
                         val_output_dict = update_model_output_dict(output, val_output_dict, evidential = EVIDENTIAL)
                         val_output_dict['labels'].append(labels.detach().cpu())
@@ -272,7 +248,7 @@ for epoch in range(EPOCHS):
                                 'labels':            val_output_dict['labels'].tolist(),
                                 'vid_ids':           val_output_dict['vid_ids'].tolist(),
                                 'frame_ids':         val_output_dict['frame_ids'].tolist()}
-        if (LOSS_NAME == 'bbl'):
+        if EVIDENTIAL:
                results['saved']['C1']['uncerts'] = val_output_dict['C1']['uncerts'].tolist()
                results['saved']['C2']['uncerts'] = val_output_dict['C2']['uncerts'].tolist()       
                results['saved']['C3']['uncerts'] = val_output_dict['C3']['uncerts'].tolist()        
@@ -324,11 +300,7 @@ with torch.inference_mode():
 
         images, labels = images.to(device), labels.to(device)
         output = model(images)
-        test_loss_per_batch = total_bb_loss(output,
-                                            labels,
-                                            weights = BBL_WEIGHTS,
-                                            use_kl = USE_KL,
-                                            prior_alpha = PRIOR_ALPHA)
+        test_loss_per_batch = loss_fn(output, labels)
 
         test_output_dict = update_model_output_dict(output, test_output_dict, evidential = EVIDENTIAL)
         test_output_dict['labels'].append(labels.detach().cpu())
@@ -365,7 +337,7 @@ results['saved'] = {'C1': { 'probs':     test_output_dict['C1']['probs'].tolist(
                     'labels':            test_output_dict['labels'].tolist(),
                     'vid_ids':           test_output_dict['vid_ids'].tolist(),
                     'frame_ids':         test_output_dict['frame_ids'].tolist()}
-if (LOSS_NAME == 'bbl'):
+if EVIDENTIAL:
        results['saved']['C1']['uncerts'] = test_output_dict['C1']['uncerts'].tolist()
        results['saved']['C2']['uncerts'] = test_output_dict['C2']['uncerts'].tolist()       
        results['saved']['C3']['uncerts'] = test_output_dict['C3']['uncerts'].tolist()    

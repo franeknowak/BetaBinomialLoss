@@ -16,24 +16,22 @@ def update_model_output_dict(output, model_output_dict, class_keys=("C1", "C2", 
     output: indexable like [C1_alpha, C2_alpha, C3_alpha], each alpha shape (B, K)
     train_output_dict: dict to be updated in-place (and returned)
     """
+    
+    # Account for the difference in number of heads and output values in said heads
+    if isinstance(output, torch.Tensor):
+        output = [output[:, i] for i in range(output.shape[1])]
+
     for i, key in enumerate(class_keys):
         if evidential:
             alpha = output[i]  # shape (B, 2) = [a0, a1]
-
-            a0 = alpha[:, 0]
-            a1 = alpha[:, 1]
-
-            S = a0 + a1
-
+            a0, a1 = alpha[:, 0], alpha[:, 1]
             prob = p_k_ge_2_from_a(a0, a1)
-            uncert = 2.0 / S
-
+            uncert = 2.0 / (a0 + a1)
         else:
-            prob = torch.sigmoid(output[:,i])
+            prob = torch.sigmoid(output[i].view(-1))
         
         pred = torch.round(prob)      
 
-        # detach+cpu once each, then append
         bucket = model_output_dict[key]
         bucket["probs"].append(prob.detach().cpu())
         bucket["preds"].append(pred.detach().cpu())
@@ -101,8 +99,6 @@ def calculate_metrics(model_output_dict, class_keys=("C1", "C2", "C3"), evidenti
     results = {'avg_accuracy':      0.0,
                'avg_bacc':          0.0,
                'mAP':               0.0,
-               'avg_uncert_pos':    0.0,
-               'avg_uncert_neg':    0.0,
                'accuracy_C1':       0.0,
                'accuracy_C2':       0.0,
                'accuracy_C3':       0.0,
@@ -112,6 +108,9 @@ def calculate_metrics(model_output_dict, class_keys=("C1", "C2", "C3"), evidenti
                'ap_C1':             0.0,
                'ap_C2':             0.0,
                'ap_C3':             0.0}
+    if evidential:
+        results.update({'avg_uncert_pos': 0.0, 'avg_uncert_neg': 0.0})
+        
     for i, key in enumerate(class_keys):
         accuracy, balanced_accuracy, average_precision = calculate_binary_metrics(model_output_dict['labels'][:,i], model_output_dict[key]['preds'], model_output_dict[key]['probs'])
         results['accuracy_'+key] = accuracy
@@ -134,9 +133,6 @@ def calculate_metrics(model_output_dict, class_keys=("C1", "C2", "C3"), evidenti
     if evidential:
         results['avg_uncert_neg']/=n
         results['avg_uncert_pos']/=n
-    else:
-        results.pop('avg_uncert_pos', None)
-        results.pop('avg_uncert_neg', None)
 
     # Round to four significatnt numbers
     for key in results.keys():
