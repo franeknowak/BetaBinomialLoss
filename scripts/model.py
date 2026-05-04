@@ -3,16 +3,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scripts.encoder_swinv2 import build_swinv2_encoder
 class EvidentialHead(nn.Module):
-    def __init__(self, in_feats):
+    def __init__(self, in_feats, p_dropout):
         super().__init__()
-        self.fc = nn.Sequential(nn.Linear(in_feats, in_feats),
-                                nn.GELU(),
-                                nn.Linear(in_feats, 2)) 
+        self.fc = nn.Sequential(
+            nn.LayerNorm(in_feats),
+            nn.Linear(in_feats, in_feats),
+            nn.GELU(),
+            nn.Dropout(p=p_dropout),
+            nn.Linear(in_feats, 2),
+        )
 
     def forward(self, x):
-        evidence = F.softplus(self.fc(x)) + 1e-6 
+        evidence = F.softplus(self.fc(x)) + 1e-6
         return evidence + 1
-
 class AdaptiveSpatialPool(nn.Module):
     """Mean-pool every dim between batch and feature.
        Essential for SwinV2 as it's output contains spatial features. 
@@ -28,7 +31,6 @@ class AdaptiveSpatialPool(nn.Module):
 class GatedPooling(nn.Module):
     def __init__(self, dim, p_dropout):
         super().__init__()
-        self.in_drop = nn.Dropout(p_dropout)  
         self.gate = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, dim),
@@ -44,12 +46,12 @@ class GatedPooling(nn.Module):
         return (z * weights.unsqueeze(-1)).sum(dim=1) # [B, D]
     
 class SpatioTemporalModel(nn.Module):
-    def __init__(self, encoder, temporal, embed_dim, num_labels=3):
+    def __init__(self, encoder, temporal, heads):
         super().__init__()
         self.encoder      = encoder
         self.spatial_pool = AdaptiveSpatialPool()
         self.temporal     = temporal
-        self.heads        = nn.ModuleList([EvidentialHead(embed_dim) for _ in range(num_labels)])
+        self.heads        = heads
     
     def train(self, mode=True):
         super().train(mode)
@@ -93,7 +95,30 @@ def _build_temporal(in_dim, CONFIG):
         raise NotImplementedError(f"LSTM temporal aggregator not yet implemented.") 
     
     else:
-        raise ValueError(f"Unknown temporal aggregator: {CONFIG['MODEL']['TEMPORAL']['NAME'] }") 
+        raise ValueError(f"Unknown temporal aggregator: {CONFIG['MODEL']['TEMPORAL']['NAME'] }")
+
+def _build_heads(in_dim, CONFIG, num_labels=3):
+    loss = CONFIG['TRAIN']['LOSS']
+
+    if loss == 'bbl':
+        fc_dropout = CONFIG['MODEL']['CLASSIFIER']['FC_DROPOUT']
+        return nn.ModuleList([EvidentialHead(in_dim, fc_dropout) for _ in range(num_labels)])
+
+    elif loss == 'bce':
+        fc_dropout = CONFIG['MODEL']['CLASSIFIER']['FC_DROPOUT']
+        return nn.ModuleList([
+            nn.Sequential(
+                nn.LayerNorm(in_dim),
+                nn.Linear(in_dim, in_dim),
+                nn.GELU(),
+                nn.Dropout(p=fc_dropout),
+                nn.Linear(in_dim, 1),
+            ) for _ in range(num_labels)
+        ])
+
+    else:
+        raise ValueError(f"Unknown loss: {loss}")
+ 
 
 def build_model(CONFIG):
     encoder = _build_encoder(CONFIG)
@@ -103,4 +128,6 @@ def build_model(CONFIG):
 
     temporal   = _build_temporal(encoder.num_features, CONFIG)
 
-    return SpatioTemporalModel(encoder, temporal, temporal.out_dim)
+    heads    = _build_heads(temporal.out_dim, CONFIG)
+
+    return SpatioTemporalModel(encoder, temporal, heads)
