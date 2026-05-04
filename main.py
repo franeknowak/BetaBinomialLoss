@@ -150,7 +150,7 @@ for epoch in range(EPOCHS):
 
         model.train()
         optimizer.zero_grad()
-        #torch.cuda.synchronize()
+        torch.cuda.synchronize()
 
         for idx, (images, labels, vid_id, frame_id) in enumerate(train_dataloader):
                 print(f'\r{idx+1}/{len_train_loader}', end='', flush=True)
@@ -173,7 +173,6 @@ for epoch in range(EPOCHS):
                 train_output_dict['vid_ids'].append(vid_id)
                 train_output_dict['frame_ids'].append(frame_id)
                 train_loss_sum += train_loss_per_acc_batch.item() * ACCUMULATION_STEPS
-                if idx == 7: break
 
         results, train_output_dict = calculate_metrics(train_output_dict, evidential = EVIDENTIAL)
 
@@ -203,7 +202,7 @@ for epoch in range(EPOCHS):
         val_output_dict = dummy_output_dict(uncerts = EVIDENTIAL)
 
         model.eval()
-        #torch.cuda.synchronize()
+        torch.cuda.synchronize()
 
         with torch.inference_mode():
                 for idx, (images, labels, vid_id, frame_id) in enumerate(val_dataloader):
@@ -218,7 +217,6 @@ for epoch in range(EPOCHS):
                         val_output_dict['vid_ids'].append(vid_id)
                         val_output_dict['frame_ids'].append(frame_id)
                         val_loss_sum += val_loss_per_batch.item()
-                        if idx == 2: break
 
         results, val_output_dict = calculate_metrics(val_output_dict, evidential = EVIDENTIAL)
         avg_val_loss = val_loss_sum / len_val_loader
@@ -292,7 +290,7 @@ model.load_state_dict(checkpoint)
 model.to(device)
 
 model.eval()
-#torch.cuda.synchronize()
+torch.cuda.synchronize()
 
 with torch.inference_mode():
     for idx, (images, labels, vid_id, frame_id) in enumerate(test_dataloader):
@@ -307,7 +305,6 @@ with torch.inference_mode():
         test_output_dict['vid_ids'].append(vid_id)
         test_output_dict['frame_ids'].append(frame_id)
         test_loss_sum += test_loss_per_batch.item()
-        if idx == 2: break
 
 results, test_output_dict = calculate_metrics(test_output_dict, evidential = EVIDENTIAL)
 avg_test_loss = test_loss_sum / len_test_loader

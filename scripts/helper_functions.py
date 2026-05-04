@@ -66,7 +66,7 @@ def inspect_model(model):
 
     # 5. Determinism check on the encoder (catches the DropPath issue empirically)
     model.eval()
-    x = torch.randn(1, 3, 256, 256)  # adjust to your input size
+    x = torch.randn(1, 3, 384, 384)  # adjust to your input size
     with torch.no_grad():
         z1 = model.encoder(x)
         z2 = model.encoder(x)
