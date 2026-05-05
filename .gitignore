@@ -1,7 +1,5 @@
 *.DS_Store
 *.pyc
-/cached_images_single
-/cached_images_temporal
 /.vscode
 /weights/*.pt
 /results/*.json

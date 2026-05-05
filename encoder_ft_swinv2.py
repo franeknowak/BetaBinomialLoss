@@ -13,7 +13,7 @@ from torchvision.transforms import v2
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.encoder_swinv2 import build_swinv2_encoder
-from scripts.helper_functions import get_schedulers
+from scripts.helper_functions import get_schedulers, dummy_output_dict
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
 warnings.filterwarnings("ignore")
@@ -135,15 +135,7 @@ for epoch in range(EPOCHS):
         print("Training")
         train_loss_sum = 0.0
         len_train_loader = len(train_dataloader)
-        train_output_dict = {'C1':  {'probs':     [],
-                                     'preds':     []},
-                             'C2':  {'probs':     [],
-                                     'preds':     []},
-                             'C3':  {'probs':     [],
-                                     'preds':     []},
-                             'labels':            [],
-                             'vid_ids':           [],
-                             'frame_ids':         []}
+        train_output_dict = dummy_output_dict(uncerts = False)
         model.train()
         optimizer.zero_grad()
         for idx, (images, labels, vid_id, frame_id) in enumerate(train_dataloader):
@@ -195,15 +187,7 @@ for epoch in range(EPOCHS):
         print('Validation')
         val_loss_sum = 0.0
         len_val_loader = len(val_dataloader)
-        val_output_dict = {     'C1':  {'probs':     [],
-                                        'preds':     []},
-                                'C2':  {'probs':     [],
-                                        'preds':     []},
-                                'C3':  {'probs':     [],
-                                        'preds':     []},
-                                'labels':            [],
-                                'vid_ids':           [],
-                                'frame_ids':         []}
+        val_output_dict = dummy_output_dict(uncerts = False)
         model.eval()
         with torch.inference_mode():
                 for idx, (images, labels, vid_id, frame_id) in enumerate(val_dataloader):
@@ -284,15 +268,7 @@ for epoch in range(EPOCHS):
 print(f"Testing @ epoch {best_epoch}")
 test_loss_sum = 0.0
 len_test_loader = len(test_dataloader)
-test_output_dict = {    'C1':  {'probs':     [],
-                                'preds':     []},
-                        'C2':  {'probs':     [],
-                                'preds':     []},
-                        'C3':  {'probs':     [],
-                                'preds':     []},
-                        'labels':            [],
-                        'vid_ids':           [],
-                        'frame_ids':         []}
+test_output_dict = dummy_output_dict(uncerts = False)
 checkpoint = torch.load(checkpoint_path, map_location=device)
 model.load_state_dict(checkpoint)
 model.to(device)
