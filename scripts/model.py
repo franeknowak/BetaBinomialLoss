@@ -44,6 +44,21 @@ class GatedPooling(nn.Module):
         scores = self.gate(z).squeeze(-1)               # [B, T]
         weights = torch.softmax(scores, dim=1)
         return (z * weights.unsqueeze(-1)).sum(dim=1) # [B, D]
+
+class LSTMTemporal(nn.Module):
+    def __init__(self, in_dim, hidden_size, num_layers, p_dropout):
+        super().__init__()
+        self.lstm = nn.LSTM(input_size   = in_dim,
+                            hidden_size  = hidden_size,
+                            num_layers   = num_layers,
+                            dropout      = p_dropout if num_layers > 1 else 0.0,
+                            batch_first  = True)
+        self.dropout = nn.Dropout(p = p_dropout) 
+        self.out_dim = hidden_size
+
+    def forward(self, z):                   # z: [B, T, D]
+        out, _ = self.lstm(z)               # z: [B, T, D]
+        return self.dropout(out[:, -1, :])  # [B, hidden_size]
     
 class SpatioTemporalModel(nn.Module):
     def __init__(self, encoder, temporal, heads):
@@ -89,10 +104,16 @@ def _build_encoder(CONFIG):
 
 def _build_temporal(in_dim, CONFIG):
     if CONFIG['MODEL']['TEMPORAL']['NAME'] == 'gated_pooling':
-        return GatedPooling(in_dim, p_dropout=CONFIG['MODEL']['TEMPORAL']['TEMPORAL_DROPOUT'])
+        temporal_gp = GatedPooling( in_dim,
+                                    p_dropout = CONFIG['MODEL']['TEMPORAL']['GATED_POOLING']['DROPOUT'])
+        return temporal_gp
 
     elif CONFIG['MODEL']['TEMPORAL']['NAME'] == 'lstm':
-        raise NotImplementedError(f"LSTM temporal aggregator not yet implemented.") 
+        temporal_lstm = LSTMTemporal(in_dim,
+                                     hidden_size = CONFIG['MODEL']['TEMPORAL']['LSTM']['HIDDEN_SIZE'],
+                                     num_layers  = CONFIG['MODEL']['TEMPORAL']['LSTM']['NUM_LAYERS'],
+                                     p_dropout   = CONFIG['MODEL']['TEMPORAL']['LSTM']['DROPOUT'])
+        return temporal_lstm         
     
     else:
         raise ValueError(f"Unknown temporal aggregator: {CONFIG['MODEL']['TEMPORAL']['NAME'] }")
@@ -101,11 +122,11 @@ def _build_heads(in_dim, CONFIG, num_labels=3):
     loss = CONFIG['TRAIN']['LOSS']
 
     if loss == 'bbl':
-        fc_dropout = CONFIG['MODEL']['CLASSIFIER']['FC_DROPOUT']
+        fc_dropout = CONFIG['MODEL']['CLASSIFIER']['DROPOUT']
         return nn.ModuleList([EvidentialHead(in_dim, fc_dropout) for _ in range(num_labels)])
 
     elif loss == 'bce':
-        fc_dropout = CONFIG['MODEL']['CLASSIFIER']['FC_DROPOUT']
+        fc_dropout = CONFIG['MODEL']['CLASSIFIER']['DROPOUT']
         return nn.ModuleList([
             nn.Sequential(
                 nn.LayerNorm(in_dim),
