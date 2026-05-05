@@ -8,7 +8,7 @@ def build_swinv2_encoder(CONFIG):
     variant = CONFIG['MODEL']['ENCODER']['NAME']
     frozen_stages = CONFIG['MODEL']['ENCODER']['FROZEN_STAGES']
     encoder_drop_path_rate = CONFIG['MODEL']['ENCODER']['DROP_PATH_RATE']
-    fc_dropout = CONFIG['MODEL']['CLASSIFIER']['FC_DROPOUT']
+    fc_dropout = CONFIG['MODEL']['CLASSIFIER']['DROPOUT']
     
     # Initialise the encoder
     backbone = timm.create_model(   variant,
