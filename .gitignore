@@ -6,3 +6,4 @@
 /weights/*.pt
 /results/*.json
 /results/*/
+.claude/

@@ -42,11 +42,11 @@ set_deterministic_behaviour(CONFIG['SEED'])
 
 ############################################################################################
 ############################################################################################
-transforms =  v2.Compose([  v2.CenterCrop(CONFIG['DATA']['DATASETS'][DATASET_NAME]['CENTER_CROP']),
-                            v2.Resize((CONFIG['DATA']['DATASETS'][DATASET_NAME]['RESIZE'], CONFIG['DATA']['DATASETS'][DATASET_NAME]['RESIZE'])),
+transforms =  v2.Compose([  v2.CenterCrop(CONFIG['DATASETS'][DATASET_NAME]['CENTER_CROP']),
+                            v2.Resize((CONFIG['MODEL']['ENCODER']['IMG_SIZE'], CONFIG['MODEL']['ENCODER']['IMG_SIZE'])),
                             v2.ToImage(),                
                             v2.ToDtype(torch.float32, scale=True),  
-                            v2.Normalize(mean=CONFIG['DATA']['DATASETS'][DATASET_NAME]['MEAN'], std=CONFIG['DATA']['DATASETS'][DATASET_NAME]['STD'])])
+                            v2.Normalize(mean=CONFIG['DATASETS'][DATASET_NAME]['MEAN'], std=CONFIG['DATASETS'][DATASET_NAME]['STD'])])
 
 # Datasets
 dataset_train = EndoscapesDataset(  split = 'train',
