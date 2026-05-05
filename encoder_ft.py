@@ -12,7 +12,7 @@ from torchvision.transforms import v2
 
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
-from scripts.encoder_swinv2 import build_swinv2_encoder
+from scripts.model import build_ft_model
 from scripts.helper_functions import get_schedulers, dummy_output_dict
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
@@ -89,7 +89,7 @@ test_dataloader =   DataLoader( dataset_test,
 ############################################################################################
 ############################################################################################
 # Init Backbone
-model = build_swinv2_encoder(CONFIG)
+model = build_ft_model(CONFIG)
 
 # Separate parameter groups for adjusted learning rate
 backbone_params = []

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from scripts.encoder_swinv2 import build_swinv2_encoder
+from scripts.encoder_dinov3 import build_dinov3_encoder
 class EvidentialHead(nn.Module):
     def __init__(self, in_feats, p_dropout):
         super().__init__()
@@ -89,12 +90,23 @@ class SpatioTemporalModel(nn.Module):
 def _build_encoder(CONFIG):
     if 'swinv2' in CONFIG['MODEL']['ENCODER']['NAME']:
         encoder = build_swinv2_encoder(CONFIG)
-        ft_state = torch.load(CONFIG['MODEL']['ENCODER']['FT_WEIGHTS'], map_location='cpu')
-        encoder.load_state_dict(ft_state)
+        ft_weights_path = CONFIG['MODEL']['ENCODER']['FT_WEIGHTS']
+
+        if ft_weights_path is not None:
+            ft_state = torch.load(ft_weights_path, map_location='cpu')
+            encoder.load_state_dict(ft_state)
+            print(f"\nSuccessfully loaded {ft_weights_path} ft weights to {CONFIG['MODEL']['ENCODER']['NAME']} encoder.\n")
+        else: print("\nEncoder initialised with IMTN weights!\n")
 
     elif 'dinov3' in CONFIG['MODEL']['ENCODER']['NAME']:
-        raise NotImplementedError(f"Dino encoder not yet implemented.")
+        encoder = build_dinov3_encoder(CONFIG)
+        ft_weights_path = CONFIG['MODEL']['ENCODER']['FT_WEIGHTS']
 
+        if ft_weights_path is not None:
+            ft_state = torch.load(ft_weights_path, map_location='cpu')
+            encoder.load_state_dict(ft_state)
+            print(f"\nSuccessfully loaded {ft_weights_path} ft weights to {CONFIG['MODEL']['ENCODER']['NAME']} encoder.\n")
+        else: print("\nEncoder initialised with IMTN weights!\n")
     else:
         raise ValueError(f"Unknown encoder: {CONFIG['MODEL']['ENCODER']['NAME']}")
 
@@ -144,6 +156,7 @@ def _build_heads(in_dim, CONFIG, num_labels=3):
 def build_model(CONFIG):
     encoder = _build_encoder(CONFIG)
 
+    # E2E training is not currently in development
     for p in encoder.parameters():
         p.requires_grad = False
 
@@ -152,3 +165,15 @@ def build_model(CONFIG):
     heads    = _build_heads(temporal.out_dim, CONFIG)
 
     return SpatioTemporalModel(encoder, temporal, heads)
+
+
+
+######## JUST FOR ENCODER FT ########
+def build_ft_model(CONFIG):
+    name = CONFIG['MODEL']['ENCODER']['NAME']
+    if 'swinv2' in name:
+        return build_swinv2_encoder(CONFIG)
+    elif 'dinov2' in name or 'dinov3' in name:
+        return build_dinov3_encoder(CONFIG)
+    else:
+        raise ValueError(f"Unknown encoder: {name}")
