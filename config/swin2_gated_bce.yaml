@@ -14,10 +14,15 @@ MODEL:
     DROP_PATH_RATE: 0.1
     FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
-    NAME: 'gated_pooling'
-    TEMPORAL_DROPOUT: 0.2
+    NAME: 'gated_pooling'           # or 'lstm'
+    GATED_POOLING:
+      DROPOUT: 0.2
+    LSTM:
+      HIDDEN_SIZE: 512
+      NUM_LAYERS: 2
+      DROPOUT: 0.3
   CLASSIFIER:
-    FC_DROPOUT: 0.5
+    DROPOUT: 0.5
 
 DATA:
   DATASET_NAME: "ENDOSCAPES"
