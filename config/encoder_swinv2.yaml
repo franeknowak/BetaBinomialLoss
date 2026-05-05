@@ -8,7 +8,7 @@ CHECKPOINT_DIR: './weights'
 # SWINV2 ENCODER PARAMS
 MODEL:
   ENCODER:
-    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
+    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" # Param: 87.9M, Activ: 280.4M
     IMG_SIZE: 384
     FROZEN_STAGES: 2
     DROP_PATH_RATE: 0.2

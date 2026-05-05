@@ -15,8 +15,7 @@ def build_swinv2_encoder(CONFIG):
                                     pretrained=True,
                                     num_classes=0,
                                     global_pool="",
-                                    drop_path_rate=encoder_drop_path_rate
-                                    )
+                                    drop_path_rate=encoder_drop_path_rate)
     
     # Create classifier head
     backbone.head = nn.Sequential(  SpatialPool(),
