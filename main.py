@@ -91,7 +91,7 @@ test_dataloader =   DataLoader( dataset_test,
 ############################################################################################
 # Init Backbone
 model = build_model(CONFIG)
-inspect_model(model)
+inspect_model(model, img_size=CONFIG['MODEL']['ENCODER']['IMG_SIZE'])
 
 # Split temporal and classifier parameters
 temporal_decay, temporal_no_decay = _split_decay_params(

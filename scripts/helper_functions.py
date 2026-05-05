@@ -30,7 +30,7 @@ def get_schedulers(optimizer, CONFIG, len_train_dataloader):
         
         return ACC_STEPS, warmup_scheduler, cosine_scheduler
 
-def inspect_model(model):
+def inspect_model(model, img_size):
     # 1. Top-level parameter breakdown
     print(f"{'Module':<20} {'Total params':>15} {'Trainable':>15} {'Frozen':>15}")
     print("-" * 68)
@@ -66,7 +66,7 @@ def inspect_model(model):
 
     # 5. Determinism check on the encoder (catches the DropPath issue empirically)
     model.eval()
-    x = torch.randn(1, 3, 384, 384)  # adjust to your input size
+    x = torch.randn(1, 3, img_size, img_size)
     with torch.no_grad():
         z1 = model.encoder(x)
         z2 = model.encoder(x)
