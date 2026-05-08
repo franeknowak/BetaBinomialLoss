@@ -1,5 +1,5 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "swin2_lstm_bbl_"
+EXPERIMENT_NAME: "swinv2_lstm_bbl_"
 SEED: 0
 DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"

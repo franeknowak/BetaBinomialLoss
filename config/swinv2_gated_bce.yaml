@@ -1,5 +1,5 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "swin2_gated_bce_"
+EXPERIMENT_NAME: "swinv2_gated_bce_"
 SEED: 0
 DATASET_DIR: "../SwinCVS/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
