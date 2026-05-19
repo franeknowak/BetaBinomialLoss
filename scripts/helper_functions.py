@@ -124,8 +124,8 @@ def print_run_header(model, CONFIG, optimizer):
     print(f"  AdamW  β={opt['BETAS']}  ε={opt['EPS']}  WD={opt['WEIGHT_DECAY']}")
 
     groups = [(g['name'], g['lr'], g['end_lr'])
-              for g in optimizer.param_groups
-              if not g['name'].endswith('_nd')]
+          for g in optimizer.param_groups
+          if not g['name'].endswith('_nd') and len(g['params']) > 0]
     for i, (name, start, end) in enumerate(groups):
         prefix = '  LR' if i == 0 else '    '
         print(f"  {prefix}  {name:<14}{start:.2e} → {end:.2e}")
@@ -161,3 +161,60 @@ def _split_decay_params(named_params):
         else:
             decay.append(param)
     return decay, no_decay
+
+def print_epoch_summary(train_r, val_r, epoch, total_epochs, optimizer, is_best):
+    W   = 62
+    DIV = '─' * W
+
+    print(f'\n{DIV}')
+    print(f'  Epoch {epoch + 1:02d}/{total_epochs:02d}')
+    print(DIV)
+
+    print(f"  {'':22}{'Train':>9}{'Val':>9}")
+    print(f"  {'Loss':<22}{train_r['loss']:>9.4f}{val_r['loss']:>9.4f}")
+    print(f"  {'Avg Accuracy':<22}{train_r['avg_accuracy']:>9.4f}{val_r['avg_accuracy']:>9.4f}")
+    print(f"  {'Avg BAcc':<22}{train_r['avg_bacc']:>9.4f}{val_r['avg_bacc']:>9.4f}  ←")
+    print(f"  {'mAP':<22}{train_r['mAP']:>9.4f}{val_r['mAP']:>9.4f}")
+    print()
+
+    print(f"  {'':4}  {'─── Train ──────':^23}  {'─── Val ────────':^23}")
+    print(f"  {'':4}  {'Acc':>7}{'BAcc':>8}{'AP':>8}  {'Acc':>7}{'BAcc':>8}{'AP':>8}")
+    for c in ['C1', 'C2', 'C3']:
+        t = (train_r[f'accuracy_{c}'], train_r[f'bal_accuracy_{c}'], train_r[f'ap_{c}'])
+        v = (val_r[f'accuracy_{c}'],   val_r[f'bal_accuracy_{c}'],   val_r[f'ap_{c}'])
+        print(f"  {c:<4}  {t[0]:>7.3f}{t[1]:>8.3f}{t[2]:>8.3f}  {v[0]:>7.3f}{v[1]:>8.3f}{v[2]:>8.3f}")
+
+    print()
+    groups  = [(g['name'], g['lr']) for g in optimizer.param_groups
+               if not g['name'].endswith('_nd') and len(g['params']) > 0]
+    lr_str  = '  |  '.join(f"{n}: {lr:.2e}" for n, lr in groups)
+    print(f"  LR  {lr_str}")
+
+    print(DIV)
+    if is_best:
+        print(f"  ★  New best — Val BAcc {val_r['avg_bacc']:.4f} — weights saved")
+        print(DIV)
+    print()
+
+
+def print_test_summary(test_r, best_epoch):
+    W   = 62
+    SEP = '═' * W
+
+    print(f'\n{SEP}')
+    print(f'  TEST RESULTS  (weights from epoch {best_epoch})')
+    print(SEP)
+
+    print(f"  {'Loss':<22}{test_r['loss']:>9.4f}")
+    print(f"  {'Avg Accuracy':<22}{test_r['avg_accuracy']:>9.4f}")
+    print(f"  {'Avg BAcc':<22}{test_r['avg_bacc']:>9.4f}")
+    print(f"  {'mAP':<22}{test_r['mAP']:>9.4f}")
+    print()
+
+    print(f"  {'':4}  {'Acc':>7}{'BAcc':>8}{'AP':>8}")
+    for c in ['C1', 'C2', 'C3']:
+        print(f"  {c:<4}  {test_r[f'accuracy_{c}']:>7.3f}"
+              f"{test_r[f'bal_accuracy_{c}']:>8.3f}"
+              f"{test_r[f'ap_{c}']:>8.3f}")
+
+    print(f'\n{SEP}\n')

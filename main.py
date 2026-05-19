@@ -13,7 +13,7 @@ from torchvision.transforms import v2
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.model import build_model
-from scripts.helper_functions import get_schedulers, print_run_header, dummy_output_dict, _split_decay_params
+from scripts.helper_functions import get_schedulers, print_run_header, dummy_output_dict, _split_decay_params, print_epoch_summary, print_test_summary
 from scripts.build_loss import build_loss_fn
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
@@ -36,6 +36,7 @@ if torch.cuda.is_available():
     print(f"Number of GPUs available: {torch.cuda.device_count()}")
 else:
     device = torch.device("cpu")
+    print("Training on the CPU!")
 
 # For reproducible results
 set_deterministic_behaviour(CONFIG['SEED'])
@@ -159,9 +160,7 @@ epochs_without_improvement = 0
 EPOCHS = CONFIG['TRAIN']['EPOCHS']
 
 for epoch in range(EPOCHS):
-        print(f"Epoch: {epoch+1:02}/{EPOCHS:02}")
-
-        print("Training")
+        print('\n  Training...')
         train_loss_sum = 0.0
         len_train_loader = len(train_dataloader)
         train_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
@@ -192,32 +191,14 @@ for epoch in range(EPOCHS):
                 train_output_dict['frame_ids'].append(frame_id)
                 train_loss_sum += train_loss_per_acc_batch.item() * ACCUMULATION_STEPS
 
-        results, train_output_dict = calculate_metrics(train_output_dict, evidential = EVIDENTIAL)
+        train_results, train_output_dict = calculate_metrics(train_output_dict, evidential=EVIDENTIAL)
+        train_results['loss'] = round(train_loss_sum / len_train_loader, 4)
+        results_dict[f"Epoch {epoch+1} Train"] = train_results
 
-        avg_train_loss = train_loss_sum / len_train_loader
-        results['loss'] = round(avg_train_loss, 4)
-
-        print(f"\n--- Training Metrics ---")
-        print(f"Train Avg Accuracy              {results['avg_accuracy']:.4f}")
-        print(f"Train Avg BAcc                  {results['avg_bacc']:.4f}")
-        print(f"Train mAP                       {results['mAP']:.4f}")
-        print(f"Train Loss:                     {results['loss']:.4f}\n")
-        print(f"Train C1 Accuracy               {results['accuracy_C1']:.4f}")
-        print(f"Train C2 Accuracy               {results['accuracy_C2']:.4f}")
-        print(f"Train C3 Accuracy               {results['accuracy_C3']:.4f}\n")
-        print(f"Train C1 Balanced Accuracy:     {results['bal_accuracy_C1']:.4f}")
-        print(f"Train C2 Balanced Accuracy:     {results['bal_accuracy_C2']:.4f}")
-        print(f"Train C3 Balanced Accuracy:     {results['bal_accuracy_C3']:.4f}\n")
-        print(f"Train C1 AP:                    {results['ap_C1']:.4f}")
-        print(f"Train C2 AP:                    {results['ap_C2']:.4f}")
-        print(f"Train C3 AP:                    {results['ap_C3']:.4f}")
-        print(f"------------------------\n")
-        results_dict[f"Epoch {epoch+1} Train"] = results
-
-        print('Validation')
-        val_loss_sum = 0.0
+        print('\n  Validating...')
+        val_loss_sum   = 0.0
         len_val_loader = len(val_dataloader)
-        val_output_dict = dummy_output_dict(uncerts = EVIDENTIAL)
+        val_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
 
         model.eval()
         torch.cuda.synchronize()
@@ -230,85 +211,62 @@ for epoch in range(EPOCHS):
                         output = model(images)
                         val_loss_per_batch = loss_fn(output, labels)
 
-                        val_output_dict = update_model_output_dict(output, val_output_dict, evidential = EVIDENTIAL)
+                        val_output_dict = update_model_output_dict(output, val_output_dict, evidential=EVIDENTIAL)
                         val_output_dict['labels'].append(labels.detach().cpu())
                         val_output_dict['vid_ids'].append(vid_id)
                         val_output_dict['frame_ids'].append(frame_id)
                         val_loss_sum += val_loss_per_batch.item()
 
-        results, val_output_dict = calculate_metrics(val_output_dict, evidential = EVIDENTIAL)
-        avg_val_loss = val_loss_sum / len_val_loader
-        results['loss'] = round(avg_val_loss, 4)
-        print(f"\n--- Validation Metrics ---")
-        print(f"Val Avg Accuracy              {results['avg_accuracy']:.4f}")
-        print(f"Val Avg BAcc                  {results['avg_bacc']:.4f}")
-        print(f"Val mAP                       {results['mAP']:.4f}")
-        print(f"Val Loss:                     {results['loss']:.4f}\n")
-        print(f"Val C1 Accuracy               {results['accuracy_C1']:.4f}")
-        print(f"Val C2 Accuracy               {results['accuracy_C2']:.4f}")
-        print(f"Val C3 Accuracy               {results['accuracy_C3']:.4f}\n")
-        print(f"Val C1 Balanced Accuracy:     {results['bal_accuracy_C1']:.4f}")
-        print(f"Val C2 Balanced Accuracy:     {results['bal_accuracy_C2']:.4f}")
-        print(f"Val C3 Balanced Accuracy:     {results['bal_accuracy_C3']:.4f}\n")
-        print(f"Val C1 AP:                    {results['ap_C1']:.4f}")
-        print(f"Val C2 AP:                    {results['ap_C2']:.4f}")
-        print(f"Val C3 AP:                    {results['ap_C3']:.4f}")
-        print(f"------------------------\n")
+        val_results, val_output_dict = calculate_metrics(val_output_dict, evidential=EVIDENTIAL)
+        val_results['loss'] = round(val_loss_sum / len_val_loader, 4)
 
-        results['saved'] = {    'C1': { 'probs':     val_output_dict['C1']['probs'].tolist(),
-                                        'preds':     val_output_dict['C1']['preds'].tolist()},
-                                'C2': { 'probs':     val_output_dict['C2']['probs'].tolist(),
-                                        'preds':     val_output_dict['C2']['preds'].tolist()},
-                                'C3': { 'probs':     val_output_dict['C3']['probs'].tolist(),
-                                        'preds':     val_output_dict['C3']['preds'].tolist()},
-                                'labels':            val_output_dict['labels'].tolist(),
-                                'vid_ids':           val_output_dict['vid_ids'].tolist(),
-                                'frame_ids':         val_output_dict['frame_ids'].tolist()}
+        val_results['saved'] = {
+                'C1': {'probs': val_output_dict['C1']['probs'].tolist(),
+                       'preds': val_output_dict['C1']['preds'].tolist()},
+                'C2': {'probs': val_output_dict['C2']['probs'].tolist(),
+                       'preds': val_output_dict['C2']['preds'].tolist()},
+                'C3': {'probs': val_output_dict['C3']['probs'].tolist(),
+                       'preds': val_output_dict['C3']['preds'].tolist()},
+                'labels':    val_output_dict['labels'].tolist(),
+                'vid_ids':   val_output_dict['vid_ids'].tolist(),
+                'frame_ids': val_output_dict['frame_ids'].tolist()}
         if EVIDENTIAL:
-               results['saved']['C1']['uncerts'] = val_output_dict['C1']['uncerts'].tolist()
-               results['saved']['C2']['uncerts'] = val_output_dict['C2']['uncerts'].tolist()       
-               results['saved']['C3']['uncerts'] = val_output_dict['C3']['uncerts'].tolist()        
-        results_dict[f"Epoch {epoch+1} Val"] = results
+                val_results['saved']['C1']['uncerts'] = val_output_dict['C1']['uncerts'].tolist()
+                val_results['saved']['C2']['uncerts'] = val_output_dict['C2']['uncerts'].tolist()
+                val_results['saved']['C3']['uncerts'] = val_output_dict['C3']['uncerts'].tolist()
 
-        # Save results
+        results_dict[f"Epoch {epoch+1} Val"] = val_results
+
         with open(Path('./results') / f'{EXPERIMENT_NAME}_results.json', 'w') as file:
                 json.dump(results_dict, file, indent=4)
 
-        # Cosine LR deacay
         if epoch >= CONFIG['TRAIN']['WARMUP_EPOCHS']:
                 cosine_scheduler.step()
 
-        # Log the current lr of each param group for visibility
-        logged = {      g['name']: g['lr']
-                        for g in optimizer.param_groups
-                        if not g['name'].endswith('_nd') and len(g['params']) > 0}
-        lr_str = '  |  '.join(f"{name}: {lr:.2e}" for name, lr in logged.items())
-        print(f"LR — {lr_str}\n")
+        is_best = val_results['avg_bacc'] > best_bacc_across_epochs
+        print_epoch_summary(train_results, val_results, epoch, EPOCHS, optimizer, is_best)
 
-        # Save weights of the best epoch
-        if results['avg_bacc'] > best_bacc_across_epochs:
-                best_bacc_across_epochs = results['avg_bacc']
-                best_epoch = epoch+1
+        if is_best:
+                best_bacc_across_epochs = val_results['avg_bacc']
+                best_epoch              = epoch + 1
                 epochs_without_improvement = 0
-                print(f"New best result (Epoch {best_epoch}), saving weights...")
                 checkpoint_path = Path(CONFIG['CHECKPOINT_DIR']) / f'{EXPERIMENT_NAME}.pt'
                 torch.save(model.state_dict(), checkpoint_path)
         else:
                 epochs_without_improvement += 1
-                print(f"No improvement for {epochs_without_improvement}/{CONFIG['TRAIN']['EARLY_PATIENCE']} epochs\n")
+                print(f"  No improvement for {epochs_without_improvement}/{CONFIG['TRAIN']['EARLY_PATIENCE']} epochs\n")
                 if epochs_without_improvement >= CONFIG['TRAIN']['EARLY_PATIENCE']:
-                        print(f"Early stopping triggered. Best epoch was {best_epoch} with BAcc {best_bacc_across_epochs:.4f}")
+                        print(f"  Early stopping — best epoch {best_epoch}, Validation BACC {best_bacc_across_epochs:.4f}\n")
                         break
         
-print(f"Testing @ epoch {best_epoch}")
-test_loss_sum = 0.0
+print(f"\n  Testing...")
+test_loss_sum   = 0.0
 len_test_loader = len(test_dataloader)
-test_output_dict = dummy_output_dict(uncerts = EVIDENTIAL)
+test_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
 
 checkpoint = torch.load(checkpoint_path, map_location=device)
 model.load_state_dict(checkpoint)
 model.to(device)
-
 model.eval()
 torch.cuda.synchronize()
 
@@ -320,45 +278,33 @@ with torch.inference_mode():
         output = model(images)
         test_loss_per_batch = loss_fn(output, labels)
 
-        test_output_dict = update_model_output_dict(output, test_output_dict, evidential = EVIDENTIAL)
+        test_output_dict = update_model_output_dict(output, test_output_dict, evidential=EVIDENTIAL)
         test_output_dict['labels'].append(labels.detach().cpu())
         test_output_dict['vid_ids'].append(vid_id)
         test_output_dict['frame_ids'].append(frame_id)
         test_loss_sum += test_loss_per_batch.item()
 
-results, test_output_dict = calculate_metrics(test_output_dict, evidential = EVIDENTIAL)
-avg_test_loss = test_loss_sum / len_test_loader
-results['loss'] = round(avg_test_loss, 4)
+test_results, test_output_dict = calculate_metrics(test_output_dict, evidential=EVIDENTIAL)
+test_results['loss'] = round(test_loss_sum / len_test_loader, 4)
 
-print(f"\n--- Testing Metrics ---")
-print(f"Test Avg Accuracy              {results['avg_accuracy']:.4f}")
-print(f"Test Avg BAcc                  {results['avg_bacc']:.4f}")
-print(f"Test mAP                       {results['mAP']:.4f}")
-print(f"Test Loss:                     {results['loss']:.4f}\n")
-print(f"Test C1 Accuracy               {results['accuracy_C1']:.4f}")
-print(f"Test C2 Accuracy               {results['accuracy_C2']:.4f}")
-print(f"Test C3 Accuracy               {results['accuracy_C3']:.4f}\n")
-print(f"Test C1 Balanced Accuracy:     {results['bal_accuracy_C1']:.4f}")
-print(f"Test C2 Balanced Accuracy:     {results['bal_accuracy_C2']:.4f}")
-print(f"Test C3 Balanced Accuracy:     {results['bal_accuracy_C3']:.4f}\n")
-print(f"Test C1 AP:                    {results['ap_C1']:.4f}")
-print(f"Test C2 AP:                    {results['ap_C2']:.4f}")
-print(f"Test C3 AP:                    {results['ap_C3']:.4f}")
-print(f"------------------------\n")
-results['saved'] = {'C1': { 'probs':     test_output_dict['C1']['probs'].tolist(),
-                            'preds':     test_output_dict['C1']['preds'].tolist()},
-                    'C2': { 'probs':     test_output_dict['C2']['probs'].tolist(),
-                            'preds':     test_output_dict['C2']['preds'].tolist()},
-                    'C3': { 'probs':     test_output_dict['C3']['probs'].tolist(),
-                            'preds':     test_output_dict['C3']['preds'].tolist()},
-                    'labels':            test_output_dict['labels'].tolist(),
-                    'vid_ids':           test_output_dict['vid_ids'].tolist(),
-                    'frame_ids':         test_output_dict['frame_ids'].tolist()}
+test_results['saved'] = {
+    'C1': {'probs': test_output_dict['C1']['probs'].tolist(),
+           'preds': test_output_dict['C1']['preds'].tolist()},
+    'C2': {'probs': test_output_dict['C2']['probs'].tolist(),
+           'preds': test_output_dict['C2']['preds'].tolist()},
+    'C3': {'probs': test_output_dict['C3']['probs'].tolist(),
+           'preds': test_output_dict['C3']['preds'].tolist()},
+    'labels':    test_output_dict['labels'].tolist(),
+    'vid_ids':   test_output_dict['vid_ids'].tolist(),
+    'frame_ids': test_output_dict['frame_ids'].tolist()}
 if EVIDENTIAL:
-       results['saved']['C1']['uncerts'] = test_output_dict['C1']['uncerts'].tolist()
-       results['saved']['C2']['uncerts'] = test_output_dict['C2']['uncerts'].tolist()       
-       results['saved']['C3']['uncerts'] = test_output_dict['C3']['uncerts'].tolist()    
-results_dict[f"Epoch {best_epoch} Test"] = results
+    test_results['saved']['C1']['uncerts'] = test_output_dict['C1']['uncerts'].tolist()
+    test_results['saved']['C2']['uncerts'] = test_output_dict['C2']['uncerts'].tolist()
+    test_results['saved']['C3']['uncerts'] = test_output_dict['C3']['uncerts'].tolist()
+
+results_dict[f"Epoch {best_epoch} Test"] = test_results
+
+print_test_summary(test_results, best_epoch)
 
 with open(Path('./results') / f'{EXPERIMENT_NAME}_results.json', 'w') as file:
     json.dump(results_dict, file, indent=4)
