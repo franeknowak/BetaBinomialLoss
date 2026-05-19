@@ -218,3 +218,285 @@ def print_test_summary(test_r, best_epoch):
               f"{test_r[f'ap_{c}']:>8.3f}")
 
     print(f'\n{SEP}\n')
+
+def validate_config(CONFIG):
+    errors   = []
+    warnings = []
+
+    def err(msg):  errors.append(msg)
+    def warn(msg): warnings.append(msg)
+
+    def _check_keys(d, *keys, context):
+        for k in keys:
+            if k not in d:
+                err(f"Missing required key '{k}' in {context}")
+
+    # ── Top-level ─────────────────────────────────────────────────────────
+    _check_keys(CONFIG, 'EXPERIMENT_NAME', 'SEED', 'DATASET_DIR',
+                'ANNOTATIONS_PATH', 'CHECKPOINT_DIR',
+                'MODEL', 'DATA', 'TRAIN', 'DATASETS',
+                context='config root')
+
+    from pathlib import Path
+
+    if 'ANNOTATIONS_PATH' in CONFIG and not Path(CONFIG['ANNOTATIONS_PATH']).exists():
+        warn(f"ANNOTATIONS_PATH does not exist: {CONFIG['ANNOTATIONS_PATH']}")
+
+    if 'CHECKPOINT_DIR' in CONFIG and not Path(CONFIG['CHECKPOINT_DIR']).exists():
+        warn(f"CHECKPOINT_DIR does not exist: {CONFIG['CHECKPOINT_DIR']}")
+
+    # ── MODEL.ENCODER ─────────────────────────────────────────────────────
+    enc = CONFIG.get('MODEL', {}).get('ENCODER', {})
+    if 'MODEL' in CONFIG:
+        _check_keys(CONFIG['MODEL'], 'ENCODER', 'TEMPORAL', 'CLASSIFIER', context='MODEL')
+
+    if enc:
+        _check_keys(enc, 'NAME', 'IMG_SIZE', context='MODEL.ENCODER')
+
+        if 'NAME' in enc:
+            if not any(k in enc['NAME'] for k in ('swinv2', 'dinov3')):
+                err(f"MODEL.ENCODER.NAME '{enc['NAME']}' not recognised — must contain 'swinv2' or 'dinov3'")
+
+        if 'IMG_SIZE' in enc:
+            if not isinstance(enc['IMG_SIZE'], int) or enc['IMG_SIZE'] <= 0:
+                err("MODEL.ENCODER.IMG_SIZE must be a positive integer")
+
+        if 'FROZEN_STAGES' in enc:
+            fs = enc['FROZEN_STAGES']
+            if not isinstance(fs, int) or fs < 0:
+                err("MODEL.ENCODER.FROZEN_STAGES must be a non-negative integer")
+
+        if 'FT_WEIGHTS' in enc:
+            warn("MODEL.ENCODER.FT_WEIGHTS is present but FT_WEIGHTS loading is not currently implemented — key will be silently ignored")
+
+    # ── MODEL.TEMPORAL ────────────────────────────────────────────────────
+    temp = CONFIG.get('MODEL', {}).get('TEMPORAL', {})
+    if temp:
+        _check_keys(temp, 'NAME', context='MODEL.TEMPORAL')
+
+        tname = temp.get('NAME')
+        if tname not in ('lstm', 'gated_pooling', None):
+            err(f"MODEL.TEMPORAL.NAME '{tname}' not recognised — must be 'lstm', 'gated_pooling', or null")
+
+        if tname == 'lstm':
+            if 'LSTM' not in temp:
+                err("MODEL.TEMPORAL.LSTM block is required when TEMPORAL.NAME='lstm'")
+            else:
+                lstm = temp['LSTM']
+                _check_keys(lstm, 'HIDDEN_SIZE', 'NUM_LAYERS', 'DROPOUT', context='MODEL.TEMPORAL.LSTM')
+                if 'HIDDEN_SIZE' in lstm and (not isinstance(lstm['HIDDEN_SIZE'], int) or lstm['HIDDEN_SIZE'] <= 0):
+                    err("MODEL.TEMPORAL.LSTM.HIDDEN_SIZE must be a positive integer")
+                if 'NUM_LAYERS' in lstm and (not isinstance(lstm['NUM_LAYERS'], int) or lstm['NUM_LAYERS'] <= 0):
+                    err("MODEL.TEMPORAL.LSTM.NUM_LAYERS must be a positive integer")
+                if 'DROPOUT' in lstm and not (0.0 <= lstm['DROPOUT'] < 1.0):
+                    err("MODEL.TEMPORAL.LSTM.DROPOUT must be in [0, 1)")
+
+        if tname == 'gated_pooling':
+            if 'GATED_POOLING' not in temp:
+                err("MODEL.TEMPORAL.GATED_POOLING block is required when TEMPORAL.NAME='gated_pooling'")
+            else:
+                gp = temp['GATED_POOLING']
+                _check_keys(gp, 'DROPOUT', context='MODEL.TEMPORAL.GATED_POOLING')
+                if 'DROPOUT' in gp and not (0.0 <= gp['DROPOUT'] < 1.0):
+                    err("MODEL.TEMPORAL.GATED_POOLING.DROPOUT must be in [0, 1)")
+        if tname == 'lstm' and 'GATED_POOLING' in temp:
+            warn("MODEL.TEMPORAL.GATED_POOLING is defined but TEMPORAL.NAME='lstm' — it will be ignored")
+        if tname == 'gated_pooling' and 'LSTM' in temp:
+            warn("MODEL.TEMPORAL.LSTM is defined but TEMPORAL.NAME='gated_pooling' — it will be ignored")
+        if tname is None and 'LSTM' in temp:
+            warn("MODEL.TEMPORAL.LSTM is defined but TEMPORAL.NAME=null (no temporal) — it will be ignored")
+        if tname is None and 'GATED_POOLING' in temp:
+            warn("MODEL.TEMPORAL.GATED_POOLING is defined but TEMPORAL.NAME=null (no temporal) — it will be ignored")
+    # ── MODEL.CLASSIFIER ──────────────────────────────────────────────────
+    cls = CONFIG.get('MODEL', {}).get('CLASSIFIER', {})
+    if cls:
+        _check_keys(cls, 'DROPOUT', context='MODEL.CLASSIFIER')
+        if 'DROPOUT' in cls and not (0.0 <= cls['DROPOUT'] < 1.0):
+            err("MODEL.CLASSIFIER.DROPOUT must be in [0, 1)")
+
+    # ── DATA ──────────────────────────────────────────────────────────────
+    data = CONFIG.get('DATA', {})
+    if data:
+        _check_keys(data, 'DATASET_NAME', 'TEMPORAL', 'LABEL_CRITERION', 'LABEL_METHOD', context='DATA')
+
+        if 'LABEL_CRITERION' in data and data['LABEL_CRITERION'] not in (None, 0, 1, 2):
+            err(f"DATA.LABEL_CRITERION must be null, 0, 1, or 2 — got '{data['LABEL_CRITERION']}'")
+
+        if 'LABEL_METHOD' in data and data['LABEL_METHOD'] not in ('soft', 'hard'):
+            err(f"DATA.LABEL_METHOD must be 'soft' or 'hard' — got '{data['LABEL_METHOD']}'")
+
+    # ── TRAIN ─────────────────────────────────────────────────────────────
+    train = CONFIG.get('TRAIN', {})
+    if train:
+        _check_keys(train, 'EPOCHS', 'BATCH_SIZE', 'GRADIENT_ACC_BATCH_SIZE',
+                    'EARLY_PATIENCE', 'OPTIMIZER', 'LOSS', 'WARMUP_EPOCHS',
+                    'FREEZE_ENCODER', 'LR', context='TRAIN')
+
+        if 'EPOCHS' in train and (not isinstance(train['EPOCHS'], int) or train['EPOCHS'] <= 0):
+            err("TRAIN.EPOCHS must be a positive integer")
+
+        if 'BATCH_SIZE' in train and (not isinstance(train['BATCH_SIZE'], int) or train['BATCH_SIZE'] <= 0):
+            err("TRAIN.BATCH_SIZE must be a positive integer")
+
+        if 'GRADIENT_ACC_BATCH_SIZE' in train and 'BATCH_SIZE' in train:
+            gacc = train['GRADIENT_ACC_BATCH_SIZE']
+            bs   = train['BATCH_SIZE']
+            if not isinstance(gacc, int) or gacc <= 0:
+                err("TRAIN.GRADIENT_ACC_BATCH_SIZE must be a positive integer")
+            elif isinstance(bs, int) and bs > 0:
+                if gacc < bs:
+                    err(f"TRAIN.GRADIENT_ACC_BATCH_SIZE ({gacc}) must be >= BATCH_SIZE ({bs})")
+                elif gacc % bs != 0:
+                    err(f"TRAIN.GRADIENT_ACC_BATCH_SIZE ({gacc}) must be divisible by BATCH_SIZE ({bs})")
+
+        if 'WARMUP_EPOCHS' in train and 'EPOCHS' in train:
+            we = train['WARMUP_EPOCHS']
+            if not isinstance(we, int) or we < 0:
+                err("TRAIN.WARMUP_EPOCHS must be a non-negative integer")
+            elif isinstance(train['EPOCHS'], int) and we >= train['EPOCHS']:
+                err(f"TRAIN.WARMUP_EPOCHS ({we}) must be less than TRAIN.EPOCHS ({train['EPOCHS']})")
+
+        if 'EARLY_PATIENCE' in train and (not isinstance(train['EARLY_PATIENCE'], int) or train['EARLY_PATIENCE'] <= 0):
+            err("TRAIN.EARLY_PATIENCE must be a positive integer")
+
+        if 'FREEZE_ENCODER' in train and not isinstance(train['FREEZE_ENCODER'], bool):
+            err("TRAIN.FREEZE_ENCODER must be a boolean (true/false)")
+
+        # OPTIMIZER
+        opt = train.get('OPTIMIZER', {})
+        if opt:
+            _check_keys(opt, 'EPS', 'BETAS', 'WEIGHT_DECAY', context='TRAIN.OPTIMIZER')
+            if 'BETAS' in opt:
+                b = opt['BETAS']
+                if not (isinstance(b, (list, tuple)) and len(b) == 2 and all(0.0 < v < 1.0 for v in b)):
+                    err("TRAIN.OPTIMIZER.BETAS must be a list of 2 floats in (0, 1)")
+            if 'EPS' in opt and opt['EPS'] <= 0:
+                err("TRAIN.OPTIMIZER.EPS must be positive")
+            if 'WEIGHT_DECAY' in opt and opt['WEIGHT_DECAY'] < 0:
+                err("TRAIN.OPTIMIZER.WEIGHT_DECAY must be non-negative")
+
+        # LOSS
+        loss = train.get('LOSS')
+        if loss is not None:
+            if loss not in ('bce', 'bbl'):
+                err(f"TRAIN.LOSS '{loss}' not recognised — must be 'bce' or 'bbl'")
+
+            if loss == 'bbl':
+                _check_keys(train, 'USE_KL', 'USE_PRIOR_ALPHA', context='TRAIN (required when LOSS=bbl)')
+                if 'USE_KL' in train and 'USE_PRIOR_ALPHA' in train:
+                    if not train['USE_KL'] and train['USE_PRIOR_ALPHA']:
+                        err("TRAIN.USE_PRIOR_ALPHA=True requires TRAIN.USE_KL=True")
+
+            if loss == 'bce':
+                if train.get('USE_KL') is not None or train.get('USE_PRIOR_ALPHA') is not None:
+                    warn("TRAIN.USE_KL / USE_PRIOR_ALPHA are set but ignored when LOSS='bce' — possible copy-paste from a BBL config")
+
+        # LR
+        lr = train.get('LR', {})
+        if lr:
+            _check_keys(lr, 'TEMPORAL', 'CLASSIFIER', context='TRAIN.LR')
+
+            for group in ('TEMPORAL', 'CLASSIFIER'):
+                g = lr.get(group, {})
+                if g:
+                    _check_keys(g, 'TARGET', 'END', context=f'TRAIN.LR.{group}')
+                    if 'TARGET' in g and 'END' in g:
+                        if g['TARGET'] <= 0:
+                            err(f"TRAIN.LR.{group}.TARGET must be positive")
+                        if g['END'] <= 0:
+                            err(f"TRAIN.LR.{group}.END must be positive")
+                        if g['END'] >= g['TARGET']:
+                            warn(f"TRAIN.LR.{group}.END ({g['END']}) >= TARGET ({g['TARGET']}) — cosine will ascend, is this intended?")
+
+            freeze = train.get('FREEZE_ENCODER')
+            if freeze is False:
+                if 'ENCODER' not in lr:
+                    err("TRAIN.LR.ENCODER is required when FREEZE_ENCODER=False")
+                else:
+                    enc_lr = lr['ENCODER']
+                    _check_keys(enc_lr, 'TARGET', 'END', context='TRAIN.LR.ENCODER')
+                    if 'TARGET' in enc_lr and 'END' in enc_lr and enc_lr['END'] >= enc_lr['TARGET']:
+                        warn(f"TRAIN.LR.ENCODER.END ({enc_lr['END']}) >= TARGET ({enc_lr['TARGET']}) — cosine will ascend")
+
+            if freeze is True and 'ENCODER' in lr:
+                warn("TRAIN.LR.ENCODER is defined but FREEZE_ENCODER=True — encoder LR block will not be used")
+
+    # ── DATASETS ──────────────────────────────────────────────────────────
+    dataset_name = CONFIG.get('DATA', {}).get('DATASET_NAME')
+    datasets     = CONFIG.get('DATASETS', {})
+    loss         = CONFIG.get('TRAIN', {}).get('LOSS')
+
+    if dataset_name and datasets:
+        if dataset_name not in datasets:
+            err(f"DATA.DATASET_NAME '{dataset_name}' not found in DATASETS block")
+        else:
+            ds = datasets[dataset_name]
+            _check_keys(ds, 'MEAN', 'STD', 'CENTER_CROP', 'BCE_POS_CLASS_WEIGHTS',
+                        context=f'DATASETS.{dataset_name}')
+
+            if loss == 'bbl':
+                _check_keys(ds, 'BBL_WEIGHTS', 'PRIOR_ALPHA',
+                            context=f'DATASETS.{dataset_name} (required when LOSS=bbl)')
+                if 'BBL_WEIGHTS' in ds:
+                    _check_keys(ds['BBL_WEIGHTS'], 'C1', 'C2', 'C3',
+                                context=f'DATASETS.{dataset_name}.BBL_WEIGHTS')
+                if 'PRIOR_ALPHA' in ds:
+                    _check_keys(ds['PRIOR_ALPHA'], 'NU', 'PI_C1', 'PI_C2', 'PI_C3',
+                                context=f'DATASETS.{dataset_name}.PRIOR_ALPHA')
+
+    # ── Cross-field ────────────────────────────────────────────────────────
+    data_temporal  = CONFIG.get('DATA', {}).get('TEMPORAL')
+    model_temporal = CONFIG.get('MODEL', {}).get('TEMPORAL', {}).get('NAME')
+
+    if data_temporal is True and model_temporal is None:
+        warn("DATA.TEMPORAL=True but MODEL.TEMPORAL.NAME=null — full sequences are loaded but only the last frame is used")
+    if data_temporal is False and model_temporal in ('lstm', 'gated_pooling'):
+        warn(f"DATA.TEMPORAL=False but MODEL.TEMPORAL.NAME='{model_temporal}' — single frames will be fed as T=1 sequences")
+
+    freeze    = CONFIG.get('TRAIN', {}).get('FREEZE_ENCODER')
+    fs        = CONFIG.get('MODEL', {}).get('ENCODER', {}).get('FROZEN_STAGES', 0)
+    if freeze is True and isinstance(fs, int) and fs > 0:
+        warn("MODEL.ENCODER.FROZEN_STAGES is set but FREEZE_ENCODER=True — FROZEN_STAGES will be ignored")
+
+    # ── Experiment name heuristics ─────────────────────────────────────────
+    exp  = CONFIG.get('EXPERIMENT_NAME', '').lower()
+    enc_name = CONFIG.get('MODEL', {}).get('ENCODER', {}).get('NAME', '').lower()
+
+    if loss == 'bbl' and 'bce' in exp:
+        warn(f"EXPERIMENT_NAME contains 'bce' but LOSS='bbl'")
+    if loss == 'bce' and 'bbl' in exp:
+        warn(f"EXPERIMENT_NAME contains 'bbl' but LOSS='bce'")
+
+    if model_temporal == 'lstm' and 'notemp' in exp:
+        warn("EXPERIMENT_NAME contains 'notemp' but MODEL.TEMPORAL.NAME='lstm'")
+    if model_temporal is None and 'lstm' in exp:
+        warn("EXPERIMENT_NAME contains 'lstm' but MODEL.TEMPORAL.NAME=null")
+
+    if 'swinv2' in enc_name and 'dino' in exp:
+        warn("EXPERIMENT_NAME contains 'dino' but encoder is SwinV2")
+    if 'dinov3' in enc_name and 'swin' in exp:
+        warn("EXPERIMENT_NAME contains 'swin' but encoder is DINOv3")
+
+    if freeze is True and 'e2e' in exp:
+        warn("EXPERIMENT_NAME contains 'e2e' but FREEZE_ENCODER=True")
+    if freeze is False and 'frozen' in exp:
+        warn("EXPERIMENT_NAME contains 'frozen' but FREEZE_ENCODER=False")
+
+    label_method = CONFIG.get('DATA', {}).get('LABEL_METHOD', '')
+    if label_method == 'hard' and 'soft' in exp:
+        warn("EXPERIMENT_NAME contains 'soft' but LABEL_METHOD='hard'")
+    if label_method == 'soft' and 'hard' in exp:
+        warn("EXPERIMENT_NAME contains 'hard' but LABEL_METHOD='soft'")
+
+    # ── Report ─────────────────────────────────────────────────────────────
+    if warnings:
+        print('\nCONFIG WARNINGS:')
+        for w in warnings:
+            print(f'  ⚠  {w}')
+        print()
+
+    if errors:
+        raise ValueError(
+            f'\nConfig validation failed with {len(errors)} error(s):\n' +
+            '\n'.join(f'  ✗  {e}' for e in errors) + '\n'
+        )

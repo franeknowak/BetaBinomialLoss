@@ -13,7 +13,7 @@ from torchvision.transforms import v2
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.model import build_model
-from scripts.helper_functions import get_schedulers, print_run_header, dummy_output_dict, _split_decay_params, print_epoch_summary, print_test_summary
+from scripts.helper_functions import validate_config, get_schedulers, print_run_header, dummy_output_dict, _split_decay_params, print_epoch_summary, print_test_summary
 from scripts.build_loss import build_loss_fn
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
@@ -26,6 +26,7 @@ parser = argparse.ArgumentParser(description="Specify relevant config")
 parser.add_argument('--config_path', type=str, required=True, help='Path to config YAML file')
 args = parser.parse_args()
 CONFIG = get_config(args.config_path)
+validate_config(CONFIG)
 
 EXPERIMENT_NAME = CONFIG['EXPERIMENT_NAME']+str(CONFIG['SEED'])
 DATASET_NAME = CONFIG['DATA']['DATASET_NAME']
