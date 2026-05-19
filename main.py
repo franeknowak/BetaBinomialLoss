@@ -160,7 +160,7 @@ epochs_without_improvement = 0
 EPOCHS = CONFIG['TRAIN']['EPOCHS']
 
 for epoch in range(EPOCHS):
-        print('\n  Training...')
+        print('\nTraining...')
         train_loss_sum = 0.0
         len_train_loader = len(train_dataloader)
         train_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
@@ -195,7 +195,7 @@ for epoch in range(EPOCHS):
         train_results['loss'] = round(train_loss_sum / len_train_loader, 4)
         results_dict[f"Epoch {epoch+1} Train"] = train_results
 
-        print('\n  Validating...')
+        print('\nValidating...')
         val_loss_sum   = 0.0
         len_val_loader = len(val_dataloader)
         val_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
@@ -259,7 +259,7 @@ for epoch in range(EPOCHS):
                         print(f"  Early stopping — best epoch {best_epoch}, Validation BACC {best_bacc_across_epochs:.4f}\n")
                         break
         
-print(f"\n  Testing...")
+print(f"\nTesting...")
 test_loss_sum   = 0.0
 len_test_loader = len(test_dataloader)
 test_output_dict = dummy_output_dict(uncerts=EVIDENTIAL)
