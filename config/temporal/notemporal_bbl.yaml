@@ -1,7 +1,7 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "swinv2_bce_"
+EXPERIMENT_NAME: "swinv2_lstm_bbl_"
 SEED: 0
-DATASET_DIR: "../SwinCVS/endoscapes"
+DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
@@ -14,7 +14,7 @@ MODEL:
     DROP_PATH_RATE: 0.1
     FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
-    NAME: null           # or 'lstm'
+    NAME: 'lstm'           # or 'gated_pooling'
     GATED_POOLING:
       DROPOUT: 0.2
     LSTM:
@@ -26,7 +26,7 @@ MODEL:
 
 DATA:
   DATASET_NAME: "ENDOSCAPES"
-  TEMPORAL: False
+  TEMPORAL: True
   LABEL_CRITERION: null
   LABEL_METHOD: 'soft'
 
@@ -41,7 +41,7 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
-  LOSS: 'bce'
+  LOSS: 'bbl'
   USE_KL: True
   USE_PRIOR_ALPHA: True
   WARMUP_EPOCHS: 1

@@ -1,20 +1,20 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "dinov3_gated_bce_no_ft_"
+EXPERIMENT_NAME: "lstm_bce_"
 SEED: 0
-DATASET_DIR: "../SwinCVS/endoscapes"
+DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
 # SPATIO-TEMPORAL MODEL PARAMS
 MODEL:
   ENCODER:
-    NAME: "vit_base_patch16_dinov3.lvd1689m" #Param: 87.9M, Activ: 280.4M
-    IMG_SIZE: 256
-    FROZEN_STAGES: 6
-    DROP_PATH_RATE: 0.0
+    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
+    IMG_SIZE: 384
+    FROZEN_STAGES: 2
+    DROP_PATH_RATE: 0.1
     FT_WEIGHTS: null
   TEMPORAL:
-    NAME: 'gated_pooling'           # or 'gated_pooling'
+    NAME: 'lstm'
     GATED_POOLING:
       DROPOUT: 0.2
     LSTM:
@@ -45,12 +45,18 @@ TRAIN:
   USE_KL: True
   USE_PRIOR_ALPHA: True
   WARMUP_EPOCHS: 1
-  TEMPORAL_LR:
-    TARGET: 0.0001
-    END: 0.00001
-  CLASSIFIER_LR:
-    TARGET: 0.0001
-    END: 0.00001 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
+  FREEZE_ENCODER: True
+  LR:
+    #ENCODER:
+    #  TARGET: N/A
+    #  END: N/A
+    TEMPORAL:
+      TARGET: 0.0001
+      END: 0.00001
+    CLASSIFIER:
+      TARGET: 0.0001
+      END: 0.00001
+
 
 # DATASETS SHARED INFORMATION - DO NOT CHANGE
 DATASETS:

@@ -1,5 +1,5 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "dinov3_gated_bce_"
+EXPERIMENT_NAME: "swinv2_lstm_bbl_"
 SEED: 0
 DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
@@ -8,13 +8,13 @@ CHECKPOINT_DIR: './weights'
 # SPATIO-TEMPORAL MODEL PARAMS
 MODEL:
   ENCODER:
-    NAME: "vit_base_patch16_dinov3.lvd1689m" #Param: 87.9M, Activ: 280.4M
-    IMG_SIZE: 256
-    FROZEN_STAGES: 6
-    DROP_PATH_RATE: 0.0
-    FT_WEIGHTS: "weights/vit_base_patch16_dinov3.lvd1689m_ft_ENDS.pt"
+    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
+    IMG_SIZE: 384
+    FROZEN_STAGES: 2
+    DROP_PATH_RATE: 0.1
+    FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
-    NAME: 'gated_pooling'           # or 'gated_pooling'
+    NAME: 'lstm'           # or 'gated_pooling'
     GATED_POOLING:
       DROPOUT: 0.2
     LSTM:
@@ -41,7 +41,7 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
-  LOSS: 'bce'
+  LOSS: 'bbl'
   USE_KL: True
   USE_PRIOR_ALPHA: True
   WARMUP_EPOCHS: 1

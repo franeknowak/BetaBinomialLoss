@@ -45,7 +45,7 @@ def build_loss_fn(CONFIG, device):
                 total += F.binary_cross_entropy_with_logits(
                     output[i].squeeze(-1),
                     labels[:, i].float(),
-                    weight=class_weights[i],
+                    pos_weight=class_weights[i],
                 )
             return total
         return loss_fn

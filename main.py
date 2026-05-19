@@ -93,7 +93,13 @@ test_dataloader =   DataLoader( dataset_test,
 model = build_model(CONFIG)
 inspect_model(model, img_size=CONFIG['MODEL']['ENCODER']['IMG_SIZE'])
 
-# Split temporal and classifier parameters
+freeze_encoder = CONFIG['TRAIN']['FREEZE_ENCODER']
+
+if not freeze_encoder:
+    encoder_decay, encoder_no_decay = _split_decay_params(
+        [(n, p) for n, p in model.named_parameters() if n.startswith("encoder")]
+    )
+
 temporal_decay, temporal_no_decay = _split_decay_params(
     [(n, p) for n, p in model.named_parameters() if n.startswith("temporal")]
 )
@@ -101,27 +107,38 @@ classifier_decay, classifier_no_decay = _split_decay_params(
     [(n, p) for n, p in model.named_parameters() if n.startswith("heads")]
 )
 
-# Sanity check: nothing trainable outside temporal/heads
-expected = sum(p.numel() for p in temporal_decay + temporal_no_decay
-                                  + classifier_decay + classifier_no_decay)
-actual = sum(p.numel() for p in model.parameters() if p.requires_grad)
+# Sanity check: all trainable params are accounted for
+accounted = temporal_decay + temporal_no_decay + classifier_decay + classifier_no_decay
+if not freeze_encoder:
+    accounted += encoder_decay + encoder_no_decay
+expected = sum(p.numel() for p in accounted)
+actual   = sum(p.numel() for p in model.parameters() if p.requires_grad)
 assert expected == actual, f"Parameter accounting mismatch: {expected} vs {actual}"
 
-TEMP_LR = CONFIG['TRAIN']['TEMPORAL_LR']
-CLS_LR  = CONFIG['TRAIN']['CLASSIFIER_LR']
+TEMPORAL_LR    = CONFIG['TRAIN']['LR']['TEMPORAL']
+CLASSIFIER_LR  = CONFIG['TRAIN']['LR']['CLASSIFIER']
+WD             = CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY']
 
-WD = CONFIG['TRAIN']['OPTIMIZER']['WEIGHT_DECAY']
+param_groups = [
+    {"params": temporal_decay,      "lr": TEMPORAL_LR['TARGET'],   "end_lr": TEMPORAL_LR['END'],   "weight_decay": WD,  "name": "temporal"},
+    {"params": temporal_no_decay,   "lr": TEMPORAL_LR['TARGET'],   "end_lr": TEMPORAL_LR['END'],   "weight_decay": 0.0, "name": "temporal_nd"},
+    {"params": classifier_decay,    "lr": CLASSIFIER_LR['TARGET'], "end_lr": CLASSIFIER_LR['END'], "weight_decay": WD,  "name": "classifier"},
+    {"params": classifier_no_decay, "lr": CLASSIFIER_LR['TARGET'], "end_lr": CLASSIFIER_LR['END'], "weight_decay": 0.0, "name": "classifier_nd"},
+]
+
+if not freeze_encoder:
+    ENCODER_LR = CONFIG['TRAIN']['LR']['ENCODER']
+    param_groups = [
+        {"params": encoder_decay,    "lr": ENCODER_LR['TARGET'], "end_lr": ENCODER_LR['END'], "weight_decay": WD,  "name": "encoder"},
+        {"params": encoder_no_decay, "lr": ENCODER_LR['TARGET'], "end_lr": ENCODER_LR['END'], "weight_decay": 0.0, "name": "encoder_nd"},
+    ] + param_groups
 
 optimizer = optim.AdamW(
-    [
-        {"params": temporal_decay,      "lr": TEMP_LR['TARGET'], "weight_decay": WD},
-        {"params": temporal_no_decay,   "lr": TEMP_LR['TARGET'], "weight_decay": 0.0},
-        {"params": classifier_decay,    "lr": CLS_LR['TARGET'],  "weight_decay": WD},
-        {"params": classifier_no_decay, "lr": CLS_LR['TARGET'],  "weight_decay": 0.0},
-    ],
+    param_groups,
     betas=CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
     eps=CONFIG['TRAIN']['OPTIMIZER']['EPS'],
 )
+
 model.to(device)
 
 ACCUMULATION_STEPS, warmup_scheduler, cosine_scheduler = get_schedulers(optimizer, CONFIG, len(train_dataloader))
@@ -261,9 +278,11 @@ for epoch in range(EPOCHS):
                 cosine_scheduler.step()
 
         # Log the current lr of each param group for visibility
-        enc_lr_now = optimizer.param_groups[0]['lr']
-        cls_lr_now = optimizer.param_groups[2]['lr']
-        print(f"LR — Encoder: {enc_lr_now:.2e}  |  Classifier: {cls_lr_now:.2e}\n")
+        logged = {      g['name']: g['lr']
+                        for g in optimizer.param_groups
+                        if not g['name'].endswith('_nd') and len(g['params']) > 0}
+        lr_str = '  |  '.join(f"{name}: {lr:.2e}" for name, lr in logged.items())
+        print(f"LR — {lr_str}\n")
 
         # Save weights of the best epoch
         if results['avg_bacc'] > best_bacc_across_epochs:
