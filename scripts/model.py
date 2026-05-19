@@ -60,6 +60,15 @@ class LSTMTemporal(nn.Module):
     def forward(self, z):                   # z: [B, T, D]
         out, _ = self.lstm(z)               # z: [B, T, D]
         return self.dropout(out[:, -1, :])  # [B, hidden_size]
+
+class NoTemporal(nn.Module):
+    """Pass-through for single-frame inputs — no learnable parameters."""
+    def __init__(self, in_dim):
+        super().__init__()
+        self.out_dim = in_dim
+
+    def forward(self, z):   # z: [B, 1, D]
+        return z[:, -1, :]  # [B, D] — takes the (only) frame
     
 class SpatioTemporalModel(nn.Module):
     def __init__(self, encoder, temporal, heads):
@@ -75,6 +84,8 @@ class SpatioTemporalModel(nn.Module):
         return self
 
     def forward(self, x):                       # x: [B, T, C, H, W]
+        if x.ndim == 4:                         # If not temporal model
+            x = x.unsqueeze(1)                  # [B, C, H, W] → [B, 1, C, H, W]
         B, T, C, H, W = x.shape
         x = x.view(B * T, C, H, W)
 
@@ -126,6 +137,9 @@ def _build_temporal(in_dim, CONFIG):
                                      num_layers  = CONFIG['MODEL']['TEMPORAL']['LSTM']['NUM_LAYERS'],
                                      p_dropout   = CONFIG['MODEL']['TEMPORAL']['LSTM']['DROPOUT'])
         return temporal_lstm         
+    
+    elif CONFIG['MODEL']['TEMPORAL']['NAME'] is None:
+        return NoTemporal(in_dim)
     
     else:
         raise ValueError(f"Unknown temporal aggregator: {CONFIG['MODEL']['TEMPORAL']['NAME'] }")
