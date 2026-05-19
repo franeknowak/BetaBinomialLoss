@@ -28,53 +28,109 @@ def get_schedulers(optimizer, CONFIG, len_train_dataloader):
 
     return ACC_STEPS, warmup_scheduler, cosine_scheduler
 
-def inspect_model(model, img_size):
-    # 1. Top-level parameter breakdown
-    print(f"{'Module':<20} {'Total params':>15} {'Trainable':>15} {'Frozen':>15}")
-    print("-" * 68)
-    grand_total, grand_train = 0, 0
+def print_run_header(model, CONFIG, optimizer):
+    W   = 62
+    SEP = '═' * W
+    DIV = '─' * W
+
+    experiment_name = CONFIG['EXPERIMENT_NAME'] + str(CONFIG['SEED'])
+    loss            = CONFIG['TRAIN']['LOSS']
+    freeze          = CONFIG['TRAIN']['FREEZE_ENCODER']
+    frozen_stages   = CONFIG['MODEL']['ENCODER'].get('FROZEN_STAGES', 0)
+
+    # ── Header ────────────────────────────────────────────────────
+    print(f'\n{SEP}')
+    print(f'  EXPERIMENT: {experiment_name}')
+    print(SEP)
+
+    # ── Data / Loss ───────────────────────────────────────────────
+    dataset  = CONFIG['DATA']['DATASET_NAME']
+    labels   = CONFIG['DATA']['LABEL_METHOD']
+    temporal = CONFIG['DATA']['TEMPORAL']
+    print(f"  Data      {dataset}  |  Labels: {labels}  |  Temporal: {temporal}")
+
+    if loss == 'bbl':
+        print(f"  Loss      BBL  (KL={CONFIG['TRAIN']['USE_KL']}, Prior={CONFIG['TRAIN']['USE_PRIOR_ALPHA']})")
+    else:
+        print(f"  Loss      BCE")
+    print(f"  Seed      {CONFIG['SEED']}")
+
+    # ── Architecture ──────────────────────────────────────────────
+    print(f'\n  ARCHITECTURE')
+
+    enc_name = CONFIG['MODEL']['ENCODER']['NAME']
+    if freeze:
+        freeze_str = '[FROZEN]'
+    elif frozen_stages > 0:
+        freeze_str = f'[PARTIAL — stages 0–{frozen_stages - 1} frozen]'
+    else:
+        freeze_str = '[E2E]'
+    print(f"  {'Encoder':<12}{enc_name}")
+    print(f"  {'':12}{freeze_str}")
+
+    temp_name = CONFIG['MODEL']['TEMPORAL']['NAME']
+    if temp_name == 'lstm':
+        lstm     = CONFIG['MODEL']['TEMPORAL']['LSTM']
+        temp_str = f"LSTM  hidden={lstm['HIDDEN_SIZE']}  layers={lstm['NUM_LAYERS']}  dropout={lstm['DROPOUT']}"
+    elif temp_name == 'gated_pooling':
+        gp       = CONFIG['MODEL']['TEMPORAL']['GATED_POOLING']
+        temp_str = f"GatedPooling  dropout={gp['DROPOUT']}"
+    elif temp_name is None:
+        temp_str = 'None  (single-frame)'
+    else:
+        temp_str = temp_name
+    print(f"  {'Temporal':<12}{temp_str}")
+
+    cls_type = 'EvidentialHead' if loss == 'bbl' else 'BCEHead'
+    print(f"  {'Classifier':<12}{cls_type}  dropout={CONFIG['MODEL']['CLASSIFIER']['DROPOUT']}")
+
+    # ── Parameters ────────────────────────────────────────────────
+    print(f'\n  PARAMETERS')
+    print(f"  {'Module':<14}{'Total':>14}{'Trainable':>14}{'Frozen':>14}")
+    print(f'  {DIV}')
+
+    grand_total = grand_train = 0
     for name, module in model.named_children():
-        total = sum(p.numel() for p in module.parameters())
-        train = sum(p.numel() for p in module.parameters() if p.requires_grad)
+        if name == 'spatial_pool':
+            continue
+        total       = sum(p.numel() for p in module.parameters())
+        trainable   = sum(p.numel() for p in module.parameters() if p.requires_grad)
         grand_total += total
-        grand_train += train
-        print(f"{name:<20} {total:>15,} {train:>15,} {total-train:>15,}")
-    print("-" * 68)
-    print(f"{'TOTAL':<20} {grand_total:>15,} {grand_train:>15,} {grand_total-grand_train:>15,}")
-    print(f"Trainable fraction: {grand_train/grand_total:.4%}\n")
+        grand_train += trainable
+        print(f"  {name:<14}{total:>14,}{trainable:>14,}{total - trainable:>14,}")
 
-    # 2. List every trainable parameter (should only be temporal + heads)
-    print("Trainable parameters:")
-    for name, p in model.named_parameters():
-        if p.requires_grad:
-            print(f"  {name:<60} {tuple(p.shape)}")
+    print(f'  {DIV}')
+    print(f"  {'TOTAL':<14}{grand_total:>14,}{grand_train:>14,}{grand_total - grand_train:>14,}")
+    print(f"  Trainable: {grand_train / grand_total:.2%}")
 
-    # 3. Sanity-check that NO encoder param is trainable
+    # Encoder leak: assertion rather than print — should never be silently wrong
     leaked = [n for n, p in model.encoder.named_parameters() if p.requires_grad]
-    print(f"\nEncoder params with requires_grad=True: {len(leaked)} "
-          f"({'OK' if not leaked else 'LEAK — investigate'})")
+    assert not (freeze and leaked), \
+        f"Encoder param leak — {len(leaked)} params have requires_grad=True despite FREEZE_ENCODER=True"
 
-    # 4. Train/eval mode check (run after model.train())
-    model.train()
-    print(f"\nAfter model.train():")
-    print(f"  encoder.training:  {model.encoder.training}  "
-          f"({'WARNING: DropPath active' if model.encoder.training else 'OK'})")
-    print(f"  temporal.training: {model.temporal.training}")
-    print(f"  heads.training:    {model.heads.training}")
+    # ── Training ──────────────────────────────────────────────────
+    print(f'\n  TRAINING')
+    bs  = CONFIG['TRAIN']['BATCH_SIZE']
+    acc = CONFIG['TRAIN']['GRADIENT_ACC_BATCH_SIZE']
+    acc_steps = acc // bs
+    print(f"  Epochs {CONFIG['TRAIN']['EPOCHS']}  |  "
+          f"Batch {bs}  |  "
+          f"Acc {acc_steps} steps  |  "
+          f"Effective batch {acc}")
+    print(f"  Warmup {CONFIG['TRAIN']['WARMUP_EPOCHS']} epoch(s)  |  "
+          f"Early stopping patience {CONFIG['TRAIN']['EARLY_PATIENCE']}")
 
-    # 5. Determinism check on the encoder (catches the DropPath issue empirically)
-    model.eval()
-    x = torch.randn(1, 3, img_size, img_size)
-    with torch.no_grad():
-        z1 = model.encoder(x)
-        z2 = model.encoder(x)
-    print(f"\nEncoder deterministic in eval: {torch.allclose(z1, z2)}")
-    model.train()
-    with torch.no_grad():
-        z1 = model.encoder(x)
-        z2 = model.encoder(x)
-    print(f"Encoder deterministic in train: {torch.allclose(z1, z2)} "
-          f"(False = DropPath is firing on frozen encoder)")
+    opt = CONFIG['TRAIN']['OPTIMIZER']
+    print(f"  AdamW  β={opt['BETAS']}  ε={opt['EPS']}  WD={opt['WEIGHT_DECAY']}")
+
+    groups = [(g['name'], g['lr'], g['end_lr'])
+              for g in optimizer.param_groups
+              if not g['name'].endswith('_nd')]
+    for i, (name, start, end) in enumerate(groups):
+        prefix = '  LR' if i == 0 else '    '
+        print(f"  {prefix}  {name:<14}{start:.2e} → {end:.2e}")
+
+    print(f'{SEP}\n')
 
 def dummy_output_dict(uncerts = False):
     """Creates a dummy output_dict used in training and eval"""

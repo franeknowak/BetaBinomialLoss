@@ -13,7 +13,7 @@ from torchvision.transforms import v2
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
 from scripts.model import build_model
-from scripts.helper_functions import get_schedulers, inspect_model, dummy_output_dict, _split_decay_params
+from scripts.helper_functions import get_schedulers, print_run_header, dummy_output_dict, _split_decay_params
 from scripts.build_loss import build_loss_fn
 from scripts.metrics import update_model_output_dict, calculate_metrics
 
@@ -91,7 +91,6 @@ test_dataloader =   DataLoader( dataset_test,
 ############################################################################################
 # Init Backbone
 model = build_model(CONFIG)
-inspect_model(model, img_size=CONFIG['MODEL']['ENCODER']['IMG_SIZE'])
 
 freeze_encoder = CONFIG['TRAIN']['FREEZE_ENCODER']
 
@@ -138,6 +137,8 @@ optimizer = optim.AdamW(
     betas=CONFIG['TRAIN']['OPTIMIZER']['BETAS'],
     eps=CONFIG['TRAIN']['OPTIMIZER']['EPS'],
 )
+
+print_run_header(model, CONFIG, optimizer)
 
 model.to(device)
 
