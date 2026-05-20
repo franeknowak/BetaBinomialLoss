@@ -1,5 +1,5 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "swinv2_lstm_bce_"
+EXPERIMENT_NAME: "notemp_bce_"
 SEED: 0
 DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
@@ -10,17 +10,9 @@ MODEL:
   ENCODER:
     NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
     IMG_SIZE: 384
-    FROZEN_STAGES: 2
     DROP_PATH_RATE: 0.1
-    FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
-    NAME: 'lstm'           # or 'gated_pooling'
-    GATED_POOLING:
-      DROPOUT: 0.2
-    LSTM:
-      HIDDEN_SIZE: 512
-      NUM_LAYERS: 2
-      DROPOUT: 0.3
+    NAME: null
   CLASSIFIER:
     DROPOUT: 0.5
 
@@ -42,15 +34,10 @@ TRAIN:
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
   LOSS: 'bce'
-  USE_KL: True
-  USE_PRIOR_ALPHA: True
   WARMUP_EPOCHS: 1
-  TEMPORAL_LR:
-    TARGET: 0.0001
-    END: 0.00001
   CLASSIFIER_LR:
     TARGET: 0.0001
-    END: 0.00001 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
+    END: 0.00001 
 
 # DATASETS SHARED INFORMATION - DO NOT CHANGE
 DATASETS:
@@ -68,31 +55,3 @@ DATASETS:
       PI_C1: 0.1563
       PI_C2: 0.1121
       PI_C3: 0.1789
-  CVS_CHALLENGE:
-    MEAN: [0, 0, 0]
-    STD: [0, 0, 0]
-    CENTER_CROP: 0
-    BCE_POS_CLASS_WEIGHTS: [0, 0, 0]
-    BBL_WEIGHTS:
-      C1: [0, 0]     # C1: (1, 1)
-      C2: [0, 0]     # C2: (1, 1)
-      C3: [0, 0]     # C3: (1, 1)
-    PRIOR_ALPHA:
-      NU: 0
-      PI_C1: 0
-      PI_C2: 0
-      PI_C3: 0
-  CHOLEC80:
-    MEAN: [0, 0, 0]
-    STD: [0, 0, 0]
-    CENTER_CROP: 0
-    BCE_POS_CLASS_WEIGHTS: [0, 0, 0]
-    BBL_WEIGHTS:
-      C1: [0, 0]     # C1: (1, 1)
-      C2: [0, 0]     # C2: (1, 1)
-      C3: [0, 0]     # C3: (1, 1)
-    PRIOR_ALPHA:
-      NU: 0
-      PI_C1: 0
-      PI_C2: 0
-      PI_C3: 0
