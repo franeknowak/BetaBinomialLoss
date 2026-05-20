@@ -1,5 +1,5 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "baseline_hard_bce"
+EXPERIMENT_NAME: "baseline_hard_bce_"
 SEED: 0
 DATASET_DIR: "../dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
