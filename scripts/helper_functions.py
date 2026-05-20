@@ -386,10 +386,16 @@ def validate_config(CONFIG):
                 if 'USE_KL' in train and 'USE_PRIOR_ALPHA' in train:
                     if not train['USE_KL'] and train['USE_PRIOR_ALPHA']:
                         err("TRAIN.USE_PRIOR_ALPHA=True requires TRAIN.USE_KL=True")
+                label_method = data.get('LABEL_METHOD')
+                if label_method == 'hard':
+                    err("TRAIN.LOSS='bbl' requires DATA.LABEL_METHOD='soft' — BBL targets annotator agreement and is undefined for hard labels")
 
             if loss == 'bce':
                 if train.get('USE_KL') is not None or train.get('USE_PRIOR_ALPHA') is not None:
                     warn("TRAIN.USE_KL / USE_PRIOR_ALPHA are set but ignored when LOSS='bce' — possible copy-paste from a BBL config")
+                label_method = data.get('LABEL_METHOD')
+                if label_method == 'soft':
+                    warn("TRAIN.LOSS='bce' with DATA.LABEL_METHOD='soft' — hard labels are default for BCE, please confirm soft bce is the intended setup")
 
         # LR
         lr = train.get('LR', {})
