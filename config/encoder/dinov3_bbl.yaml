@@ -11,7 +11,11 @@ MODEL:
     NAME: "vit_base_patch16_dinov3.lvd1689m" #Param: 87.9M, Activ: 280.4M
     IMG_SIZE: 256
   TEMPORAL:
-    NAME: null
+    NAME: 'lstm'
+    LSTM:
+      HIDDEN_SIZE: 512
+      NUM_LAYERS: 2
+      DROPOUT: 0.3
   CLASSIFIER:
     DROPOUT: 0.5
 
@@ -38,6 +42,9 @@ TRAIN:
   WARMUP_EPOCHS: 1
   FREEZE_ENCODER: True
   LR:
+    TEMPORAL:
+      TARGET: 0.0001
+      END: 0.00001
     CLASSIFIER:
       TARGET: 0.0001
       END: 0.00001
