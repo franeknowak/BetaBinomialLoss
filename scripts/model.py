@@ -58,10 +58,10 @@ class EvidentialHead(nn.Module):
         super().__init__()
         self.fc = nn.Sequential(
             nn.LayerNorm(in_feats),
-            nn.Linear(in_feats, in_feats),
+            nn.Linear(in_feats, in_feats//2),
             nn.GELU(),
             nn.Dropout(p=p_dropout),
-            nn.Linear(in_feats, 2),
+            nn.Linear(in_feats//2, 2),
         )
 
     def forward(self, x):
@@ -73,10 +73,10 @@ class BCEHead(nn.Module):
         super().__init__()
         self.fc = nn.Sequential(
             nn.LayerNorm(in_feats),
-            nn.Linear(in_feats, in_feats),
+            nn.Linear(in_feats, in_feats//2),
             nn.GELU(),
             nn.Dropout(p=p_dropout),
-            nn.Linear(in_feats, 1),
+            nn.Linear(in_feats//2, 1),
         )
 
     def forward(self, x):
@@ -88,10 +88,10 @@ class GatedPooling(nn.Module):
         super().__init__()
         self.gate = nn.Sequential(
             nn.LayerNorm(dim),
-            nn.Linear(dim, dim),
+            nn.Linear(dim, dim//4),
             nn.GELU(),
             nn.Dropout(p_dropout),
-            nn.Linear(dim, 1)
+            nn.Linear(dim//4, 1)
         )
         self.out_dim = dim
 
