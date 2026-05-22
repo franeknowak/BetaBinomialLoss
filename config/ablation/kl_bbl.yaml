@@ -10,9 +10,7 @@ MODEL:
   ENCODER:
     NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
     IMG_SIZE: 384
-    FROZEN_STAGES: 2
     DROP_PATH_RATE: 0.1
-    FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
     NAME: 'gated_pooling'
     GATED_POOLING:

@@ -4,4 +4,7 @@
 /weights/*.pt
 /results/*.json
 /results/*/
-.claude/
+*.qsub.sh
+*.o*
+cry_for_help/
+.hf_cache/
