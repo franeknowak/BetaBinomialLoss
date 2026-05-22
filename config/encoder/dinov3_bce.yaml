@@ -1,7 +1,7 @@
 # GENERAL PARAMS
 EXPERIMENT_NAME: "dinov3_bce_"
 SEED: 0
-DATASET_DIR: "../dataset/endoscapes"
+DATASET_DIR: "../SwinCVS/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
@@ -11,11 +11,9 @@ MODEL:
     NAME: "vit_base_patch16_dinov3.lvd1689m" #Param: 87.9M, Activ: 280.4M
     IMG_SIZE: 256
   TEMPORAL:
-    NAME: 'lstm'
-    LSTM:
-      HIDDEN_SIZE: 512
-      NUM_LAYERS: 2
-      DROPOUT: 0.3
+    NAME: 'gated_pooling'
+    GATED_POOLING:
+      DROPOUT: 0.2
   CLASSIFIER:
     DROPOUT: 0.5
 
