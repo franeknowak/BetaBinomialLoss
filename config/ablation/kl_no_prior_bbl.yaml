@@ -1,7 +1,7 @@
 # GENERAL PARAMS
-EXPERIMENT_NAME: "swinv2_lstm_bbl_"
+EXPERIMENT_NAME: "kl_no_prior_bbl_"
 SEED: 0
-DATASET_DIR: "../dataset/endoscapes"
+DATASET_DIR: "../SwinCVS/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
@@ -14,13 +14,9 @@ MODEL:
     DROP_PATH_RATE: 0.1
     FT_WEIGHTS: "weights/swinv2_base_window12to24_192to384.ms_in22k_ft_in1k_ft_ENDS.pt"
   TEMPORAL:
-    NAME: 'lstm'           # or 'gated_pooling'
+    NAME: 'gated_pooling'
     GATED_POOLING:
       DROPOUT: 0.2
-    LSTM:
-      HIDDEN_SIZE: 512
-      NUM_LAYERS: 2
-      DROPOUT: 0.3
   CLASSIFIER:
     DROPOUT: 0.5
 
@@ -43,14 +39,17 @@ TRAIN:
     WEIGHT_DECAY: 0.05
   LOSS: 'bbl'
   USE_KL: True
-  USE_PRIOR_ALPHA: True
+  USE_PRIOR_ALPHA: False
   WARMUP_EPOCHS: 1
-  TEMPORAL_LR:
-    TARGET: 0.0001
-    END: 0.00001
-  CLASSIFIER_LR:
-    TARGET: 0.0001
-    END: 0.00001 # This is essentially irrelevant because cosine_scheduler forces it to reduce to 1e-6 anyway
+  FREEZE_ENCODER: True
+  LR:
+    TEMPORAL:
+      TARGET: 0.0001
+      END: 0.00001
+    CLASSIFIER:
+      TARGET: 0.0001
+      END: 0.00001
+
 
 # DATASETS SHARED INFORMATION - DO NOT CHANGE
 DATASETS:
