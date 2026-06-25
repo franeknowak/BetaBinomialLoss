@@ -8,7 +8,7 @@ Official repository for the paper **"B² Loss for Evidential Classification of C
 
 ## Authors
 
-- **Franciszek M. Nowak**¹ ✉ — [franciszek.nowak.23@ucl.ac.uk](mailto:franciszek.nowak.23@ucl.ac.uk) ([ORCID](https://orcid.org/0009-0006-4969-0139))
+- **Franciszek M. Nowak**¹ ([ORCID](https://orcid.org/0009-0006-4969-0139))
 - **Evangelos B. Mazomenos**¹ ([ORCID](https://orcid.org/0000-0003-0357-5996))
 - **Brian Davidson**¹˒² ([ORCID](https://orcid.org/0000-0002-9152-5907))
 - **Matthew J. Clarkson**¹ ([ORCID](https://orcid.org/0000-0002-5565-1252))
