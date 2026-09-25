@@ -6,6 +6,6 @@
 /results/*/
 *.qsub.sh
 *.o*
-cry_for_help/
 .hf_cache/
 /dataset/
+/.claude

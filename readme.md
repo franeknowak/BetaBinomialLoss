@@ -2,7 +2,7 @@
 
 Official repository for the paper **"B² Loss for Evidential Classification of Critical View of Safety in Laparoscopic Cholecystectomy."**
 
-> Published at MICCAI 2026 (link TBC)
+> Published at [MICCAI 2026](https://doi.org/10.1007/978-3-032-38233-7_3), LNCS vol. 16892
 
 ---
 
@@ -52,11 +52,6 @@ For a different CUDA version, install `torch` and `torchvision` first following
 the [official selector](https://pytorch.org/get-started/locally/), then run
 `pip install -r requirements.txt` to pick up the rest.
 
-> **Note on NumPy.** The pins keep NumPy below 2.0 — scikit-learn 1.3.2 is
-> compiled against the NumPy 1.x ABI and will not import under NumPy 2.x. A
-> clean virtual environment is recommended, since packages in `~/.local` take
-> priority over the environment and can shadow these pins.
-
 ### Dataset
 
 Nothing to do: on the first run the training script checks for the dataset and,
@@ -95,18 +90,38 @@ collects every results file into `results/experiment_summary.md`.
 
 If you use this work, please cite:
 
+> Nowak, F.M., Mazomenos, E.B., Davidson, B., Clarkson, M.J. (2027). B² Loss for
+> Evidential Classification of Critical View of Safety in Laparoscopic
+> Cholecystectomy. In: Yang, G., et al. Medical Image Computing and Computer
+> Assisted Intervention – MICCAI 2026. Lecture Notes in Computer Science,
+> vol 16892. Springer, Cham. https://doi.org/10.1007/978-3-032-38233-7_3
+
 ```bibtex
-@inproceedings{nowak2025bbloss,
+@inproceedings{nowak2027b2loss,
   title     = {B$^2$ Loss for Evidential Classification of Critical View of Safety in Laparoscopic Cholecystectomy},
   author    = {Nowak, Franciszek M. and Mazomenos, Evangelos B. and Davidson, Brian and Clarkson, Matthew J.},
-  booktitle = {TBC},
-  year      = {TBC},
+  editor    = {Yang, Guang-Zhong and others},
+  booktitle = {Medical Image Computing and Computer Assisted Intervention -- MICCAI 2026},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {16892},
+  publisher = {Springer},
+  address   = {Cham},
+  year      = {2027},
+  doi       = {10.1007/978-3-032-38233-7_3},
+  isbn      = {978-3-032-38233-7},
 }
 ```
 
 ## License
 
-> _TBC_
+The code in this repository is released under the [MIT License](LICENSE): you
+are free to use, modify and redistribute it, including commercially, provided
+the copyright notice is retained. If you use it in academic work, please also
+cite the paper (see [Citation](#citation)).
+
+The published paper itself is **not** open access: © 2027 The Author(s), under
+exclusive license to Springer Nature Switzerland AG. Cite the DOI above rather
+than redistributing the chapter PDF.
 
 ## Acknowledgements
 
