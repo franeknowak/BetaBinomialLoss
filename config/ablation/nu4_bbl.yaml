@@ -1,10 +1,10 @@
-EXPERIMENT_NAME: swinv2_bbl_
+EXPERIMENT_NAME: nu4_bbl_
 SEED: 0
 DATASET_DIR: ../SwinCVS/endoscapes
 ANNOTATIONS_PATH: ./config/reformatted_annotations_frames.json
 CHECKPOINT_DIR: ./weights
 MODEL:
-  ENCODER: {NAME: swinv2_base_window12to24_192to384.ms_in22k_ft_in1k, IMG_SIZE: 384}
+  ENCODER: {NAME: vit_base_patch16_dinov3.lvd1689m, IMG_SIZE: 256}
   TEMPORAL:
     NAME: gated_pooling
     GATED_POOLING: {DROPOUT: 0.2}
@@ -38,4 +38,4 @@ DATASETS:
       C1: [3.1985, 0.5926]
       C2: [4.4615, 0.5631]
       C3: [2.7952, 0.6089]
-    PRIOR_ALPHA: {NU: 2, PI_C1: 0.1563, PI_C2: 0.1121, PI_C3: 0.1789}
+    PRIOR_ALPHA: {NU: 4, PI_C1: 0.1563, PI_C2: 0.1121, PI_C3: 0.1789}

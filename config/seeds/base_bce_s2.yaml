@@ -1,15 +1,15 @@
-EXPERIMENT_NAME: swinv2_bbl_
-SEED: 0
+EXPERIMENT_NAME: base_bce_
+SEED: 2
 DATASET_DIR: ../SwinCVS/endoscapes
 ANNOTATIONS_PATH: ./config/reformatted_annotations_frames.json
 CHECKPOINT_DIR: ./weights
 MODEL:
-  ENCODER: {NAME: swinv2_base_window12to24_192to384.ms_in22k_ft_in1k, IMG_SIZE: 384}
+  ENCODER: {NAME: vit_base_patch16_dinov3.lvd1689m, IMG_SIZE: 256}
   TEMPORAL:
     NAME: gated_pooling
     GATED_POOLING: {DROPOUT: 0.2}
   CLASSIFIER: {DROPOUT: 0.5}
-DATA: {DATASET_NAME: ENDOSCAPES, TEMPORAL: true, LABEL_CRITERION: null, LABEL_METHOD: soft}
+DATA: {DATASET_NAME: ENDOSCAPES, TEMPORAL: true, LABEL_CRITERION: null, LABEL_METHOD: hard}
 TRAIN:
   EPOCHS: 15
   BATCH_SIZE: 4
@@ -20,9 +20,7 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
-  LOSS: bbl
-  USE_KL: true
-  USE_PRIOR_ALPHA: true
+  LOSS: bce
   WARMUP_EPOCHS: 1
   FREEZE_ENCODER: true
   LR:

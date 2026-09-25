@@ -1,13 +1,13 @@
-EXPERIMENT_NAME: swinv2_bbl_
+EXPERIMENT_NAME: lstm_bbl_
 SEED: 0
 DATASET_DIR: ../SwinCVS/endoscapes
 ANNOTATIONS_PATH: ./config/reformatted_annotations_frames.json
 CHECKPOINT_DIR: ./weights
 MODEL:
-  ENCODER: {NAME: swinv2_base_window12to24_192to384.ms_in22k_ft_in1k, IMG_SIZE: 384}
+  ENCODER: {NAME: vit_base_patch16_dinov3.lvd1689m, IMG_SIZE: 256}
   TEMPORAL:
-    NAME: gated_pooling
-    GATED_POOLING: {DROPOUT: 0.2}
+    NAME: lstm
+    LSTM: {HIDDEN_SIZE: 512, NUM_LAYERS: 2, DROPOUT: 0.3}
   CLASSIFIER: {DROPOUT: 0.5}
 DATA: {DATASET_NAME: ENDOSCAPES, TEMPORAL: true, LABEL_CRITERION: null, LABEL_METHOD: soft}
 TRAIN:
