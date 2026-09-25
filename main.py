@@ -12,6 +12,7 @@ from torchvision.transforms import v2
 
 from scripts.env import set_deterministic_behaviour, get_config
 from scripts.dataset import EndoscapesDataset
+from scripts.download_dataset import ensure_dataset
 from scripts.model import build_model
 from scripts.helper_functions import validate_config, get_schedulers, print_run_header, dummy_output_dict, _split_decay_params, print_epoch_summary, print_test_summary
 from scripts.build_loss import build_loss_fn
@@ -44,6 +45,9 @@ set_deterministic_behaviour(CONFIG['SEED'])
 
 ############################################################################################
 ############################################################################################
+# Fetch the dataset on first use
+ensure_dataset(CONFIG['DATASET_DIR'])
+
 transforms =  v2.Compose([  v2.CenterCrop(CONFIG['DATASETS'][DATASET_NAME]['CENTER_CROP']),
                             v2.Resize((CONFIG['MODEL']['ENCODER']['IMG_SIZE'], CONFIG['MODEL']['ENCODER']['IMG_SIZE'])),
                             v2.ToImage(),                

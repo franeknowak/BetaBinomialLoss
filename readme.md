@@ -37,12 +37,42 @@ On Endoscapes2023, the proposed approach significantly improves average balanced
 
 ## Installation
 
+Requires Python 3.10 and an NVIDIA GPU. The pinned `requirements.txt` installs
+the CUDA 12.1 build of PyTorch.
+
 ```bash
 git clone https://github.com/franeknowak/BetaBinomialLoss.git
 cd BetaBinomialLoss
+python3.10 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-TBC
 ```
+
+For a different CUDA version, install `torch` and `torchvision` first following
+the [official selector](https://pytorch.org/get-started/locally/), then run
+`pip install -r requirements.txt` to pick up the rest.
+
+> **Note on NumPy.** The pins keep NumPy below 2.0 — scikit-learn 1.3.2 is
+> compiled against the NumPy 1.x ABI and will not import under NumPy 2.x. A
+> clean virtual environment is recommended, since packages in `~/.local` take
+> priority over the environment and can shadow these pins.
+
+### Dataset
+
+Nothing to do: on the first run the training script checks for the dataset and,
+if it is missing, downloads Endoscapes2023 from the
+[official CAMMA release](https://s3.unistra.fr/camma_public/datasets/endoscapes/endoscapes.zip),
+unpacks it into `./dataset/` and deletes the archive. The download is about
+5.9GB and happens only once; every later run detects the dataset and skips it.
+
+To fetch the data ahead of time:
+
+```bash
+python -m scripts.download_dataset
+```
+
+If you already have Endoscapes2023 elsewhere, point `DATASET_DIR` in your config
+at it (or symlink it to `./dataset/endoscapes`) and no download takes place.
 
 ## Usage
 
@@ -56,6 +86,10 @@ Ready-to-run configs are in [`config/examples/`](config/examples), covering the
 B² Model from the paper, the SwinV2 backbone, the BCE baseline and the
 single-frame variant. See [`docs/configuration.md`](docs/configuration.md) for
 what to change to run a different experiment.
+
+Each run writes `results/<EXPERIMENT_NAME><SEED>_results.json` and saves the
+best epoch's weights to `./weights`. Running `python results/generate_summary.py`
+collects every results file into `results/experiment_summary.md`.
 
 ## Citation
 
