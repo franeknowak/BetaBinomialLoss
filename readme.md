@@ -46,9 +46,16 @@ TBC
 
 ## Usage
 
+Each experiment is defined by a single YAML config:
+
 ```bash
-TBC
+python main.py --config_path ./config/examples/b2_dinov3_gatedpool.yaml
 ```
+
+Ready-to-run configs are in [`config/examples/`](config/examples), covering the
+B² Model from the paper, the SwinV2 backbone, the BCE baseline and the
+single-frame variant. See [`docs/configuration.md`](docs/configuration.md) for
+what to change to run a different experiment.
 
 ## Citation
 
