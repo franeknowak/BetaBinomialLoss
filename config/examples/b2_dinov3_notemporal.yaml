@@ -1,27 +1,32 @@
+# ============================================================================
+# B² Model without temporal aggregation — a single frame is classified
+# directly, isolating the contribution of the 5-frame clip.
+#
+# See docs/configuration.md for the options you can change.
+# ============================================================================
+
 # GENERAL PARAMS
-EXPERIMENT_NAME: "baseline_soft_bce_"
+EXPERIMENT_NAME: "b2_dinov3_notemporal_"
 SEED: 0
-DATASET_DIR: "../SwinCVS/endoscapes"
+DATASET_DIR: "./dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
 # SPATIO-TEMPORAL MODEL PARAMS
 MODEL:
   ENCODER:
-    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
-    IMG_SIZE: 384
+    NAME: "vit_base_patch16_dinov3.lvd1689m"
+    IMG_SIZE: 256           # native input size of DINOv3 ViT-B/16
   TEMPORAL:
-    NAME: 'gated_pooling'
-    GATED_POOLING:
-      DROPOUT: 0.2
+    NAME: null
   CLASSIFIER:
     DROPOUT: 0.5
 
 DATA:
   DATASET_NAME: "ENDOSCAPES"
-  TEMPORAL: True
+  TEMPORAL: False           # single frame per sample
   LABEL_CRITERION: null
-  LABEL_METHOD: 'soft'
+  LABEL_METHOD: 'soft'      # required by the B² loss
 
 # TRAINING PARAMS
 TRAIN:
@@ -34,7 +39,9 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
-  LOSS: 'bce'
+  LOSS: 'bbl'               # Beta-Binomial (B²) loss
+  USE_KL: True              # KL regularisation towards a prior Beta
+  USE_PRIOR_ALPHA: True     # prevalence-aware prior (uses PRIOR_ALPHA below)
   WARMUP_EPOCHS: 1
   FREEZE_ENCODER: True
   LR:

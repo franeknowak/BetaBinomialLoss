@@ -1,15 +1,22 @@
+# ============================================================================
+# B² Model with the SwinV2 backbone — identical to b2_dinov3_gatedpool.yaml
+# except for the encoder (and its native input size).
+#
+# See docs/configuration.md for the options you can change.
+# ============================================================================
+
 # GENERAL PARAMS
-EXPERIMENT_NAME: "baseline_bbl_"
+EXPERIMENT_NAME: "b2_swinv2_gatedpool_"
 SEED: 0
-DATASET_DIR: "../SwinCVS/endoscapes"
+DATASET_DIR: "./dataset/endoscapes"
 ANNOTATIONS_PATH: "./config/reformatted_annotations_frames.json"
 CHECKPOINT_DIR: './weights'
 
 # SPATIO-TEMPORAL MODEL PARAMS
 MODEL:
   ENCODER:
-    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k" #Param: 87.9M, Activ: 280.4M
-    IMG_SIZE: 384
+    NAME: "swinv2_base_window12to24_192to384.ms_in22k_ft_in1k"
+    IMG_SIZE: 384           # native input size of this SwinV2 variant
   TEMPORAL:
     NAME: 'gated_pooling'
     GATED_POOLING:
@@ -19,9 +26,9 @@ MODEL:
 
 DATA:
   DATASET_NAME: "ENDOSCAPES"
-  TEMPORAL: True
+  TEMPORAL: True            # load all 5 frames of the clip
   LABEL_CRITERION: null
-  LABEL_METHOD: 'soft'
+  LABEL_METHOD: 'soft'      # required by the B² loss
 
 # TRAINING PARAMS
 TRAIN:
@@ -34,9 +41,9 @@ TRAIN:
     EPS: 1.0e-08
     BETAS: [0.9, 0.999]
     WEIGHT_DECAY: 0.05
-  LOSS: 'bbl'
-  USE_KL: True
-  USE_PRIOR_ALPHA: True
+  LOSS: 'bbl'               # Beta-Binomial (B²) loss
+  USE_KL: True              # KL regularisation towards a prior Beta
+  USE_PRIOR_ALPHA: True     # prevalence-aware prior (uses PRIOR_ALPHA below)
   WARMUP_EPOCHS: 1
   FREEZE_ENCODER: True
   LR:
