@@ -1,0 +1,48 @@
+# HANDOFF — for the local Claude Code session that builds and runs the experiments
+
+*Written 2026-10-09 by the planning session (cloud). Read this, then `STATE.md`, then `05_plan.md`. Do not redo the planning.*
+
+## What exists
+- `05_plan.md`: **the plan to execute**. Amendments dated 2026-10-09 at the top override anything below them.
+- `01_foundations.md` + `01b_feedback_and_step2_brief.md`: the theory and the Step-1 findings (why the recipe changed).
+- `04_target_journal.md`, `06_cuts_and_unverified.md`.
+- History, read only if needed: `02_*`, `03_*`, `analysis/`.
+
+## Your job
+Round 0 of `05_plan.md` §4.4 (modules a → g in order, each with a short spec and a unit test, committed before the next starts). Then launch R1 and R2 on the cluster, R3 analysis, and R4 (CVS Challenge, last). Stop and report to the user at the end of each round, and whenever a pre-specified rule is triggered (ε fallback, margin cap, access delay).
+
+## Hard rules
+1. **Git:** work only on branch `journal-extension`. Never commit to or push `main`. Commit small; push after each module.
+2. **Pre-registration:** the success criteria (`05_plan.md` §5) with the δ values filled in are committed and dated at the end of R0, before any R1 job is submitted.
+3. **Test discipline:** test predictions are written to disk but never printed, plotted or summarised before R3 (CVS Challenge: after R3, in R4). The trainer must not print test metrics (the current `main.py` does; remove that).
+4. **Validation only** for tuning, thresholds, c, S\* and S\*(m), checkpoint choice and the margin pilot.
+5. **Do not change the design mid-round.** A bug means fix it and re-run the whole affected block. Anything else goes to the user.
+6. **Keep `journal_plan/STATE.md` current** after every unit of work: current step, what is done, the exact next action, open questions. The user's Claude usage is limited and sessions may be cut off.
+7. Fixed scientific choices (do not revisit):
+   - DINOv3 ViT-B/16 only, from public weights; no majority-vote pre-adaptation;
+   - softplus + ε head (no `+1`);
+   - single images; no per-video evaluation;
+   - 5 seeds everywhere; recall 0.90;
+   - metrics include at least ACC, BACC, mAP, F1.
+
+## Cluster access (from the user; treat as facts to work with, not a script)
+- From the user's Mac: `ssh -o BatchMode=yes comic '<command>'`. `comic` is an `~/.ssh/config` alias for `fnowak@comic.cs.ucl.ac.uk`, reached via ProxyJump through `tails.cs.ucl.ac.uk`. Connections are multiplexed (ControlMaster, about 4 h).
+- **Never ask for, store or type credentials. Always use `BatchMode=yes`.** On an authentication failure, stop and report the error; do not try alternatives.
+- `comic` is a **login node**: file operations and scheduler commands only, no compute. Real work goes in submitted jobs.
+- Project root: `/cluster/project7/FranekLapChole/` (folders: `BetaBinomialLoss`, `dinov3`, `MICCVS`, `SwinCVS`, `backup`; plus `download_cvschallenge*.qsub.sh`, `remove_files.qsub.sh`).
+- The scheduler appears to be SGE. Confirm with `ssh -o BatchMode=yes comic 'which qsub sbatch'`, and use the existing `*.qsub.sh` files as templates.
+- Suggested flow:
+  - develop on the Mac;
+  - push `journal-extension`;
+  - on the cluster, `git fetch && git checkout journal-extension` inside `/cluster/project7/FranekLapChole/BetaBinomialLoss`;
+  - submit one job array per round block;
+  - poll `qstat` sparingly;
+  - pull back only the small prediction and metric files.
+- Find out on day 1 where the datasets live on the cluster (Endoscapes is installed; CVS Challenge download scripts exist), and the GPU queue and job time limits. Write them into `STATE.md`.
+
+## First actions
+1. If the branch `journal-extension` does not exist yet, create it from the current `main`, commit `CLAUDE.md` and `journal_plan/` (not `Claude outputs/`), and `git push -u origin journal-extension`. Otherwise `git fetch origin && git checkout journal-extension`.
+2. Read this file, `STATE.md`, and `05_plan.md` §1–§5.
+3. Check cluster access with one harmless command (`ssh -o BatchMode=yes comic 'hostname; which qsub sbatch'`). Report the result.
+4. Remind the user to send the MHIST access request (R0 day 1).
+5. Start module a.
