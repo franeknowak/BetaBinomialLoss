@@ -34,6 +34,7 @@
 >    - One checkpoint per run, chosen on the mean over heads. Reported: the A and B evaluation of every run, and a supplementary A↔B swap table (discrimination at B, panel metrics at A).
 >    - Added to R1: CIFAR-10H n = 3 with **full-panel validation** (sensitivity check separating selection noise from missing rater information). Main design keeps validation votes subsampled like training.
 > 6. Module e's real-data check uses the smoke-test validation predictions of the new models instead of MICCAI-era predictions (the MICCAI results files hold only per-epoch summaries; user decision).
+> 7. Loss device (§2 table): the B² loss stays on the GPU but without `torch.lgamma` — with integer votes the Beta-Binomial NLL is computed exactly as sums of logs; log C(n, k) and the KL term run on the CPU. Reason: `lgamma`/`digamma` on CUDA fail on some UCL nodes (user's GitHub issue #22; pilot job 7522356). Same values to 1e-9.
 
 ## 1. Summary (one page)
 

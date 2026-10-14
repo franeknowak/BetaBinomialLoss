@@ -76,18 +76,40 @@ def _log_beta(x, y):
     return torch.lgamma(x) + torch.lgamma(y) - torch.lgamma(x + y)
 
 
+def _on_cpu(f, *xs):
+    """Evaluate f on CPU copies and move the result back (autograd flows through the transfers).
+
+    torch.lgamma / digamma on CUDA fail on some nodes of the UCL cluster (PyTorch 2.5.1+cu118, A6000): SIGILL in
+    the MICCAI work (GitHub issue #22) and 'CUDA driver error: invalid argument' in job 7522356. Workaround from #22.
+    """
+    dev = xs[0].device
+    return f(*(x.cpu() for x in xs)).to(dev)
+
+
 def beta_binomial_nll(a0, a1, k, n):
-    """Full Beta-Binomial NLL of k positives out of n under Beta(a1, a0), including log C(n, k)."""
-    log_comb = torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
-    return -(log_comb + _log_beta(k + a1, n - k + a0) - _log_beta(a1, a0))
+    """Full Beta-Binomial NLL of k positives out of n under Beta(a1, a0), including log C(n, k).
+
+    k and n are integer-valued, so B(k + a1, n - k + a0) / B(a1, a0) is evaluated as finite products
+    Π_{j<k}(a1 + j) Π_{j<n-k}(a0 + j) / Π_{j<n}(a0 + a1 + j): exact, only `log` on the GPU (no lgamma, see
+    _on_cpu), and stable at large S. log C(n, k) has no parameters and is computed on the CPU.
+    """
+    log_comb = _on_cpu(lambda n_, k_: torch.lgamma(n_ + 1) - torch.lgamma(k_ + 1) - torch.lgamma(n_ - k_ + 1), n, k)
+    s = a0 + a1
+    ll = torch.zeros_like(s)
+    for j in range(int(n.max().item())):
+        ll = ll + torch.where(j < k, torch.log(a1 + j), 0.0) + torch.where(j < n - k, torch.log(a0 + j), 0.0) \
+            - torch.where(j < n, torch.log(s + j), 0.0)
+    return -(log_comb + ll)
 
 
 def beta_kl(a0, a1, p0, p1):
-    """KL( Beta(a1, a0) || Beta(p1, p0) ), analytic."""
-    s, ps = a0 + a1, p0 + p1
-    return (_log_beta(p1, p0) - _log_beta(a1, a0)
-            + (a1 - p1) * torch.digamma(a1) + (a0 - p0) * torch.digamma(a0)
-            + (ps - s) * torch.digamma(s))
+    """KL( Beta(a1, a0) || Beta(p1, p0) ), analytic; evaluated on the CPU (lgamma/digamma, see _on_cpu)."""
+    def kl(a0, a1, p0, p1):
+        s, ps = a0 + a1, p0 + p1
+        return (_log_beta(p1, p0) - _log_beta(a1, a0)
+                + (a1 - p1) * torch.digamma(a1) + (a0 - p0) * torch.digamma(a0)
+                + (ps - s) * torch.digamma(s))
+    return _on_cpu(kl, a0, a1, *torch.broadcast_tensors(p0, p1))
 
 
 def stuck_share(logits: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
@@ -141,7 +163,7 @@ class PanelLoss(nn.Module):
     def per_sample(self, out: torch.Tensor, k: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
         cfg = self.cfg
         if cfg.kind == "b2":
-            # float64: lgamma of large arguments loses the small differences the loss depends on in float32
+            # float64: at large S the log terms differ by tiny amounts that float32 loses
             a0, a1 = alphas(out.double(), cfg.eps, cfg.plus_one)
             loss = beta_binomial_nll(a0, a1, k.double(), n.double())
         else:

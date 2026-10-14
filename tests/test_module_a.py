@@ -183,3 +183,24 @@ def test_float32_inputs_are_exact_at_large_spread():
     ref = -stats.betabinom.logpmf(1, 3, a1.numpy(), a0.numpy())
     np.testing.assert_allclose(ours.numpy(), ref, rtol=1e-6)
     assert ours[1, 0] != ours[0, 0]
+
+
+def test_bb_nll_matches_lgamma_form_and_keeps_lgamma_off_gpu(monkeypatch):
+    """The lgamma-free B² NLL (issue #22 workaround) equals the closed form, incl. large S and n up to 63,
+    and every lgamma/digamma call it makes is on a CPU tensor."""
+    from b2j import losses as L
+    g = torch.Generator().manual_seed(0)
+    n = torch.randint(1, 64, (200, 3), generator=g).double()
+    k = torch.floor(torch.rand(200, 3, generator=g, dtype=torch.float64) * (n + 1)).clamp(max=n)
+    a0 = torch.exp(torch.randn(200, 3, generator=g, dtype=torch.float64) * 3)
+    a1 = torch.exp(torch.randn(200, 3, generator=g, dtype=torch.float64) * 3)
+    closed = -(torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
+               + L._log_beta(k + a1, n - k + a0) - L._log_beta(a1, a0))
+    torch.testing.assert_close(L.beta_binomial_nll(a0, a1, k, n), closed, rtol=1e-9, atol=1e-7)
+    seen = []
+    real = torch.lgamma, torch.digamma
+    monkeypatch.setattr(torch, "lgamma", lambda x: (seen.append(x.device.type), real[0](x))[1])
+    monkeypatch.setattr(torch, "digamma", lambda x: (seen.append(x.device.type), real[1](x))[1])
+    L.beta_binomial_nll(a0, a1, k, n)
+    L.beta_kl(a0, a1, torch.tensor([1.0, 2.0, 3.0]).double(), torch.tensor([2.0, 1.0, 0.5]).double())
+    assert seen and set(seen) == {"cpu"}

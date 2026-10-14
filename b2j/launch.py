@@ -12,15 +12,26 @@ from b2j.runs import execute
 
 
 def gpu_preflight():
-    """Run every GPU op the losses need once; a broken card (e.g. job 7522356: 'CUDA driver error: invalid argument'
-    in float64 lgamma) then fails the job at once instead of failing every B² run."""
+    """Forward + backward of every variant's loss on the GPU once, so a broken card fails the job at once.
+
+    torch.lgamma/digamma on CUDA fail on some UCL nodes (GitHub issue #22; job 7522356): the losses keep those on
+    the CPU (losses._on_cpu), and this check confirms the GPU path that remains works.
+    """
     if not torch.cuda.is_available():
         return
-    x = torch.linspace(0.5, 60, 64, dtype=torch.float64, device="cuda")
-    vals = [torch.lgamma(x), torch.digamma(x), torch.nn.functional.softplus(x), torch.lgamma(x.float())]
+    from b2j.variants import VARIANTS, build
+    k = torch.tensor([[0.0, 1, 3], [2, 3, 1]] * 4).cuda()
+    n = torch.full_like(k, 3.0)
+    for name in VARIANTS:
+        head, loss = build(name, 8, k.cpu(), n.cpu())
+        head, loss = head.cuda(), loss.cuda()
+        out = head(torch.randn(len(k), 8, device="cuda"))
+        value = loss(out, k, n)
+        value.backward()
+        assert torch.isfinite(value), name
     torch.cuda.synchronize()
-    assert all(torch.isfinite(v).all() for v in vals)
     print(f"GPU preflight ok: {torch.cuda.get_device_name()} | torch {torch.__version__} | CUDA {torch.version.cuda}", flush=True)
+
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

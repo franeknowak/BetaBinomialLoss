@@ -8,7 +8,7 @@ New package; the MICCAI code in `scripts/` is untouched and used only as a regre
 - `MultiHead(in_dim, K, out_dim, head_type)` → `[B, K, out_dim]`. MLP = D → 256 → out, GELU, dropout 0.1 (plan §2; no LayerNorm, unlike MICCAI's head). Linear = D → out.
 - `variants.build(name, in_dim, k_train, n_train, eps=None)` → `(head, PanelLoss)`. Class weights and KL priors are computed from training labels only.
 - `PanelLoss(out, k, n)` = Σ_heads mean_batch(per-sample loss). `per_sample` returns `[B, K]`.
-- Everything runs on the input's device (no CPU round trip, unlike MICCAI). The B² NLL and KL are computed in **float64** and cast back (user decision 2026-10-14): float32 lgamma loses precision at large S. Gradient clipping (1.0) belongs to the trainer (module c).
+- Runs on the input's device, except `torch.lgamma`/`digamma`, which fail on CUDA on some UCL nodes (GitHub issue #22; pilot job 7522356): the B² NLL uses no lgamma (integer votes → exact sums of logs on the GPU); log C(n, k) and the KL are evaluated on the CPU (`losses._on_cpu`). Tested: equals the closed form to 1e-9, and every lgamma/digamma call is on a CPU tensor. The B² NLL and KL are computed in **float64** and cast back (user decision 2026-10-14): float32 lgamma loses precision at large S. Gradient clipping (1.0) belongs to the trainer (module c).
 
 ## Losses
 | kind | target / likelihood | out_dim |
