@@ -29,15 +29,12 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 - Python env: `/cluster/project7/FranekLapChole/BetaBinomialLoss/dino_env` (python 3.11, timm 1.0.26); copy in `backup/dino_env`. Old job scripts point at `../MICCVS/dino_env` → use `./dino_env`.
 - Job template: `BetaBinomialLoss/ft_experiments.qsub.sh` — `-l gpu=true -l gpu_type=a6000 -pe gpu 1 -l tmem=24G -l h_rt=24:00:00 -R y`; sources `/share/apps/source_files/python/python-3.11.9.source`, `cuda/cuda-11.8.source`, `gcc-9.2.0.source`; `HF_HOME=.../BetaBinomialLoss/.hf_cache`. The venv python only works after sourcing the python file (fine in jobs).
 - Storage: quota 750 GB, 24 GB used; file limit 500k, 205k used (watch file counts: CIFAR PNGs +10k, MHIST +3.2k, CVS Challenge frames later).
-- Cluster repo `BetaBinomialLoss` is on `main` with untracked `scripts/bbkl_loss_old.py`; not yet on `journal-extension` (`git fetch && git checkout journal-extension` there; check the untracked file first).
+- Cluster repo `BetaBinomialLoss` is on `main` with untracked `scripts/bbkl_loss_old.py` AND (seen 2026-10-14) modified, uncommitted `config/{ablation,encoder,ft}/*.yaml` — ask the user before checkout; not yet on `journal-extension` (`git fetch && git checkout journal-extension` there; check the untracked file first).
 - CVS Challenge not downloaded (R4 only).
 - SSH: the user opens the ControlMaster interactively (`ssh comic true`: key passphrase + password); persists 4 h. With BatchMode, a dead master gives "Connection closed by UNKNOWN port 65535" → ask the user to re-open it.
 
 ## Exact next action
-1. Write `jobs/download_datasets.qsub.sh` (cpu queue, no GPU) → `/cluster/project7/FranekLapChole/datasets/{cifar10h,mhist}/`:
-   - CIFAR-10H: `cifar10h-counts.npy` from github jcpeterson/cifar-10h (`data/`); CIFAR-10 test set via torchvision → PNGs `{id:05d}.png` + `test_labels.npy`.
-   - MHIST: URLs passed as environment variables at submit time (`qsub -v ...`), never committed; check MD5SUMs; unzip.
-   Show the script to the user; submit only after their go-ahead.
+1. `jobs/download_datasets.qsub.sh` WRITTEN 2026-10-14 (CPU, 4 h, 8G; not submitted). CIFAR-10 test set taken from the official tarball (md5-checked) instead of torchvision; PNGs `images/{id:05d}.png` + `test_labels.npy`; tarball deleted after. MHIST links go in `datasets/mhist/.urls` on the cluster (chmod 600; MD5SUMs, annotations, images.zip order), deleted by the job — chosen over `qsub -v` because `-v` splits on commas and shows in `qstat -j`. Waiting for: user go-ahead + fresh MHIST links. To submit: copy the script to the cluster (cluster repo is on `main` with uncommitted config edits — don't checkout over them; ask user), write `.urls` via ssh, `qsub`.
 2. After download: real-data tests for CIFAR-10H (counts 10000×10, n 47–63) and MHIST (verify the vote column header and patient grouping).
 3. Module c (embedding cache + one trainer): cache DINOv3 CLS embeddings once per dataset; trainer on embeddings or images; running-best checkpoints A (val mAP) and B (val vote NLL after post-hoc spread); test predictions written silently; storage policy above.
 4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
