@@ -46,5 +46,10 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
 
 ## Open questions (user)
+- 2026-10-14 review of module c choices (reviewer agent, 3 rounds; proposals NOT yet implemented, awaiting user):
+  - checkpoint B for every one-number model (hard AND soft BCE) via Global-S; plug-in as supplementary row;
+  - user reports Endoscapes overfits by epoch 2–3 → evaluate ~4×/epoch, short fixed budgets (frozen ~10–15 ep, fine-tune ~5 ep), no early stop, A/B chosen from the logged evaluations; optional 3-point smoothing (keep the real centre state, window fixed in advance);
+  - report A/B epochs + an A↔B swap table; optional full-panel-validation sensitivity check at n = 3;
+  - reviewer claim "S matters little at n≈51" is WRONG (plan §3 pt 4: S matters more with more raters) — do not adopt.
 - Go-ahead to submit the download job (and fresh MHIST links at that time).
 - Optional training-set-size sweep (10/30/100% of training images, soft BCE vs B²-r, frozen, 5 seeds, Endoscapes + CIFAR-10H, 60 cheap runs): add to R1 or not?
