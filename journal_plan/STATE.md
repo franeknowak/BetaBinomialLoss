@@ -1,7 +1,7 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module c (feature cache + one trainer) WRITTEN and unit-tested on the Mac (2026-10-14), not yet run on the cluster (needs timm/DINOv3 → first real run in module f smoke test). MHIST downloaded and verified. CIFAR-10H download job running.
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature-cache GPU job 7519881 running (user go-ahead). Next: check cache, then module e (metrics, bootstrap, verdicts).
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
@@ -42,8 +42,10 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
    - CIFAR-10H: DONE (job 7519817, md5 OK). `datasets/cifar10h/{cifar10h-counts.npy, test_labels.npy, images/00000..09999.png}`; n 47–63; human plurality = CIFAR label 0.9921; split 6000/2000/2000 (600/200/200 per class); 1211 ambiguous images (plurality < 0.9). Mac has the two .npy files only. Real-data test in `tests/test_module_b.py`.
    - MHIST: DONE (jobs 7519820 download + 7519821 md5 OK/unzip). `datasets/mhist/{annotations.csv, MD5SUMs.txt, images/MHIST_*.png}` (3152). Vote column `Number of Annotators who Selected SSA (Out of 7)`; loader verified on real file: train/val/test 1740/435/977, SSA majority 990. Mac has `../datasets/mhist/annotations.csv` only.
 2. After download: real-data tests for CIFAR-10H (counts 10000×10, n 47–63) and MHIST (verify the vote column header and patient grouping).
-3. Module c DONE on the Mac: `b2j/{embed,train,posthoc}.py`, spec `specs/c_cache_trainer.md`, `tests/test_module_c.py`. Review decisions APPROVED and implemented 2026-10-14 (spec §Decisions): Global-S for hard+soft BCE at checkpoint B; 4 evals/epoch; budgets 15 frozen / 5 fine-tune; no early stop; 3-evaluation smoothing for selection; A/B epochs + swap table reported; full-panel-validation sensitivity check at CIFAR-10H n = 3 (add to R1 block in module f). All three datasets are on the cluster and verified. Next: a cache-building job per dataset (GPU, short) — needs user go-ahead per job. Next module: d (BACC thresholds, S*(m) on either m; c and Global-S already in posthoc.py).
-4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
+3. Module c DONE on the Mac: `b2j/{embed,train,posthoc}.py`, spec `specs/c_cache_trainer.md`, `tests/test_module_c.py`. Review decisions APPROVED and implemented 2026-10-14 (spec §Decisions): Global-S for hard+soft BCE at checkpoint B; 4 evals/epoch; budgets 15 frozen / 5 fine-tune; no early stop; 3-evaluation smoothing for selection; A/B epochs + swap table reported; full-panel-validation sensitivity check at CIFAR-10H n = 3 (add to R1 block in module f). All three datasets are on the cluster and verified. Next: a cache-building job per dataset (GPU, short) — needs user go-ahead per job. Next module: e.
+4. Feature cache: `jobs/build_cache.qsub.sh` (cluster only) → job **7519881** (submitted 13:59, A6000) runs `python -m b2j.embed endoscapes cifar10h mhist` → `BetaBinomialLoss/cache/<dataset>_frozen.npz`; log `jobs/logs/build_cache.o7519881`. Check shapes (11090/10000/3152 × 768), finite, and time per dataset.
+5. Module d DONE: `b2j/posthoc.py` (S*(m) with S linear in logit m as the plan says — log-S would hide the non-monotone P_maj; panel probabilities; ensemble; thresholds; pmaj_monotone), spec `specs/d_posthoc.md`, `tests/test_module_d.py` (reproduces plan §3 table and ranges). 67 tests pass.
+6. Then modules e–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
 
 ## Open questions (user)
 - Optional training-set-size sweep (10/30/100% of training images, soft BCE vs B²-r, frozen, 5 seeds, Endoscapes + CIFAR-10H, 60 cheap runs): add to R1 or not?
