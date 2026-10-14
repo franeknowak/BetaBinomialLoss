@@ -10,10 +10,10 @@ weights. Test labels never reach the trainer (Split.k is None for test), no test
 and no encoder weights or per-epoch checkpoints are written (storage policy, plan amendment 2026-10-14 #3).
 See journal_plan/specs/c_cache_trainer.md.
 """
-import copy
 import json
 import math
 import time
+from collections import deque
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -34,8 +34,10 @@ class TrainConfig:
     variant: str
     lr: float = 3e-4                  # head
     wd: float = 1e-2
-    epochs: int = 50
+    epochs: int = 15
     batch_size: int = 64
+    evals_per_epoch: int = 4          # Endoscapes overfits by epoch 2-3: evaluate often, select afterwards
+    smooth: int = 3                   # odd window of the centred moving average used for selection (1 = off)
     warmup_epochs: int = 0
     seed: int = 0
     eps: float | None = None          # B²-r positivity override (R0 fallback)
@@ -46,7 +48,11 @@ class TrainConfig:
 
     @classmethod
     def finetune(cls, variant, encoder_lr, **kw):
-        return cls(variant, encoder_lr=encoder_lr, **{"epochs": 10, "batch_size": 32, "warmup_epochs": 1, **kw})
+        return cls(variant, encoder_lr=encoder_lr, **{"epochs": 5, "batch_size": 32, "warmup_epochs": 1, **kw})
+
+    def __post_init__(self):
+        if self.smooth < 1 or self.smooth % 2 == 0:
+            raise ValueError("smooth must be an odd window >= 1")
 
 
 @dataclass
@@ -174,17 +180,32 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
     sched = torch.optim.lr_scheduler.LambdaLR(opt, _lr_lambda(cfg.warmup_epochs * steps_per_epoch,
                                                               cfg.epochs * steps_per_epoch))
     is_b2 = VARIANTS[cfg.variant].loss.kind == "b2"
-    best = {"A": (-np.inf, None, None, None), "B": (np.inf, None, None, None)}   # (criterion, epoch, state, scores)
+    E = cfg.evals_per_epoch
+    eval_after = {round(steps_per_epoch * (i + 1) / E) for i in range(E)}      # batch counts within an epoch
+    best = {"A": (-np.inf, None, None, None), "B": (np.inf, None, None, None)}   # (smoothed crit, eval, state, scores)
+    hist, recent, h = [], deque(maxlen=cfg.smooth // 2 + 1), cfg.smooth // 2  # recent: (eval, state, scores)
     log_path = out_dir / "log.jsonl"
     log_path.write_text("")
     nonfinite_total, t0 = 0, time.time()
 
+    def smoothed(j, c):
+        """Centred moving average of the selection criterion over evaluations j-h..j+h (truncated at the ends)."""
+        v = np.array([r[c] for r in hist[max(0, j - h): j + h + 1]], dtype=float)
+        return np.nan if np.isnan(v).all() else float(np.nanmean(v))
+
+    def consider(j, state, sc):
+        for c, better in (("A", lambda a, b: a > b), ("B", lambda a, b: a < b)):
+            v = smoothed(j, c)
+            if better(v, best[c][0]):
+                best[c] = (v, j, state, sc)
+
+    def reset_counters():
+        return 0.0, 0, 0, torch.zeros(k_tr.shape[1], device=device), torch.zeros(k_tr.shape[1], device=device)
+
+    loss_sum, n_steps, nonfinite, stuck_num, stuck_den = reset_counters()
     for epoch in range(cfg.epochs):
         model.train()
-        loss_sum, n_steps, nonfinite = 0.0, 0, 0
-        stuck_num = torch.zeros(k_tr.shape[1], device=device)
-        stuck_den = torch.zeros(k_tr.shape[1], device=device)
-        for x, idx in _batches(train, cfg.batch_size, device, True, gen, cfg.num_workers):
+        for b, (x, idx) in enumerate(_batches(train, cfg.batch_size, device, True, gen, cfg.num_workers), start=1):
             idx_t = torch.as_tensor(idx, device=device)
             kb, nb = k_tr[idx_t], n_tr[idx_t]
             out = model(x)
@@ -192,42 +213,49 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
             opt.zero_grad(set_to_none=True)
             if not torch.isfinite(loss):
                 nonfinite += 1
-                sched.step()
-                continue
-            loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), cfg.clip)
-            opt.step()
+            else:
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), cfg.clip)
+                opt.step()
+                loss_sum, n_steps = loss_sum + loss.item(), n_steps + 1
+                if is_b2:
+                    pos = kb >= 1
+                    stuck_num += ((out.detach()[..., 1] < STUCK_LOGIT) & pos).sum(0)
+                    stuck_den += pos.sum(0)
             sched.step()
-            loss_sum, n_steps = loss_sum + loss.item(), n_steps + 1
-            if is_b2:
-                pos = kb >= 1
-                stuck_num += ((out.detach()[..., 1] < STUCK_LOGIT) & pos).sum(0)
-                stuck_den += pos.sum(0)
-        nonfinite_total += nonfinite
+            if b not in eval_after:
+                continue
 
-        val_out = predict(model, val, device, num_workers=cfg.num_workers)
-        sc = score_val(cfg.variant, val_out, val.k, val.n, cfg.eps)
-        rec = {"epoch": epoch, "train_loss": loss_sum / max(n_steps, 1), "nonfinite_steps": nonfinite,
-               "lr": sched.get_last_lr()[0], **_jsonable(sc)}
-        if is_b2:
-            rec["train_stuck_share"] = (stuck_num / stuck_den.clamp(min=1)).tolist()
-        for c, better in (("A", sc["sel_A"] > best["A"][0]), ("B", sc["sel_B"] < best["B"][0])):
-            if better:
-                best[c] = (sc["sel_" + c], epoch, _cpu_state(model), sc)
-                rec["new_best_" + c] = True
-        with log_path.open("a") as f:
-            f.write(json.dumps(rec) + "\n")
-        if verbose:   # validation only
-            print(f"[{cfg.variant}] ep {epoch:3d} loss {rec['train_loss']:.4f} "
-                  + " ".join(f"{k} {v:.4f}" for k, v in rec.items() if k in ("val_map", "val_nll_per_vote", "val_dup_bce"))
-                  + "".join(f" *{c}" for c in "AB" if rec.get("new_best_" + c)), flush=True)
+            # ---- evaluation (validation only)
+            t = len(hist)
+            val_out = predict(model, val, device, num_workers=cfg.num_workers)
+            sc = score_val(cfg.variant, val_out, val.k, val.n, cfg.eps)
+            rec = {"eval": t, "epoch": round(epoch + b / steps_per_epoch, 3), "train_loss": loss_sum / max(n_steps, 1),
+                   "nonfinite_steps": nonfinite, "lr": sched.get_last_lr()[0], **_jsonable(sc)}
+            if is_b2:
+                rec["train_stuck_share"] = (stuck_num / stuck_den.clamp(min=1)).tolist()
+            nonfinite_total += nonfinite
+            hist.append({"A": sc["sel_A"], "B": sc["sel_B"]})
+            recent.append((t, _cpu_state(model), sc))
+            if t >= h:                     # evaluation t completes the window centred on t - h
+                consider(*recent[0])
+            with log_path.open("a") as f:
+                f.write(json.dumps(rec) + "\n")
+            if verbose:   # validation only
+                print(f"[{cfg.variant}] ep {rec['epoch']:6.2f} loss {rec['train_loss']:.4f} "
+                      + " ".join(f"{k} {v:.4f}" for k, v in rec.items()
+                                 if k in ("val_map", "val_nll_per_vote", "val_dup_bce")), flush=True)
+            loss_sum, n_steps, nonfinite, stuck_num, stuck_den = reset_counters()
+            model.train()
+    for j, state, sc in list(recent)[1:] if len(hist) > h else list(recent):   # windows at the end of the run
+        consider(j, state, sc)
 
     summary = {"config": asdict(cfg), "finetune": finetune, "n_train": len(train.ids), "n_val": len(val.ids),
                "nonfinite_steps": nonfinite_total, "seconds": round(time.time() - t0, 1)}
     if best["A"][2] is None or best["B"][2] is None:
-        raise RuntimeError("no finite validation criterion in any epoch")
+        raise RuntimeError("no finite validation criterion in any evaluation")
     for c in ("A", "B"):
-        _, epoch, state, sc = best[c]
+        crit, j, state, sc = best[c]
         model.load_state_dict(state)
         scale = None if sc["scale"] is None else np.asarray(sc["scale"])
         for name, split in (("val", val), ("test", test)):
@@ -235,7 +263,8 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
             np.savez(out_dir / f"{name}_{c}.npz", ids=split.ids, out=o,
                      scale=np.full(o.shape[1], np.nan) if scale is None else scale)
         torch.save(model.head.state_dict(), out_dir / f"head_{c}.pt")
-        summary[c] = {"epoch": epoch, **_jsonable(sc)}
+        summary[c] = {"eval": j, "epoch": json.loads(log_path.read_text().splitlines()[j])["epoch"],
+                      "smoothed_criterion": crit, **_jsonable(sc)}
     # model is now at B: memorisation diagnostic (median S on train / on val), B² variants only
     if is_b2:
         scale = np.asarray(best["B"][3]["scale"])

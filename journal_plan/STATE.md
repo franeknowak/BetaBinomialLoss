@@ -42,14 +42,8 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
    - CIFAR-10H: job **7519817** submitted 13:14 → check `jobs/logs/dl_datasets.o7519817`, then `ls datasets/cifar10h/images | wc -l` = 10000.
    - MHIST: DONE (jobs 7519820 download + 7519821 md5 OK/unzip). `datasets/mhist/{annotations.csv, MD5SUMs.txt, images/MHIST_*.png}` (3152). Vote column `Number of Annotators who Selected SSA (Out of 7)`; loader verified on real file: train/val/test 1740/435/977, SSA majority 990. Mac has `../datasets/mhist/annotations.csv` only.
 2. After download: real-data tests for CIFAR-10H (counts 10000×10, n 47–63) and MHIST (verify the vote column header and patient grouping).
-3. Module c DONE on the Mac: `b2j/{embed,train,posthoc}.py`, spec `specs/c_cache_trainer.md`, `tests/test_module_c.py`. Decisions to confirm with the user are in the spec (soft BCE checkpoint B via Global-S; per-vote selection NLL; DUP selection; default epochs 50 frozen / 10 fine-tune). After CIFAR-10H lands: real-data CIFAR-10H test (counts 10000×10, n 47–63), then a cache-building job per dataset (GPU, short) — needs user go-ahead per job. Next module: d (BACC thresholds, S*(m) on either m; c and Global-S already in posthoc.py).
+3. Module c DONE on the Mac: `b2j/{embed,train,posthoc}.py`, spec `specs/c_cache_trainer.md`, `tests/test_module_c.py`. Review decisions APPROVED and implemented 2026-10-14 (spec §Decisions): Global-S for hard+soft BCE at checkpoint B; 4 evals/epoch; budgets 15 frozen / 5 fine-tune; no early stop; 3-evaluation smoothing for selection; A/B epochs + swap table reported; full-panel-validation sensitivity check at CIFAR-10H n = 3 (add to R1 block in module f). After CIFAR-10H lands: real-data CIFAR-10H test (counts 10000×10, n 47–63), then a cache-building job per dataset (GPU, short) — needs user go-ahead per job. Next module: d (BACC thresholds, S*(m) on either m; c and Global-S already in posthoc.py).
 4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
 
 ## Open questions (user)
-- 2026-10-14 review of module c choices (reviewer agent, 3 rounds; proposals NOT yet implemented, awaiting user):
-  - checkpoint B for every one-number model (hard AND soft BCE) via Global-S; plug-in as supplementary row;
-  - user reports Endoscapes overfits by epoch 2–3 → evaluate ~4×/epoch, short fixed budgets (frozen ~10–15 ep, fine-tune ~5 ep), no early stop, A/B chosen from the logged evaluations; optional 3-point smoothing (keep the real centre state, window fixed in advance);
-  - report A/B epochs + an A↔B swap table; optional full-panel-validation sensitivity check at n = 3;
-  - reviewer claim "S matters little at n≈51" is WRONG (plan §3 pt 4: S matters more with more raters) — do not adopt.
-- Go-ahead to submit the download job (and fresh MHIST links at that time).
 - Optional training-set-size sweep (10/30/100% of training images, soft BCE vs B²-r, frozen, 5 seeds, Endoscapes + CIFAR-10H, 60 cheap runs): add to R1 or not?

@@ -41,7 +41,7 @@ def test_fit_scale_recovers_spread():
 
 def test_spread_rules_and_eps():
     assert {v: P.spread_rule(v) for v in VARIANTS} == {
-        "hard_bce": "none", "hard_bce_w": "none", "soft_bce": "global", "b2r": "c", "b2r_w": "c",
+        "hard_bce": "global", "hard_bce_w": "global", "soft_bce": "global", "b2r": "c", "b2r_w": "c",
         "b2r_kl": "c", "b2m": "none", "b2r_linear": "c", "dup": "dup"}
     out = np.full((1, 1, 2), -50.0)
     assert P.mean_spread("b2r", out)[1][0, 0] == pytest.approx(2e-3)
@@ -79,27 +79,42 @@ def test_every_variant_trains_and_writes(variant, tmp_path, capsys):
             assert z["out"].shape == (len(sp.ids), 2, VARIANTS[variant].loss.out_dim) and (z["ids"] == sp.ids).all()
             assert np.isfinite(z["out"]).all()
         assert (tmp_path / f"head_{c}.pt").exists()
-        assert 0 <= s[c]["epoch"] < 4
+        assert 0 <= s[c]["eval"] < 16 and 0 < s[c]["epoch"] <= 4
     log = [json.loads(l) for l in (tmp_path / "log.jsonl").read_text().splitlines()]
-    assert len(log) == 4
+    ep = [r["epoch"] for r in log]                  # 4 evaluations per epoch, at whole batches
+    assert len(log) == 16 and ep[3] == 1.0 and ep[-1] == 4.0 and np.all(np.diff(ep) > 0)
     # test silence: nothing named test in any logged or printed quantity
     text = (tmp_path / "log.jsonl").read_text() + (tmp_path / "summary.json").read_text() + capsys.readouterr().out
     assert "test" not in text
     assert not list(tmp_path.glob("*encoder*"))
 
 
-def test_checkpoints_match_log(tmp_path):
+def _smoothed(v, h):
+    return np.array([np.nanmean(v[max(0, j - h): j + h + 1]) for j in range(len(v))])
+
+
+@pytest.mark.parametrize("smooth", [1, 3, 5])
+def test_checkpoints_match_log(tmp_path, smooth):
     tr, va, te = splits()
-    s = T.run(T.TrainConfig("b2r", epochs=8, lr=1e-2), tr, va, te, tmp_path, device="cpu", verbose=False)
+    s = T.run(T.TrainConfig("b2r", epochs=3, lr=1e-2, smooth=smooth), tr, va, te, tmp_path, device="cpu", verbose=False)
     log = [json.loads(l) for l in (tmp_path / "log.jsonl").read_text().splitlines()]
-    assert s["A"]["epoch"] == int(np.nanargmax([r["val_map"] for r in log]))
-    assert s["B"]["epoch"] == int(np.argmin([r["val_nll_per_vote"] for r in log]))
-    # the saved val_B outputs reproduce the logged validation NLL at epoch B
+    h = smooth // 2
+    assert s["A"]["eval"] == int(np.argmax(_smoothed(np.array([r["val_map"] for r in log]), h)))
+    assert s["B"]["eval"] == int(np.argmin(_smoothed(np.array([r["val_nll_per_vote"] for r in log]), h)))
+    # the kept state is the real state at that evaluation: saved val_B outputs reproduce its logged (unsmoothed) NLL
     z = np.load(tmp_path / "val_B.npz")
     m, S = P.panel("b2r", z["out"], z["scale"])
-    assert (P.vote_nll(m, S, va.k, va.n) / va.n).mean() == pytest.approx(log[s["B"]["epoch"]]["val_nll_per_vote"], rel=1e-5)
+    assert (P.vote_nll(m, S, va.k, va.n) / va.n).mean() == pytest.approx(log[s["B"]["eval"]]["val_nll_per_vote"], rel=1e-5)
     assert s["B"]["val_map"] > 0.7                  # learnable synthetic task
     assert len(s["B"]["train_val_S_ratio"]) == 2 and len(log[0]["train_stuck_share"]) == 2
+
+
+def test_smoothing_rejects_lone_spike():
+    """With a lone spike, the raw best and the smoothed best differ; smoothing picks the plateau."""
+    v = np.array([0.50, 0.55, 0.95, 0.50, 0.70, 0.74, 0.73, 0.60])
+    assert int(np.argmax(v)) == 2 and int(np.argmax(_smoothed(v, 1))) == 5
+    with pytest.raises(ValueError):
+        T.TrainConfig("b2r", smooth=2)
 
 
 def test_deterministic(tmp_path):

@@ -4,8 +4,9 @@ Every variant's raw head output [N, K, d] maps to a panel prediction (m, S): mea
 Beta spread S (S = inf is the Binomial plug-in). The spread step fits one scale per head on validation
 by vote likelihood:
   - B² variants (except legacy B²-M): S = c · (α₀ + α₁)   (c, plan §2)
-  - soft BCE:                         S = S*              (Global-S, one value per head)
-  - hard BCE, B²-M:                   no fit (plug-in / native spread)
+  - soft and hard BCE:                S = S*              (Global-S, one value per head; the plug-in
+                                                          S = inf is a supplementary row, module d)
+  - B²-M:                             no fit (native spread, legacy row)
 DUP has no panel prediction; its score is P(split).
 """
 import numpy as np
@@ -22,7 +23,7 @@ def spread_rule(name: str) -> str:
     cfg = VARIANTS[name].loss
     if cfg.kind == "b2":
         return "none" if cfg.plus_one else "c"
-    return {"soft_bce": "global", "hard_bce": "none", "dup": "dup"}[cfg.kind]
+    return {"soft_bce": "global", "hard_bce": "global", "dup": "dup"}[cfg.kind]
 
 
 def mean_spread(name: str, out: np.ndarray, eps: float | None = None):

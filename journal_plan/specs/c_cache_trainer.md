@@ -11,14 +11,15 @@ Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the spread fit the t
 ## Trainer (`train.py`)
 - `run(cfg, train, val, test, out_dir, encoder=None)`. A `Split` is `(x, ids, k, n)`, with x = embeddings `[N, D]` (frozen) or an `ImageSet` (fine-tuning). **The test Split carries no labels** (`split_from_table(..., labelled=False)`); `run` refuses one that does.
 - Model = optional encoder (bf16 autocast on GPU) → `MultiHead` (module a). Loss from `variants.build` (class weights and KL priors from training labels).
-- AdamW (head lr, encoder lr if fine-tuning, one weight decay), linear warm-up then cosine to 0, gradient clipping 1.0, fixed epochs (no early stopping, so validation S is logged for every epoch, plan F4). A non-finite loss skips the step and is counted (input to the ε fallback rule).
+- AdamW (head lr, encoder lr if fine-tuning, one weight decay), linear warm-up then cosine to 0, gradient clipping 1.0. Short fixed budgets, **4 validation evaluations per epoch**, no early stopping: stopping is separated from selection (user: Endoscapes overfits by epoch 2–3), and the full curve gives H5 its validation-S drift. A non-finite loss skips the step and is counted (input to the ε fallback rule).
 - Seeded: same seed and data → bit-identical outputs on CPU.
-- **Every epoch, validation only:** raw outputs → `score_val`:
-  - spread step (`posthoc.fit_spread`): B²-r-family c, soft BCE Global-S*, none for hard BCE and B²-M;
+- **At every evaluation, validation only:** raw outputs → `score_val`:
+  - spread step (`posthoc.fit_spread`): B²-r-family c; soft and hard BCE Global-S*; none for B²-M;
   - `val_map` = mean over heads of AP of m against the majority vote (heads with one class skipped);
   - `val_nll_per_vote` = mean over images and heads of vote NLL / n after the spread step;
   - median validation S per head; B² variants also log the training stuck share (accumulated over the epoch's batches).
-- **Checkpoints** (running best, strict improvement, CPU copies in memory): A = max `val_map`; B = min `val_nll_per_vote`. DUP: both = min validation DUP loss.
+- **Checkpoints:** A = max `val_map`; B = min `val_nll_per_vote`; DUP: both = min validation DUP loss. Chosen on a **centred moving average over 3 evaluations** (`smooth=3`; truncated at the ends; strict improvement). The kept weights are always the real state at the chosen evaluation (never averaged weights), with that evaluation's own fitted scale. The choice for evaluation t is made at t+1, so the trainer keeps the last 2 states in memory.
+- Why smoothing: validation is effectively small (correlated frames from 41 videos), so a single evaluation can win by luck; the smoothed choice must sit in a run of good evaluations. With 4 evaluations per epoch the window spans < 1 epoch, so an early optimum is not hidden.
 - **Written after the last epoch** (per run dir): `log.jsonl` (one line per epoch), `summary.json` (config, epochs and validation scores of A and B, fitted scales, non-finite steps, B² train/val median-S ratio at B), `{val,test}_{A,B}.npz` (ids, raw head outputs, fitted scale), `head_{A,B}.pt` (≈ 1 MB). Nothing else: no encoder weights, no per-epoch files.
 - **Test discipline:** test outputs are produced once per checkpoint from the in-memory state, saved, never scored or printed. A unit test asserts that no logged, saved or printed key mentions test.
 
@@ -30,14 +31,20 @@ Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the spread fit the t
 ## Defaults (configurable; tuned in module g where the plan says so)
 | | frozen | fine-tuning |
 |---|---|---|
-| epochs | 50 | 10 |
+| epochs | 15 | 5 |
+| evaluations / epoch | 4 | 4 |
+| selection smoothing | 3 evaluations | 3 evaluations |
 | batch | 64 | 32 |
 | warm-up | 0 | 1 epoch |
 | head lr / wd | 3e-4 / 1e-2 (module g grid: lr {1e-4, 3e-4, 1e-3} × wd {1e-4, 1e-2}) | same |
 | encoder lr | — | R2 tuning: 2 values |
 
-## Decisions (2026-10-14, judgement; flagged to the user)
-- Checkpoint B's spread step per variant: soft BCE → Global-S (the trainer fits S* each epoch, plan §2); hard BCE → Binomial plug-in; B²-M → native. S*(m) is fitted post hoc (module d) at checkpoint B, not used for selection.
+## Decisions (2026-10-14; reviewed with a sceptical-reader agent over 3 rounds, approved by the user)
+- Checkpoint B's spread step: every one-number model (hard and soft BCE) → Global-S, fitted at each evaluation; the independent-raters plug-in (S = ∞) is a supplementary row (module d), not a selection rule. B²-M → native. S\*(m) is fitted post hoc (module d) at checkpoint B, not used for selection.
+- Hard BCE's m is pushed toward 0/1 by majority-label training; this is reported as a property of hard BCE, not corrected (no temperature on m for any model).
+- One checkpoint per run, on the mean over heads (can favour easy criteria; mentioned in the paper).
 - Selection NLL is per vote for every dataset (monotone-equivalent to per frame-criterion when n is constant).
 - DUP is selected on its own validation loss for both A and B.
-- Test predictions come from in-memory best states at the end of training, not written per epoch (storage policy).
+- Test predictions come from in-memory states at the end of training, not written per evaluation (storage policy).
+- Validation votes are subsampled like training (a lab with n raters cannot validate on more). Sensitivity check (user approved): CIFAR-10H n = 3 with full-panel validation (launcher, module f).
+- Reported later: the A and B evaluation of every run, and a supplementary A↔B swap table (discrimination at B, panel metrics at A).
