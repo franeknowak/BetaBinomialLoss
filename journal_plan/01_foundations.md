@@ -1,5 +1,7 @@
 # Step 1 — Foundations report
 
+> **Note, 2026-10-14:** wherever this file says B² learns the mean "exactly like" soft BCE, read it as a population (infinite-data) statement only. On finite, heterogeneous data the two means differ with unknown sign. See 05_plan amendment 2026-10-14 #2.
+
 *Journal extension of "B² Loss for Evidential Classification of CVS" (MICCAI 2026).
 Inputs read: paper PDF, reviews + rebuttal + meta-reviews, derivation notes (project doc), repo `main@2f59ef9` (all of `scripts/`, `main.py`, configs incl. git history, `results/results_26_05_26`).
 Every number below is reproducible from `journal_plan/analysis/` (scripts + outputs). `checkJ.py` is superseded by `checkJ2.py` (the saved result JSONs store rounded labels; `checkJ2` re-joins the true vote counts from the annotation file).*
