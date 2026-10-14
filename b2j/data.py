@@ -174,3 +174,15 @@ def endoscapes_rater_table(root, splits=("train", "val")) -> pd.DataFrame:
         row.update({f"kappa_r{a + 1}r{b + 1}": cohen_kappa_score(v[:, a, c], v[:, b, c]) for a, b in ((0, 1), (0, 2), (1, 2))})
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def load_table(dataset: str, root=None) -> LabelTable:
+    """Full label table of a dataset from the shared layout DATA_ROOT/<dataset> (same on Mac and cluster)."""
+    root = Path(root) if root is not None else DATA_ROOT / dataset
+    if dataset == "endoscapes":
+        return endoscapes_labels(root)
+    if dataset == "cifar10h":
+        return cifar10h_labels(np.load(root / "cifar10h-counts.npy"), np.load(root / "test_labels.npy"), root / "images")
+    if dataset == "mhist":
+        return mhist_labels(root / "annotations.csv", root / "images")
+    raise ValueError(f"unknown dataset {dataset}")

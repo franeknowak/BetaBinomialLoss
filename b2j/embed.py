@@ -57,3 +57,22 @@ def load_cache(table: LabelTable, path) -> np.ndarray:
     if missing:
         raise KeyError(f"{len(missing)} ids missing from {path}, e.g. {missing[:3]}")
     return z["X"][[pos[i] for i in table.ids]]
+
+
+if __name__ == "__main__":   # python -m b2j.embed endoscapes cifar10h mhist
+    import argparse
+    from b2j.data import load_table
+    ap = argparse.ArgumentParser(description="Build the frozen DINOv3 embedding cache per dataset.")
+    ap.add_argument("datasets", nargs="+")
+    ap.add_argument("--batch_size", type=int, default=64)
+    ap.add_argument("--num_workers", type=int, default=8)
+    a = ap.parse_args()
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    for ds in a.datasets:
+        t = load_table(ds)
+        missing = [p for p in t.paths if not Path(p).exists()]
+        if missing:
+            raise FileNotFoundError(f"{ds}: {len(missing)} images missing, e.g. {missing[:2]}")
+        p = build_cache(t, ds, dev, batch_size=a.batch_size, num_workers=a.num_workers)
+        X = np.load(p)["X"]
+        print(f"{ds}: {X.shape} -> {p} | finite {np.isfinite(X).all()} | mean norm {np.linalg.norm(X, axis=1).mean():.2f}", flush=True)
