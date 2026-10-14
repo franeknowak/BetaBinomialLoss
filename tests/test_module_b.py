@@ -1,6 +1,6 @@
 """Unit tests for module b (loaders). Run: python -m pytest tests/test_module_b.py -q
 
-The Endoscapes test runs on the real metadata if dataset/endoscapes/all_metadata.csv exists.
+The Endoscapes test runs on the real metadata if ../datasets/endoscapes/all_metadata.csv exists.
 """
 from pathlib import Path
 
@@ -10,7 +10,7 @@ import pytest
 
 from b2j import data as D
 
-ENDO = Path(__file__).resolve().parents[1] / "dataset" / "endoscapes"
+ENDO = D.DATA_ROOT / "endoscapes"
 
 
 @pytest.mark.skipif(not (ENDO / "all_metadata.csv").exists(), reason="Endoscapes metadata not present")

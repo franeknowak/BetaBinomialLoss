@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 ENDO_SPLIT = {"train": (1, 120), "val": (121, 161), "test": (162, 201)}   # official video ranges
+DATA_ROOT = Path(__file__).resolve().parents[2] / "datasets"   # same on Mac and cluster: <repo>/../datasets/<name>
 
 
 @dataclass
