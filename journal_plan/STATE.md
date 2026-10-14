@@ -1,12 +1,12 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE. User (2026-10-14): no MICCAI-era regression test (option b) — module e is checked on the smoke-test validation predictions instead; Endoscapes must use the official per-frame `all_metadata.csv` (verified, spec b). Green light to continue. Module f (runs/launcher/smoke report) written; smoke job submitted (see Exact next action 7). Table/figure scripts still to do.
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke job submitted (see Exact next action 7). Table/figure scripts still to do.
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
 ## Read first
-HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy, a corrected statement of the soft-BCE decomposition, and (#5) training length + checkpoint selection).
+HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy, a corrected statement of the soft-BCE decomposition, (#5) training length + checkpoint selection, and (#6) module e's real-data check).
 
 ## User instructions (standing)
 - **Dataset layout (2026-10-14):** `<repo>/../datasets/<name>` on BOTH Mac and cluster (`b2j.data.DATA_ROOT`). Mac: done 2026-10-14 (`python_code/datasets/` + compatibility symlink `dataset -> datasets` for older projects). Repo-internal `dataset/` copy is obsolete (gitignored; user may delete).
@@ -24,7 +24,7 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 - Module b (label loading): `b2j/data.py`, spec `specs/b_loaders.md`, tests `tests/test_module_b.py`. Endoscapes exact k from per-rater columns; splits 6960/2331/1799; U2 feasible. 33 tests pass, 1 skipped (CUDA) on the Mac.
 - Finding: strong systematic rater effects on Endoscapes (C1 positive rate 0.033 / 0.160 / 0.279 by rater; κ 0.15–0.65) → limitation paragraph; also a candidate direction for round D.
 - 2026-10-14: user corrected "B² learns m exactly like soft BCE". It is only a population (infinite-data) statement; on finite heterogeneous data the means differ with unknown sign (toy sim `analysis/finite_sample_mean_sim.py`: gap ≈ 20% of estimation error at every N 100–5000). H0 is now an open two-sided question (05_plan amendment 2026-10-14 #2). **Never reason from the asymptotic equality.**
-- Cluster cleanup by the user (2026-10-14) does not change the plan. MICCAI-era results JSONs and 9 weight files remain in `BetaBinomialLoss/results` and `weights` (module e may regenerate MICCAI-era validation predictions from them).
+- Cluster cleanup by the user (2026-10-14) does not change the plan. MICCAI-era results JSONs and 9 weight files remain in `BetaBinomialLoss/results` and `weights` (not needed by the plan; amendment #6).
 
 ## Cluster (verified 2026-10-14; layout changed since 2026-10-09)
 - Host comic2; SGE (`qsub`), no Slurm. Queues incl. gpu.q, fastgpu.q, test.gpu.q, cpu.q; gpu.q h_rt up to 1000 h.

@@ -33,6 +33,7 @@
 >    - Checkpoint B for **every one-number model (hard and soft BCE) uses Global-S** (one S\* per criterion, refitted at each evaluation). The independent-raters Binomial plug-in stays as a supplementary row and an H4 comparator, not a selection rule. Hard BCE's m is pushed to 0/1 by majority-label training; this is reported as its property, not corrected. DUP is selected on its own validation loss for both A and B.
 >    - One checkpoint per run, chosen on the mean over heads. Reported: the A and B evaluation of every run, and a supplementary A↔B swap table (discrimination at B, panel metrics at A).
 >    - Added to R1: CIFAR-10H n = 3 with **full-panel validation** (sensitivity check separating selection noise from missing rater information). Main design keeps validation votes subsampled like training.
+> 6. Module e's real-data check uses the smoke-test validation predictions of the new models instead of MICCAI-era predictions (the MICCAI results files hold only per-epoch summaries; user decision).
 
 ## 1. Summary (one page)
 

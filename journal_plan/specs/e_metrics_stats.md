@@ -37,5 +37,5 @@ Code: `b2j/metrics.py`, `b2j/stats.py`. Tests: `tests/test_module_e.py`.
 ## Tests cover
 ACC/BACC/F1/mAP/AUROC against scikit-learn; weighted soft targets reduce to the usual metrics; split target equals the DUP target; FCR at recall against sklearn's PR curve and a hand case with ties; AURC, coverage and catch rate by hand; ECE ≈ 0 when calibrated and 0.4 for a constant 0.9; jackknife SE equals the SE of a mean; NLL by hand; bootstrap: identical models give exactly 0, a cluster spanning strata is refused, **coverage ≈ 95% in simulation** (shared cluster effects, 5 seeds), paired seed draws remove seed noise from within-model contrasts; every verdict branch; margin cap.
 
-## Real-data check (replaces the MICCAI-era test; user decision 2026-10-14)
-The plan (from `02_proposals_r1.md`) asked for module e to be tested on MICCAI-era **validation** predictions. Its purpose was a realistic-data check of the metric pipeline (real frames, video clusters, exact k), not a 1:1 comparison with MICCAI. The MICCAI results JSONs hold only per-epoch summaries, and the MICCAI pipeline was flawed, so this is **replaced** by running module e on the smoke-test validation predictions of the new models (module f).
+## Real-data check
+Run on the smoke-test validation predictions of the new models (module f), instead of MICCAI-era predictions (plan amendment 2026-10-14 #6).

@@ -7,7 +7,6 @@ One row per image: `k, n` float `[N, K]`, `cluster` (bootstrap unit), `split`, `
 
 ## Endoscapes2023 (CVS201)
 - Source: `all_metadata.csv` (cluster: `/cluster/project7/FranekLapChole/datasets/endoscapes/` (moved from SwinCVS/ by 2026-10-14)), keyframes only (`is_ds_keyframe`, 11,090).
-- **Per-frame official labels only** (user requirement 2026-10-14): the loader reads the dataset's own `all_metadata.csv`, never the MICCAI `config/reformatted_annotations_frames.json` (which merged 5-frame sequences). Verified: same md5 on Mac and cluster (`8becf193…`); 11,090 keyframes, each (vid, frame) once, one every 125 frames (5 s); labels change between single neighbouring keyframes (27% of steps; most common run length 1).
 - k per criterion = sum of `cvs_annotator_{1,2,3}` binary votes; checked against the averaged C1–C3 columns (max error 0.0). n = 3.
 - Split by video id: train 1–120 / val 121–161 / test 162–201 → 6,960 / 2,331 / 1,799 frames (plan values). Cluster = video.
 - Majority prevalence train 0.156/0.112/0.179 (= MICCAI PI values), val 0.163/0.125/0.167, test 0.235/0.168/0.278.
