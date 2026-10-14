@@ -7,7 +7,7 @@ Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loader
 HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy and a corrected statement of the soft-BCE decomposition).
 
 ## User instructions (standing)
-- **Dataset layout (2026-10-14):** `<repo>/../datasets/<name>` on BOTH Mac and cluster (`b2j.data.DATA_ROOT`). Mac: user asked to rename `python_code/dataset` → `python_code/datasets` (rename was blocked for Claude; other projects use `../dataset/`, so suggest a `dataset -> datasets` symlink). Repo-internal `dataset/endoscapes/all_metadata.csv` copy is obsolete (identical to the parent one); delete once the rename is done.
+- **Dataset layout (2026-10-14):** `<repo>/../datasets/<name>` on BOTH Mac and cluster (`b2j.data.DATA_ROOT`). Mac: done 2026-10-14 (`python_code/datasets/` + compatibility symlink `dataset -> datasets` for older projects). Repo-internal `dataset/` copy is obsolete (gitignored; user may delete).
 - **Git layout (2026-10-14):** all code on `journal-extension`. Job scripts (`*.qsub.sh`, gitignored), results and weights live ONLY on the cluster, never in git. Local drafts of job scripts sit in `jobs/` (ignored) and are copied to the cluster with `ssh comic 'cat > …' < file`.
 - **No jobs submitted until the user says go** (2026-10-14: "don't run any jobs at the moment").
 - Cluster etiquette: look-ups (ls, head, grep, cat, git, qstat, quota) are fine on the comic login node. Downloads, big unzips, heavy python, training → a script submitted with `qsub`.
