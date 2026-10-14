@@ -1,40 +1,45 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0, module b: Endoscapes DONE and tested; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet on disk (2026-10-09).
+Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
+
+## Read first
+HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy and a corrected statement of the soft-BCE decomposition).
+
+## User instructions (standing)
+- **No jobs submitted until the user says go** (2026-10-14: "don't run any jobs at the moment").
+- Cluster etiquette: look-ups (ls, head, grep, cat, git, qstat, quota) are fine on the comic login node. Downloads, big unzips, heavy python, training → a script submitted with `qsub`.
+- Don't say "arms" to the user: say "model variants" / "training configurations", or name them. Define abbreviations: **B²-M = the MICCAI recipe** (softplus+1, class weights, KL to prior); **B²-r = the revised recipe** (softplus+ε, unweighted, no KL). Explain actions in plain language; module letters need a one-line description.
+- The user still aims to beat baseline scores, not only analyse (→ round D, 05_plan amendment 2026-10-14 #1).
+- Checkpoints: keep storage small (05_plan amendment 2026-10-14 #3). Tell the user if more space is needed.
+- Downloads APPROVED: CIFAR-10H and MHIST. MHIST access GRANTED: the user has time-limited Dropbox links (email) for `MD5SUMs.txt`, `annotations.csv`, `images.zip` (332.8 MB). Links are NOT stored in the repo (public GitHub). Ask the user for fresh links when the download job is ready; verify MD5.
 
 ## Done
-- Planning complete (steps 1–4, deliverables 04/05/06, 2026-10-09 amendments). See HANDOFF.md.
-- 2026-10-09: branch `journal-extension` created from main, plan + CLAUDE.md committed and pushed to origin.
-- 2026-10-09: module a — `b2j/{losses,heads,arms}.py`, spec `journal_plan/specs/a_heads_losses.md`, tests `tests/test_module_a.py` (25 pass, CUDA test skipped on Mac). B²-M reproduces MICCAI `total_bb_loss` exactly.
+- Planning (steps 1–4, deliverables 04/05/06). Branch `journal-extension` created and pushed 2026-10-09.
+- Module a (model heads + loss functions for every trained model variant): `b2j/{losses,heads,variants}.py`, spec `specs/a_heads_losses.md`, tests `tests/test_module_a.py`. B²-M reproduces MICCAI `total_bb_loss` exactly. 2026-10-14: renamed arms→variants; B² NLL/KL computed in float64; decisions in the spec (keep B²-M; no LayerNorm because DINOv3's CLS output is already layer-normalised; soft BCE not n-weighted).
+- Module b (label loading): `b2j/data.py`, spec `specs/b_loaders.md`, tests `tests/test_module_b.py`. Endoscapes exact k from per-rater columns; splits 6960/2331/1799; U2 feasible. 33 tests pass, 1 skipped (CUDA) on the Mac.
+- Finding: strong systematic rater effects on Endoscapes (C1 positive rate 0.033 / 0.160 / 0.279 by rater; κ 0.15–0.65) → limitation paragraph; also a candidate direction for round D.
+- 2026-10-14: user challenged "B² learns m exactly like soft BCE". Resolved: same mean in expectation; B² differs through S, which separates rater-sampling noise from real disagreement. Simulation in 05_plan amendment 2026-10-14 #2. Use this wording from now on.
 
-- 2026-10-09: module b — `b2j/data.py`, spec `journal_plan/specs/b_loaders.md`, tests `tests/test_module_b.py` (32 pass in total). Endoscapes exact k from per-rater columns; split sizes and prevalences match the plan; U2 feasible on all criteria.
-- Finding: strong systematic rater effects on Endoscapes (C1 positive rate 0.033 / 0.160 / 0.279 by rater) → limitation paragraph (spec b).
-
-## Cluster (verified 2026-10-09)
-- Host comic2; SGE (`/opt/gridengine/bin/lx-amd64/qsub`), no Slurm. Queues incl. gpu.q, fastgpu.q, test.gpu.q; gpu.q h_rt up to 1000 h.
-- Job template: `/cluster/project7/FranekLapChole/BetaBinomialLoss/ft_experiments.qsub.sh` — `-l gpu=true -l gpu_type=a6000 -pe gpu 1 -l tmem=24G -l h_rt=24:00:00 -R y`; sources `/share/apps/source_files/python/python-3.11.9.source`, `cuda-11.8.source`, `gcc-9.2.0.source`; venv `../MICCVS/dino_env`; `HF_HOME=.../BetaBinomialLoss/.hf_cache`. (venv python fails on the login node without the python source file; fine in jobs.)
-- Endoscapes: `/cluster/project7/FranekLapChole/SwinCVS/endoscapes/` (train/val/test jpgs + `all_metadata.csv` with per-rater columns). Local copy of the csv in `dataset/endoscapes/` (gitignored).
-- Cluster repo `/cluster/project7/FranekLapChole/BetaBinomialLoss` is on `main` with untracked `scripts/bbkl_loss_old.py`; not yet switched to `journal-extension`.
-- CVS Challenge: NOT downloaded (only the two download scripts exist). Needed for R4 only.
-- SSH: ControlMaster must be opened by the user interactively (`ssh comic true` in their terminal; key passphrase + password). Persists 4 h.
-
-## User instructions (2026-10-14)
-- **No jobs until the user says so.** Only update STATE.
-- **Never do real work in a terminal on the cluster** (no downloads, unzips, python on the login node). Everything beyond `ls`/`git`/`qstat`-type commands goes in a script submitted with `qsub`.
-- **Do not use the word "arms"** when talking to the user: say "training configurations" (or name them). Code still uses `b2j/arms.py`; proposed rename to `variants`, pending user OK.
-- Explain actions in plain language; define abbreviations (B²-M = MICCAI recipe, B²-r = revised recipe).
-- Downloads APPROVED: CIFAR-10H and MHIST.
-- MHIST access GRANTED. The user has time-limited Dropbox links (via email) for `MD5SUMs.txt`, `annotations.csv`, `images.zip` (332.8 MB). Links are NOT stored in the repo (it is on GitHub). They probably expire: ask the user for fresh links when the download job is ready, and check the MD5 sums.
+## Cluster (verified 2026-10-14; layout changed since 2026-10-09)
+- Host comic2; SGE (`qsub`), no Slurm. Queues incl. gpu.q, fastgpu.q, test.gpu.q, cpu.q; gpu.q h_rt up to 1000 h.
+- Project `/cluster/project7/FranekLapChole/`: now `backup/ BetaBinomialLoss/ datasets/ dinov3/` + download scripts. **`MICCVS/` and `SwinCVS/` no longer exist.**
+- Endoscapes: `/cluster/project7/FranekLapChole/datasets/endoscapes/` (train/val/test jpgs, `all_metadata.csv`). Local copy of the csv in `dataset/endoscapes/` (gitignored).
+- Python env: `/cluster/project7/FranekLapChole/BetaBinomialLoss/dino_env` (python 3.11, timm 1.0.26); copy in `backup/dino_env`. Old job scripts point at `../MICCVS/dino_env` → use `./dino_env`.
+- Job template: `BetaBinomialLoss/ft_experiments.qsub.sh` — `-l gpu=true -l gpu_type=a6000 -pe gpu 1 -l tmem=24G -l h_rt=24:00:00 -R y`; sources `/share/apps/source_files/python/python-3.11.9.source`, `cuda/cuda-11.8.source`, `gcc-9.2.0.source`; `HF_HOME=.../BetaBinomialLoss/.hf_cache`. The venv python only works after sourcing the python file (fine in jobs).
+- Storage: quota 750 GB, 24 GB used; file limit 500k, 205k used (watch file counts: CIFAR PNGs +10k, MHIST +3.2k, CVS Challenge frames later).
+- Cluster repo `BetaBinomialLoss` is on `main` with untracked `scripts/bbkl_loss_old.py`; not yet on `journal-extension` (`git fetch && git checkout journal-extension` there; check the untracked file first).
+- CVS Challenge not downloaded (R4 only).
+- SSH: the user opens the ControlMaster interactively (`ssh comic true`: key passphrase + password); persists 4 h. With BatchMode, a dead master gives "Connection closed by UNKNOWN port 65535" → ask the user to re-open it.
 
 ## Exact next action
-0. Wait for the user's go-ahead to run jobs. Then write ONE download script `jobs/download_datasets.qsub.sh` (cpu queue, not GPU): CIFAR-10H counts + CIFAR-10 test images → PNGs, and MHIST (links passed in at submit time, not committed) → `/cluster/project7/FranekLapChole/datasets/{cifar10h,mhist}/`, with MD5 check. Submit with qsub only.
-1. Download CIFAR-10H counts (github jcpeterson/cifar-10h, `data/cifar10h-counts.npy`) + CIFAR-10 test images (torchvision) on the cluster into `/cluster/project7/FranekLapChole/datasets/cifar10h/`; export PNGs `{id:05d}.png`; run the CIFAR loader on real data and add a real-data test (counts 10000×10, n 47–63).
-2. MHIST: when access arrives, verify the vote column header and patient grouping, add a real-data test.
-3. Module c: embedding cache + trainer (checkpoints A/B, silent test writing).
+1. Write `jobs/download_datasets.qsub.sh` (cpu queue, no GPU) → `/cluster/project7/FranekLapChole/datasets/{cifar10h,mhist}/`:
+   - CIFAR-10H: `cifar10h-counts.npy` from github jcpeterson/cifar-10h (`data/`); CIFAR-10 test set via torchvision → PNGs `{id:05d}.png` + `test_labels.npy`.
+   - MHIST: URLs passed as environment variables at submit time (`qsub -v ...`), never committed; check MD5SUMs; unzip.
+   Show the script to the user; submit only after their go-ahead.
+2. After download: real-data tests for CIFAR-10H (counts 10000×10, n 47–63) and MHIST (verify the vote column header and patient grouping).
+3. Module c (embedding cache + one trainer): cache DINOv3 CLS embeddings once per dataset; trainer on embeddings or images; running-best checkpoints A (val mAP) and B (val vote NLL after post-hoc spread); test predictions written silently; storage policy above.
+4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
 
 ## Open questions (user)
-- Keep/drop the legacy B²-M row (implemented; costs one arm).
-- Module a choices: MLP head without LayerNorm (plan's 768→256→out; dropout 0.1 IS kept); soft BCE not n-weighted on CIFAR-10H. See spec. Explained to user 2026-10-14, awaiting answer.
-- Rename `arms` → `variants` in code?
-- Proposal: compute the Beta-Binomial NLL in float64 (tiny tensors, negligible cost) because float32 lgamma loses precision when S is large (seen in a unit test at S = 10^4). Awaiting OK.
+- Go-ahead to submit the download job (and fresh MHIST links at that time).
