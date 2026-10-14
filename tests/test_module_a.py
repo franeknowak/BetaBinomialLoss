@@ -1,4 +1,4 @@
-"""Unit tests for module a (heads, losses, arm registry). Run: python -m pytest tests/test_module_a.py -q"""
+"""Unit tests for module a (heads, losses, variant registry). Run: python -m pytest tests/test_module_a.py -q"""
 import math
 
 import numpy as np
@@ -7,7 +7,7 @@ import torch
 from scipy import stats
 
 from b2j import losses as L
-from b2j.arms import ARMS, build
+from b2j.variants import VARIANTS, build
 from b2j.heads import MultiHead
 
 torch.manual_seed(0)
@@ -94,7 +94,7 @@ def test_legacy_b2m_matches_miccai_code():
     logits = torch.randn(64, 3, 2) * 2
     weights = L.class_weights(k, n)
     prior = L.miccai_prior(k, n)
-    ours = L.PanelLoss(ARMS["b2m"].loss, weights=weights, prior=prior)(logits, k, n)
+    ours = L.PanelLoss(VARIANTS["b2m"].loss, weights=weights, prior=prior)(logits, k, n)
     a0, a1 = L.alphas(logits, 1e-6, plus_one=True)
     alpha = [torch.stack([a0[:, i], a1[:, i]], -1) for i in range(3)]
     keys = ["C1", "C2", "C3"]
@@ -135,10 +135,10 @@ def test_multihead_shapes():
     assert mlp[0].out_features == 256 and mlp[2].p == 0.1
 
 
-@pytest.mark.parametrize("arm", list(ARMS))
-def test_every_arm_trains_one_step(arm):
+@pytest.mark.parametrize("variant", list(VARIANTS))
+def test_every_variant_trains_one_step(variant):
     k, n = _votes(N=32, K=3, n=3)
-    head, loss = build(arm, 768, k, n)
+    head, loss = build(variant, 768, k, n)
     opt = torch.optim.SGD(head.parameters(), lr=1e-2)
     value = loss(head(torch.randn(32, 768)), k, n)
     value.backward()
@@ -171,3 +171,15 @@ def test_loss_stays_on_gpu():
     head, loss = build("b2r_kl", 32, k, n)
     out = head.cuda()(torch.randn(16, 32, device="cuda"))
     assert loss.cuda().per_sample(out, k, n).is_cuda
+
+
+def test_float32_inputs_are_exact_at_large_spread():
+    """The loss is computed in float64 inside PanelLoss, so float32 logits with S ~ 1e4 still match scipy."""
+    logits = torch.tensor([[[7000.0, 3000.0]], [[6999.0, 3001.0]]])      # softplus(x) = x here
+    k, n = torch.tensor([[1.0], [1.0]]), torch.tensor([[3.0], [3.0]])
+    ours = L.PanelLoss(L.LossConfig("b2")).per_sample(logits, k, n)
+    assert ours.dtype == torch.float32
+    a0, a1 = logits[..., 0].double() + 1e-3, logits[..., 1].double() + 1e-3
+    ref = -stats.betabinom.logpmf(1, 3, a1.numpy(), a0.numpy())
+    np.testing.assert_allclose(ours.numpy(), ref, rtol=1e-6)
+    assert ours[1, 0] != ours[0, 0]

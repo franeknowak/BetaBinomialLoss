@@ -1,14 +1,14 @@
-# Module a — heads, per-sample (k, n) losses, arm registry
+# Module a — heads, per-sample (k, n) losses, registry of model variants
 
-Code: `b2j/losses.py`, `b2j/heads.py`, `b2j/arms.py`. Tests: `tests/test_module_a.py` (`python -m pytest tests/test_module_a.py -q`).
+Code: `b2j/losses.py`, `b2j/heads.py`, `b2j/variants.py`. Tests: `tests/test_module_a.py` (`python -m pytest tests/test_module_a.py -q`).
 New package; the MICCAI code in `scripts/` is untouched and used only as a regression reference.
 
 ## Interface
 - Labels: `k, n` float tensors `[B, K]`, one column per binary head (K = 3 CVS, 10 CIFAR-10H one-vs-rest, 1 MHIST). n may vary per sample (CIFAR-10H, subsampling).
 - `MultiHead(in_dim, K, out_dim, head_type)` → `[B, K, out_dim]`. MLP = D → 256 → out, GELU, dropout 0.1 (plan §2; no LayerNorm, unlike MICCAI's head). Linear = D → out.
-- `arms.build(arm, in_dim, k_train, n_train, eps=None)` → `(head, PanelLoss)`. Class weights and KL priors are computed from training labels only.
+- `variants.build(name, in_dim, k_train, n_train, eps=None)` → `(head, PanelLoss)`. Class weights and KL priors are computed from training labels only.
 - `PanelLoss(out, k, n)` = Σ_heads mean_batch(per-sample loss). `per_sample` returns `[B, K]`.
-- Everything runs on the input's device (no CPU round trip, unlike MICCAI). Gradient clipping (1.0) belongs to the trainer (module c).
+- Everything runs on the input's device (no CPU round trip, unlike MICCAI). The B² NLL and KL are computed in **float64** and cast back (user decision 2026-10-14): float32 lgamma loses precision at large S. Gradient clipping (1.0) belongs to the trainer (module c).
 
 ## Losses
 | kind | target / likelihood | out_dim |
@@ -25,12 +25,14 @@ New package; the MICCAI code in `scripts/` is untouched and used only as a regre
   - B²-M prior ("miccai"): π = majority-positive prevalence, ν = 2 (reproduces the MICCAI PI values = 1/(2w+)).
 - Diagnostic `stuck_share`: per head, share of k ≥ 1 samples with α₁ logit < −7 (ε fallback rule: > 5% or any non-finite loss).
 
-## Arms (plan §4.1, trained ones)
-hard_bce, hard_bce_w, soft_bce, b2r, b2r_w, b2r_kl (λ 0.05), b2m (legacy: +1, weights, KL λ 0.05 to MICCAI prior), b2r_linear, dup (n_train ≥ 3). Post-hoc arms (Global-S, S\*(m), S\*(m_B²), c, ensemble) are module d.
+## Trained model variants (plan §4.1)
+hard_bce, hard_bce_w, soft_bce, b2r, b2r_w, b2r_kl (λ 0.05), b2m (legacy: +1, weights, KL λ 0.05 to MICCAI prior), b2r_linear, dup (n_train ≥ 3). Post-hoc comparisons (Global-S, S\*(m), S\*(m_B²), c, ensemble) are module d.
 
 ## Tests cover
-Beta-Binomial vs scipy; KL vs torch; split target vs hypergeometric; strict majority; weight formula; moment prior recovers a simulated Beta (π 0.2, S 6); soft-BCE target; decomposition (large S → minimiser at mean k/n); **B²-M equals the MICCAI `total_bb_loss`**; positivity floors; finite gradients at logits ±30; stuck share; head shapes; one SGD step per arm; DUP refusal at n < 3; ε override spares B²-M; GPU residency (CUDA only).
+Beta-Binomial vs scipy; KL vs torch; split target vs hypergeometric; strict majority; weight formula; moment prior recovers a simulated Beta (π 0.2, S 6); soft-BCE target; decomposition (large S → minimiser at mean k/n); **B²-M equals the MICCAI `total_bb_loss`**; positivity floors; finite gradients at logits ±30; stuck share; head shapes; one SGD step per variant; float32 inputs exact at S ~ 1e4; DUP refusal at n < 3; ε override spares B²-M; GPU residency (CUDA only).
 
-## Choices made here (flag if wrong)
-- MLP head without input LayerNorm, hidden 256 (plan text), vs MICCAI's LayerNorm + D/4.
-- Soft BCE is not n-weighted on CIFAR-10H (n 47–63); B² is n-weighted by construction.
+## Decisions (2026-10-14, user + judgement)
+- B²-M (the MICCAI recipe) is kept as one legacy row (user).
+- No input LayerNorm in the head: with timm `global_pool='token'`, DINOv3 already applies its final LayerNorm (`norm`, learned affine) before taking the CLS token (`fc_norm` is off), so a second one is redundant. Hidden 256, dropout 0.1 kept.
+- Soft BCE is not weighted by n on CIFAR-10H (standard soft-label practice; n varies only 47–63). B² is n-weighted by construction; noted in the paper.
+- Code says "variants" (user finds "arms" ambiguous).

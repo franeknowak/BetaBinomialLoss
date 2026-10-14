@@ -11,6 +11,19 @@
 > 6. All code lives on GitHub branch `journal-extension`. Experiments run on the UCL cluster through a local Claude Code session (see `HANDOFF.md`).
 > The pre-amendment version is in `analysis/05_plan_pre_amendment_2026-10-09.md`.
 
+> **Amendments, 2026-10-14 (user feedback; these override anything below):**
+> 1. **Method development loop (new round D, between R1 and R2).** The user wants an iterative process of improving the method from results, and still aims to beat the baselines' scores, not only analyse. Rules that keep this compatible with honest testing:
+>    - Iterations use **validation only**; test predictions stay unopened until R3.
+>    - Each iteration is logged in `journal_plan/iterations.md` before it runs: the diagnosis (which validation result motivated it), the change, the expected effect, then the validation outcome. Kept and dropped changes are both logged and reported in the paper (supplement).
+>    - Candidate directions, prioritised from R1 diagnostics: how S is parameterised (e.g. predict m and S directly, or log S); regularising S across similar images; the training length and learning rate for the spread; using the Endoscapes per-rater structure; combining the B² term with a soft-BCE term for the mean.
+>    - Fairness: any tuning budget spent on the new B² version is also spent on soft BCE and hard BCE (same grid size).
+>    - Budget: up to 3 iterations, each a frozen-encoder R1-sized block on validation (≈ 1 user-day + ≈ 5–15 GPU-h each). The best validated version becomes "B²-final"; R1's B²-r stays in the paper as the pre-specified version.
+>    - The §5 criteria are committed and dated at the end of R0 (for B²-r) as planned, and **re-committed for B²-final at the end of D, before R2 and before any test prediction is opened**. Both versions are scored in R3.
+>    - Improvements are judged on Endoscapes **and** CIFAR-10H validation, to avoid tuning to the 41 Endoscapes validation videos.
+> 2. **Clarification of "B² learns m like soft BCE"** (01_foundations, §1 above). Correct statement: both losses target the **same mean in expectation**, E[θ | x], because the 3-rater vote fraction k/n is an unbiased but noisy estimate of the panel probability θ and the noise averages out over training images. They are identical only as S → ∞, and can differ in finite samples at small S. What B² adds is S, which **separates rater-sampling noise (finite n) from genuine disagreement between raters**: soft BCE cannot tell a frame where the true panel probability is 0.3 from one where k/n = 1/3 by chance. Simulation (3 raters, θ ~ Beta(mean 0.3, S 2), 20k frames): soft BCE m = 0.302, B² m = 0.302, S = 1.92; the observed split rate 0.415 is matched by B² (0.415) and not by soft BCE's Binomial (0.632).
+> 3. **Storage policy.** Project quota is 750 GB (24 GB used on 2026-10-14) and **500k files** (205k used). Keep: test/val prediction files for checkpoints A and B (small), head weights (≈ 1 MB each), embedding caches (≈ 35 MB per dataset). Do **not** keep full fine-tuned encoder weights (≈ 350 MB each, ≈ 45 GB for R2 + R4 at 2 per run): write predictions, cache the part-B features needed by the re-head, then delete. Never write per-epoch checkpoints.
+> 4. Decisions: B²-M row kept; no LayerNorm in the head (DINOv3's CLS output is already layer-normalised); soft BCE not weighted by n; the Beta-Binomial loss is computed in float64; code uses "variants", not "arms".
+
 ## 1. Summary (one page)
 
 **Paper.** *Predicting the expert panel: when does a Beta-Binomial head add to soft labels? An analysis with application to the Critical View of Safety.* The paper is a substantial departure from MICCAI: one common single-image model, no spatiotemporal model, no majority-vote encoder adaptation, no video-level evaluation, and no MICCAI numbers reused.

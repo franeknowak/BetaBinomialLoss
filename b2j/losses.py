@@ -141,8 +141,9 @@ class PanelLoss(nn.Module):
     def per_sample(self, out: torch.Tensor, k: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
         cfg = self.cfg
         if cfg.kind == "b2":
-            a0, a1 = alphas(out, cfg.eps, cfg.plus_one)
-            loss = beta_binomial_nll(a0, a1, k, n)
+            # float64: lgamma of large arguments loses the small differences the loss depends on in float32
+            a0, a1 = alphas(out.double(), cfg.eps, cfg.plus_one)
+            loss = beta_binomial_nll(a0, a1, k.double(), n.double())
         else:
             z = out[..., 0]
             target = {"hard_bce": lambda: majority(k, n),
@@ -153,8 +154,8 @@ class PanelLoss(nn.Module):
             y = majority(k, n)
             loss = loss * (y * self.weights[:, 1] + (1 - y) * self.weights[:, 0])
         if cfg.kl_lambda:
-            loss = loss + cfg.kl_lambda * beta_kl(a0, a1, self.prior[:, 0], self.prior[:, 1])
-        return loss                                     # [B, K]
+            loss = loss + cfg.kl_lambda * beta_kl(a0, a1, self.prior[:, 0].double(), self.prior[:, 1].double())
+        return loss.to(out.dtype)                       # [B, K]
 
     def forward(self, out, k, n):
         return self.per_sample(out, k, n).mean(0).sum()

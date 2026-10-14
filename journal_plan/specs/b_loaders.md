@@ -6,7 +6,7 @@ Code: `b2j/data.py`. Tests: `tests/test_module_b.py` (Endoscapes test runs on re
 One row per image: `k, n` float `[N, K]`, `cluster` (bootstrap unit), `split`, `paths`, optional raw `counts [N, C]` (CIFAR-10H). `take(split)`, `subset(mask)`.
 
 ## Endoscapes2023 (CVS201)
-- Source: `all_metadata.csv` (cluster: `/cluster/project7/FranekLapChole/SwinCVS/endoscapes/`), keyframes only (`is_ds_keyframe`, 11,090).
+- Source: `all_metadata.csv` (cluster: `/cluster/project7/FranekLapChole/datasets/endoscapes/` (moved from SwinCVS/ by 2026-10-14)), keyframes only (`is_ds_keyframe`, 11,090).
 - k per criterion = sum of `cvs_annotator_{1,2,3}` binary votes; checked against the averaged C1–C3 columns (max error 0.0). n = 3.
 - Split by video id: train 1–120 / val 121–161 / test 162–201 → 6,960 / 2,331 / 1,799 frames (plan values). Cluster = video.
 - Majority prevalence train 0.156/0.112/0.179 (= MICCAI PI values), val 0.163/0.125/0.167, test 0.235/0.168/0.278.
