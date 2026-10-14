@@ -1,7 +1,7 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Module g written; pilot GPU fault fixed (issue #22 workaround), resubmitted (see 8). Table/figure scripts done.
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Module g written; pilot GPU fault fixed (issue #22 workaround), resubmitted as job **7522400** (see 8). Table/figure scripts done.
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
