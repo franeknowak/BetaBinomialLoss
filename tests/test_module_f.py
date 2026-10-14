@@ -111,3 +111,11 @@ def test_smoke_report_on_fake_block(tmp_path, monkeypatch):
     assert boot.lo <= boot.estimate <= boot.hi
     assert RS.eps_rule([{"run": "endoscapes/b2r__frozen", "nonfinite": 0, "stuck_max": 0.2}]) == ["endoscapes/b2r__frozen"]
     assert RS.eps_rule([{"run": "endoscapes/b2m__frozen", "nonfinite": 3, "stuck_max": 0.2}]) == []
+
+
+def test_analysis_refuses_test_before_r3(tmp_path):
+    from b2j import analysis as A
+    with pytest.raises(PermissionError):
+        A.collect("smoke", "endoscapes", split="test", root=tmp_path)
+    with pytest.raises(PermissionError):
+        A.figures("smoke", split="test", root=tmp_path)

@@ -26,5 +26,12 @@ Code: `b2j/runs.py`, `b2j/blocks.py`, `b2j/launch.py`, `b2j/report_smoke.py`. Te
 ## Bug caught by these tests
 Endoscapes ids were pandas object arrays, which `np.load` refuses without pickle: the first Endoscapes cache (job 7519881) and every prediction file would have been unreadable. Ids are now plain strings (test in `test_module_b.py`); the smoke job rebuilds the Endoscapes cache first.
 
+## Tables and figures (`b2j/analysis.py`)
+`python -m b2j.analysis tables|figures <block> [--split val]`. **`--split test` raises unless `--open-test` is passed (R3 only)**; tested.
+- Rows per dataset: every trained variant (A for discrimination, B for panel and use cases) + post-hoc rows `<variant>:plugin` (S = ∞; soft and hard BCE), `<variant>:S*(m)` (soft BCE → S\*(m); B²-r → S\*(m_B²)), and the soft-BCE ensemble (mean m; mixture of the members' Binomial vote distributions). All post-hoc fits from validation. Every prediction is carried as a vote distribution, so mixtures need no special case.
+- T1 discrimination (ACC, BACC, F1, mAP, AUROC; post-hoc rows left out because they share their model's m); T2 panel (vote NLL per frame or per vote, ECE and Brier of P_maj, P(split) AUROC and Brier, θ-MSE); T3 use cases (FCR at recall 0.90 for m and P_maj, AURC, U1-c split rate at 80% coverage, U2 AP and catch rate). Mean ± sd over seeds; CIs and verdicts come from the verdict script (written with the R1 blocks).
+- Figures: F1 theory (no data); F2 H4 margin vs training raters n; F3 S vs m per B² variant; F4 validation S and fitted c per evaluation, frozen vs fine-tuned; F5 FCR vs recall and risk–coverage. F6 (frames ranked by P(split)) needs the images: to be run on the cluster in R3.
+- Checked on the smoke validation outputs (pulled to the Mac without any test file): tables match the smoke report; figures rendered and inspected. F3 shows B²-M's `+1` floor on real data.
+
 ## Still to do in module f
-Table and figure scripts (T1–T3, F1–F6) written against validation outputs, once the smoke outputs exist; R1/R2 blocks after module g.
+Verdict script (S0 … S6b with bootstrap and margins) and the R1/R2 blocks, after module g; F6 on the cluster.

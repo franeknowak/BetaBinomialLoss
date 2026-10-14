@@ -1,7 +1,7 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Module g written, pilot job 7522356 running. Table/figure scripts still to do.
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Module g written, pilot job 7522356 running. Table/figure scripts done.
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
@@ -55,7 +55,7 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
    - Timing: frozen runs 1–90 s (CIFAR-10H slowest: scoring 10 heads with n ≤ 63 at 60 evaluations); fine-tuning Endoscapes ≈ 4 min per epoch incl. evaluations; re-head pass ≈ 3.5 min for 1 epoch. → R1 ≈ 1–2 GPU-h; R2 (5 epochs) ≈ 10 GPU-h, well under the plan's estimates.
    - Module e real-data check ran (B²-r vs soft BCE, Endoscapes val): all metrics finite and plausible; video bootstrap works.
 8. Module g WRITTEN (2026-10-14): `b2j/pilot.py`, blocks `tune` (54 runs) + `pilot` (20 runs), spec `specs/g_pilot.md`, `tests/test_module_g.py` (97 tests pass). Job `jobs/pilot.qsub.sh` = job **7522356** (submitted 15:14 with the user's go; ≈ 1–1.5 h: tune ≈ 30 min, pilot ≈ 15 min, margins ≈ 25 min CPU). After it: read `results/journal/tune/tune_report.md` (late-checkpoint flags) and `results/journal/pilot/margins.md`; write δ values into plan §5, commit and date; then R1 blocks.
-9. Table/figure scripts (module f remainder): not started; do while the pilot runs.
+9. Table/figure scripts DONE (`b2j/analysis.py`; spec f): T1–T3, F1–F5 on validation; test split locked behind `--open-test`. Remaining in f: verdict script + R1/R2 blocks (after g), F6 on the cluster. Smoke validation outputs (no test files) pulled to the Mac in `results/journal/smoke/` (gitignored).
 
 ## Open questions (user)
 - CIFAR-10H val mAP ≈ 0.996 (smoke): user raised possible leakage (DINOv3 pretraining data vs the CIFAR-10 test images). Not checked: whether DINOv3's LVD-1689M curation deduplicated against CIFAR-10 test (DINOv2 did deduplicate against benchmark eval sets; DINOv3 UNVERIFIED). Likely mostly that CIFAR-10 is easy for strong frozen features. Matters little for the panel endpoints (vote counts are not in any pretraining data). User: leave as is for now; revisit later (verify dedup; one limitation sentence).
