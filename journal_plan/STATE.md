@@ -38,7 +38,7 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 ## Exact next action
 1. Downloads (user green light 2026-10-14). Job script `BetaBinomialLoss/jobs/download_datasets.qsub.sh` on the cluster (gitignored; local draft in `jobs/`), arg `cifar10h|mhist`, logs in `BetaBinomialLoss/jobs/logs/`.
    - CIFAR-10H: job **7519817** submitted 13:14 → check `jobs/logs/dl_datasets.o7519817`, then `ls datasets/cifar10h/images | wc -l` = 10000.
-   - MHIST: waiting for links from the user (Outlook SafeLinks: extract the real Dropbox URL from the `url=` parameter). Then `mkdir -p datasets/mhist`, write `.urls` (chmod 600) via ssh stdin, `qsub jobs/download_datasets.qsub.sh mhist`. If the links fail, the user downloads and uploads to `datasets/mhist/`.
+   - MHIST: links written to `datasets/mhist/.urls` (decoded from Outlook SafeLinks; direct dl.dropboxusercontent.com links), job **7519820** submitted 13:15 → check `jobs/logs/dl_datasets.o7519820` (MD5 check, png count ≈ 3152, annotations header). If links fail, the user downloads and uploads to `datasets/mhist/`.
 2. After download: real-data tests for CIFAR-10H (counts 10000×10, n 47–63) and MHIST (verify the vote column header and patient grouping).
 3. Module c (embedding cache + one trainer): cache DINOv3 CLS embeddings once per dataset; trainer on embeddings or images; running-best checkpoints A (val mAP) and B (val vote NLL after post-hoc spread); test predictions written silently; storage policy above.
 4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
