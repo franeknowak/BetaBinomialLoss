@@ -9,4 +9,3 @@
 .hf_cache/
 /dataset/
 /.claude
-!jobs/*.qsub.sh
