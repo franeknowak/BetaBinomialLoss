@@ -1,7 +1,9 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
+Round 0. Module c (feature cache + one trainer) WRITTEN and unit-tested on the Mac (2026-10-14), not yet run on the cluster (needs timm/DINOv3 → first real run in module f smoke test). MHIST downloaded and verified. CIFAR-10H download job running.
+
+(Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
 ## Read first
 HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy and a corrected statement of the soft-BCE decomposition).
@@ -38,9 +40,9 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 ## Exact next action
 1. Downloads (user green light 2026-10-14). Job script `BetaBinomialLoss/jobs/download_datasets.qsub.sh` on the cluster (gitignored; local draft in `jobs/`), arg `cifar10h|mhist`, logs in `BetaBinomialLoss/jobs/logs/`.
    - CIFAR-10H: job **7519817** submitted 13:14 → check `jobs/logs/dl_datasets.o7519817`, then `ls datasets/cifar10h/images | wc -l` = 10000.
-   - MHIST: links written to `datasets/mhist/.urls` (decoded from Outlook SafeLinks; direct dl.dropboxusercontent.com links), job **7519820** submitted 13:15 → check `jobs/logs/dl_datasets.o7519820` (MD5 check, png count ≈ 3152, annotations header). If links fail, the user downloads and uploads to `datasets/mhist/`.
+   - MHIST: DONE (jobs 7519820 download + 7519821 md5 OK/unzip). `datasets/mhist/{annotations.csv, MD5SUMs.txt, images/MHIST_*.png}` (3152). Vote column `Number of Annotators who Selected SSA (Out of 7)`; loader verified on real file: train/val/test 1740/435/977, SSA majority 990. Mac has `../datasets/mhist/annotations.csv` only.
 2. After download: real-data tests for CIFAR-10H (counts 10000×10, n 47–63) and MHIST (verify the vote column header and patient grouping).
-3. Module c (embedding cache + one trainer): cache DINOv3 CLS embeddings once per dataset; trainer on embeddings or images; running-best checkpoints A (val mAP) and B (val vote NLL after post-hoc spread); test predictions written silently; storage policy above.
+3. Module c DONE on the Mac: `b2j/{embed,train,posthoc}.py`, spec `specs/c_cache_trainer.md`, `tests/test_module_c.py`. Decisions to confirm with the user are in the spec (soft BCE checkpoint B via Global-S; per-vote selection NLL; DUP selection; default epochs 50 frozen / 10 fine-tune). After CIFAR-10H lands: real-data CIFAR-10H test (counts 10000×10, n 47–63), then a cache-building job per dataset (GPU, short) — needs user go-ahead per job. Next module: d (BACC thresholds, S*(m) on either m; c and Global-S already in posthoc.py).
 4. Then modules d–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
 
 ## Open questions (user)

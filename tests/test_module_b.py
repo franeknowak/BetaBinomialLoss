@@ -93,3 +93,14 @@ def test_imageset_shapes(tmp_path):
                          np.array(["train"]), np.array([str(tmp_path / p)]))
         img, k, n, i = D.ImageSet(t, name)[0]
         assert img.shape == (3, size, size) and k.item() == 1 and n.item() == 3 and i == 0
+
+
+MHIST = D.DATA_ROOT / "mhist" / "annotations.csv"
+
+
+@pytest.mark.skipif(not MHIST.exists(), reason="MHIST annotations not present")
+def test_mhist_real():
+    t = D.mhist_labels(MHIST, D.DATA_ROOT / "mhist" / "images")
+    assert {s: (t.split == s).sum() for s in ("train", "val", "test")} == {"train": 1740, "val": 435, "test": 977}
+    assert set(np.unique(t.k)) == set(range(8)) and (t.n == 7).all()
+    assert (t.k > 3.5).sum() == 990                       # SSA majority count (MHIST paper: 990 SSA / 2162 HP)
