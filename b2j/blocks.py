@@ -23,4 +23,14 @@ def smoke():
     return specs
 
 
-BLOCKS = {"smoke": smoke}
+def tune():
+    from b2j.pilot import tune_specs
+    return tune_specs()
+
+
+def pilot():
+    from b2j.pilot import pilot_specs
+    return pilot_specs()
+
+
+BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot}

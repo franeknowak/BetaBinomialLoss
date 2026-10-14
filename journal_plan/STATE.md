@@ -1,7 +1,7 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Table/figure scripts still to do; then module g.
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Module g written, pilot job awaiting user go. Table/figure scripts still to do.
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
@@ -54,7 +54,8 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
    - Train/val median-S ratio ≈ 1.0 in all frozen runs (memorisation check H5d fine at these settings).
    - Timing: frozen runs 1–90 s (CIFAR-10H slowest: scoring 10 heads with n ≤ 63 at 60 evaluations); fine-tuning Endoscapes ≈ 4 min per epoch incl. evaluations; re-head pass ≈ 3.5 min for 1 epoch. → R1 ≈ 1–2 GPU-h; R2 (5 epochs) ≈ 10 GPU-h, well under the plan's estimates.
    - Module e real-data check ran (B²-r vs soft BCE, Endoscapes val): all metrics finite and plausible; video bootstrap works.
-8. Next: table/figure scripts (module f remainder, against smoke validation outputs), then module g pilot (tuning grid, 5 seeds, δ = 2h; commit §5 with δ values).
+8. Module g WRITTEN (2026-10-14): `b2j/pilot.py`, blocks `tune` (54 runs) + `pilot` (20 runs), spec `specs/g_pilot.md`, `tests/test_module_g.py` (97 tests pass). Job `jobs/pilot.qsub.sh` copied to the cluster, NOT submitted: waiting for the user's go (≈ 1–1.5 h: tune ≈ 30 min, pilot ≈ 15 min, margins ≈ 25 min CPU). After it: read `results/journal/tune/tune_report.md` (late-checkpoint flags) and `results/journal/pilot/margins.md`; write δ values into plan §5, commit and date; then R1 blocks.
+9. Table/figure scripts (module f remainder): not started; do while the pilot runs.
 
 ## Open questions (user)
 - Optional training-set-size sweep (10/30/100% of training images, soft BCE vs B²-r, frozen, 5 seeds, Endoscapes + CIFAR-10H, 60 cheap runs): add to R1 or not?
