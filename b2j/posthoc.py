@@ -1,4 +1,4 @@
-"""Post-hoc quantities on validation (module d; started in module c because the trainer needs them every epoch).
+"""Post-hoc quantities on validation (module d; started in module c because the trainer needs them at every evaluation).
 
 Every variant's raw head output [N, K, d] maps to a panel prediction (m, S): mean vote fraction m and
 Beta spread S (S = inf is the Binomial plug-in). The spread step fits one scale per head on validation

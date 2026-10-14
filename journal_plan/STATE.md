@@ -6,7 +6,7 @@ Round 0. Module c (feature cache + one trainer) WRITTEN and unit-tested on the M
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
 ## Read first
-HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy and a corrected statement of the soft-BCE decomposition).
+HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amendments** at the top override the body; 2026-10-14 adds a validation-only method-development round D, a storage policy, a corrected statement of the soft-BCE decomposition, and (#5) training length + checkpoint selection).
 
 ## User instructions (standing)
 - **Dataset layout (2026-10-14):** `<repo>/../datasets/<name>` on BOTH Mac and cluster (`b2j.data.DATA_ROOT`). Mac: done 2026-10-14 (`python_code/datasets/` + compatibility symlink `dataset -> datasets` for older projects). Repo-internal `dataset/` copy is obsolete (gitignored; user may delete).

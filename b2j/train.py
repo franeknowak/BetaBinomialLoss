@@ -1,10 +1,13 @@
 """Module c: one trainer for every model variant, on cached embeddings (frozen encoder) or on images (fine-tuning).
 
-Each epoch the trainer scores validation only: it fits the variant's spread scale (posthoc.fit_spread) and
-keeps two running-best states in memory (plan §2):
-  A = best validation mAP of the discrimination score m against the majority vote;
-  B = best validation vote NLL per vote after the spread step.
-  DUP has no panel prediction: A and B are both its best validation loss.
+The trainer evaluates on validation only, evals_per_epoch times per epoch, over a short fixed budget with no
+early stopping (plan amendment 2026-10-14 #5). At each evaluation it fits the variant's spread scale
+(posthoc.fit_spread) and records two selection criteria:
+  A = validation mAP of the discrimination score m against the majority vote;
+  B = validation vote NLL per vote after the spread step (Global-S for hard and soft BCE, c for B²).
+  DUP has no panel prediction: A and B are both its validation loss.
+Each checkpoint is the evaluation with the best centred moving average (window cfg.smooth) of its criterion;
+the kept weights are the real state at that evaluation.
 After the last epoch it writes, for A and B: validation and test raw head outputs, the fitted scale and the head
 weights. Test labels never reach the trainer (Split.k is None for test), no test metric is computed or printed,
 and no encoder weights or per-epoch checkpoints are written (storage policy, plan amendment 2026-10-14 #3).

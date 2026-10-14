@@ -1,6 +1,6 @@
 # Module c — embedding cache and one trainer
 
-Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the spread fit the trainer needs every epoch; module d extends this file). Tests: `tests/test_module_c.py` (CPU, synthetic data, stub encoder instead of DINOv3).
+Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the spread fit the trainer needs at every evaluation; module d extends this file). Tests: `tests/test_module_c.py` (CPU, synthetic data, stub encoder instead of DINOv3).
 
 ## Embedding cache (`embed.py`)
 - Encoder: timm `vit_base_patch16_dinov3.lvd1689m`, public weights, `num_classes=0`, `global_pool="token"` (CLS after DINOv3's final LayerNorm), `drop_path_rate=0`, `img_size` = dataset input size (384 Endoscapes, 224 CIFAR-10H/MHIST). Same call as the MICCAI code.
@@ -20,8 +20,8 @@ Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the spread fit the t
   - median validation S per head; B² variants also log the training stuck share (accumulated over the epoch's batches).
 - **Checkpoints:** A = max `val_map`; B = min `val_nll_per_vote`; DUP: both = min validation DUP loss. Chosen on a **centred moving average over 3 evaluations** (`smooth=3`; truncated at the ends; strict improvement). The kept weights are always the real state at the chosen evaluation (never averaged weights), with that evaluation's own fitted scale. The choice for evaluation t is made at t+1, so the trainer keeps the last 2 states in memory.
 - Why smoothing: validation is effectively small (correlated frames from 41 videos), so a single evaluation can win by luck; the smoothed choice must sit in a run of good evaluations. With 4 evaluations per epoch the window spans < 1 epoch, so an early optimum is not hidden.
-- **Written after the last epoch** (per run dir): `log.jsonl` (one line per epoch), `summary.json` (config, epochs and validation scores of A and B, fitted scales, non-finite steps, B² train/val median-S ratio at B), `{val,test}_{A,B}.npz` (ids, raw head outputs, fitted scale), `head_{A,B}.pt` (≈ 1 MB). Nothing else: no encoder weights, no per-epoch files.
-- **Test discipline:** test outputs are produced once per checkpoint from the in-memory state, saved, never scored or printed. A unit test asserts that no logged, saved or printed key mentions test.
+- **Written after the last epoch** (per run dir): `log.jsonl` (one line per evaluation: eval index, fractional epoch, train loss, validation scores, fitted scale, median S, stuck share), `summary.json` (config, eval index, epoch, smoothed criterion and validation scores of A and B, fitted scales, non-finite steps, B² train/val median-S ratio at B), `{val,test}_{A,B}.npz` (ids, raw head outputs, fitted scale), `head_{A,B}.pt` (≈ 1 MB). Nothing else: no encoder weights, no per-evaluation files.
+- **Test discipline:** test outputs are produced once per checkpoint from the in-memory state after training, saved, never scored or printed. A unit test asserts that no logged, saved or printed key mentions test.
 
 ## Post-hoc spread (`posthoc.py`, start of module d)
 - `mean_spread(variant, out, eps)` → (m, S0): B² m = α₁/(α₀+α₁), S0 = α₀+α₁ (honours the run's ε override, never for B²-M); BCE heads m = sigmoid, S0 = ∞.
