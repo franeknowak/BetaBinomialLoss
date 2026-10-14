@@ -1,7 +1,7 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke job submitted (see Exact next action 7). Table/figure scripts still to do.
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e DONE (real-data check on smoke-test predictions, plan amendment #6). Module f (runs/launcher/smoke report) written; smoke test PASSED (job 7519912, 36/36 runs, 36 min). Table/figure scripts still to do; then module g.
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
@@ -46,7 +46,15 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 5. Module d DONE: `b2j/posthoc.py` (S*(m) with S linear in logit m as the plan says — log-S would hide the non-monotone P_maj; panel probabilities; ensemble; thresholds; pmaj_monotone), spec `specs/d_posthoc.md`, `tests/test_module_d.py` (reproduces plan §3 table and ranges). 67 tests pass.
 6. Module e DONE: `b2j/{metrics,stats}.py`, spec `specs/e_metrics_stats.md`, `tests/test_module_e.py` (89 tests pass in total). MICCAI-era test replaced by a real-data check on smoke-test validation predictions (module f).
 7. Module f: `b2j/{runs,blocks,launch,report_smoke}.py`, spec `specs/f_launcher.md`, `tests/test_module_f.py` (95 tests pass). Fixed: Endoscapes ids were object dtype → unreadable .npz; smoke job rebuilds the Endoscapes cache first. Smoke job `jobs/smoke.qsub.sh` (cluster only) = job **7519912** (submitted 14:25); outputs `results/journal/smoke/`, report `results/journal/smoke/report.md` (validation only). Check: all 36 runs finished, ε fallback rule, module e real-data check, timings (to size R1/R2 jobs).
-8. Then table/figure scripts (module f remainder), module g pilot. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
+   Smoke results (validation only; `results/journal/smoke/report.md` on the cluster; 330 MB):
+   - 36/36 ok; ε fallback NOT triggered (no non-finite loss; B²-r-family stuck share ≤ 3.5%) → ε = 1e-3 stays.
+   - Endoscapes frozen: checkpoint A at epoch ≈ 2.25 for almost every variant (confirms the user's early overfitting; 4 evals/epoch catches it); B later (epochs 3–13).
+   - MHIST (and CIFAR-10H linear / part-B heads): A or B often in the last epochs (11–15) at lr 3e-4 → the 15-epoch frozen budget may be short there. Module g must check that the chosen evaluations are not at the end of the budget for the tuned lr; extend per dataset if they are.
+   - CIFAR-10H val mAP ≈ 0.996 for every variant (ceiling: discrimination is uninformative there, as expected; its role is the panel endpoints).
+   - Train/val median-S ratio ≈ 1.0 in all frozen runs (memorisation check H5d fine at these settings).
+   - Timing: frozen runs 1–90 s (CIFAR-10H slowest: scoring 10 heads with n ≤ 63 at 60 evaluations); fine-tuning Endoscapes ≈ 4 min per epoch incl. evaluations; re-head pass ≈ 3.5 min for 1 epoch. → R1 ≈ 1–2 GPU-h; R2 (5 epochs) ≈ 10 GPU-h, well under the plan's estimates.
+   - Module e real-data check ran (B²-r vs soft BCE, Endoscapes val): all metrics finite and plausible; video bootstrap works.
+8. Next: table/figure scripts (module f remainder, against smoke validation outputs), then module g pilot (tuning grid, 5 seeds, δ = 2h; commit §5 with δ values).
 
 ## Open questions (user)
 - Optional training-set-size sweep (10/30/100% of training images, soft BCE vs B²-r, frozen, 5 seeds, Endoscapes + CIFAR-10H, 60 cheap runs): add to R1 or not?
