@@ -119,3 +119,9 @@ def test_cifar10h_real():
     for s in ("train", "val", "test"):
         assert (np.bincount(y[t.split == s]) == {"train": 600, "val": 200, "test": 200}[s]).all()
     assert D.ambiguous_mask(t).sum() == 1211
+
+
+@pytest.mark.skipif(not (ENDO / "all_metadata.csv").exists(), reason="Endoscapes metadata not present")
+def test_ids_are_plain_strings():
+    """Object-dtype ids cannot be read back from .npz without pickle (caches and prediction files)."""
+    assert D.endoscapes_labels(ENDO).ids.dtype.kind == "U"

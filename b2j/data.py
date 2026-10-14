@@ -45,7 +45,7 @@ def endoscapes_labels(root) -> LabelTable:
     split = np.full(len(d), "", dtype=object)
     for s, (lo, hi) in ENDO_SPLIT.items():
         split[(d["vid"] >= lo) & (d["vid"] <= hi)] = s
-    ids = (d["vid"].astype(str) + "_" + d["frame"].astype(str)).values
+    ids = (d["vid"].astype(str) + "_" + d["frame"].astype(str)).values.astype(str)   # str, not object: np.load needs no pickle
     paths = np.array([str(root / s / f"{i}.jpg") for s, i in zip(split, ids)])
     return LabelTable(ids, k, np.full_like(k, 3.0), d["vid"].values, split.astype(str), paths)
 
