@@ -1,7 +1,7 @@
 # Journal plan — STATE
 
 ## Current step
-Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Next: module e (metrics, bootstrap, verdicts).
+Round 0. Module d (post-hoc quantities) DONE on the Mac 2026-10-14. Feature caches built on the cluster. Module e (metrics, bootstrap, verdicts) DONE on the Mac except the MICCAI-era regression test (needs user decision). Next: module f (launcher, aggregation, smoke test).
 
 (Previous:) Round 0. Module a DONE. Module b DONE for Endoscapes; CIFAR-10H and MHIST loaders written and unit-tested on synthetic data, real data not yet downloaded. Next: dataset download job (needs user go-ahead), then module c. (Updated 2026-10-14; handing over to Claude CLI.)
 
@@ -44,7 +44,8 @@ HANDOFF.md → this file → `05_plan.md` (the 2026-10-09 and **2026-10-14 amend
 3. Module c DONE on the Mac: `b2j/{embed,train,posthoc}.py`, spec `specs/c_cache_trainer.md`, `tests/test_module_c.py`. Review decisions APPROVED and implemented 2026-10-14 (spec §Decisions): Global-S for hard+soft BCE at checkpoint B; 4 evals/epoch; budgets 15 frozen / 5 fine-tune; no early stop; 3-evaluation smoothing for selection; A/B epochs + swap table reported; full-panel-validation sensitivity check at CIFAR-10H n = 3 (add to R1 block in module f). All three datasets are on the cluster and verified (real-data tests in tests/test_module_b.py).
 4. Feature cache DONE (job 7519881, 13:59–14:08, ~8 min total on one A6000): `BetaBinomialLoss/cache/{endoscapes,cifar10h,mhist}_frozen.npz` = 11090/10000/3152 × 768, all finite, 34/31/10 MB, mean CLS norm ≈ 16. DINOv3 loads offline from `.hf_cache` at img_size 384 and 224.
 5. Module d DONE: `b2j/posthoc.py` (S*(m) with S linear in logit m as the plan says — log-S would hide the non-monotone P_maj; panel probabilities; ensemble; thresholds; pmaj_monotone), spec `specs/d_posthoc.md`, `tests/test_module_d.py` (reproduces plan §3 table and ranges). 67 tests pass.
-6. Then modules e–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
+6. Module e DONE: `b2j/{metrics,stats}.py`, spec `specs/e_metrics_stats.md`, `tests/test_module_e.py` (89 tests pass in total). Open: MICCAI-era results JSONs hold only per-epoch summary metrics, no per-frame predictions → the plan's "test on MICCAI-era validation predictions" needs a GPU job re-running the old code on the 9 weight files (validation only). Asked the user.
+7. Then modules f–g per 05_plan §4.4. Round D (method development on validation) after R1; log in `journal_plan/iterations.md`.
 
 ## Open questions (user)
 - Optional training-set-size sweep (10/30/100% of training images, soft BCE vs B²-r, frozen, 5 seeds, Endoscapes + CIFAR-10H, 60 cheap runs): add to R1 or not?
