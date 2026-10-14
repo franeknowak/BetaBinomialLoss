@@ -104,3 +104,18 @@ def test_mhist_real():
     assert {s: (t.split == s).sum() for s in ("train", "val", "test")} == {"train": 1740, "val": 435, "test": 977}
     assert set(np.unique(t.k)) == set(range(8)) and (t.n == 7).all()
     assert (t.k > 3.5).sum() == 990                       # SSA majority count (MHIST paper: 990 SSA / 2162 HP)
+
+
+C10H = D.DATA_ROOT / "cifar10h"
+
+
+@pytest.mark.skipif(not (C10H / "cifar10h-counts.npy").exists(), reason="CIFAR-10H counts not present")
+def test_cifar10h_real():
+    c, y = np.load(C10H / "cifar10h-counts.npy"), np.load(C10H / "test_labels.npy")
+    assert c.shape == (10000, 10) and c.sum(1).min() == 47 and c.sum(1).max() == 63
+    assert (c.argmax(1) == y).mean() == pytest.approx(0.9921, abs=1e-4)      # human plurality vs CIFAR label
+    t = D.cifar10h_labels(c, y, C10H / "images")
+    assert {s: (t.split == s).sum() for s in ("train", "val", "test")} == {"train": 6000, "val": 2000, "test": 2000}
+    for s in ("train", "val", "test"):
+        assert (np.bincount(y[t.split == s]) == {"train": 600, "val": 200, "test": 200}[s]).all()
+    assert D.ambiguous_mask(t).sum() == 1211
