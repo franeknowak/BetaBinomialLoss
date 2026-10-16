@@ -10,12 +10,13 @@ by vote likelihood:
   - B²-M:                             no fit (native spread, legacy row)
 DUP has no panel prediction; its score is P(split).
 
-Also here: S*(m) (a spread that depends only on m), the panel probabilities P_maj, P(split), P(unanimous)
-from the vote pmf, the soft-BCE ensemble mixture, and the validation thresholds (max BACC; recall 0.90).
+Also here: the panel probabilities P_maj, P(split), P(unanimous) from the vote pmf, the soft-BCE ensemble
+mixture, and the validation thresholds (max BACC; recall 0.90). (S*(m), a spread that depends only on m, was
+dropped by 05_plan amendment 2026-10-16 #3.)
 """
 import numpy as np
 from scipy.optimize import minimize_scalar
-from scipy.special import expit, gammaln, logit
+from scipy.special import expit, gammaln
 
 from b2j.variants import VARIANTS
 
@@ -106,41 +107,6 @@ def fit_spread(name: str, out, k, n, eps=None):
     return fit_scale(m, S0 if rule == "c" else np.ones_like(m), k, n)
 
 
-# ---------------------------------------------------------------- S*(m): spread as a function of m only
-def fit_s_of_m(m, k, n, bins=5):
-    """Per head: 5 equal-mass bins of m (by rank), MLE of S per bin, knots at each bin's median logit m.
-
-    Returns (knots [K, bins], S [K, bins]). S*(m) is piecewise linear in logit m (plan §2), flat outside
-    the outermost knots. Interpolating S itself (not log S) follows the plan and matters: on the plan's
-    steep example (S 1 -> 30 between m 0.15 and 0.3) log-S interpolation would hide the non-monotone
-    P_maj that R3 must check (pmaj_monotone). A bin whose MLE is the Binomial limit sits at the search
-    bound e^9 (fit_scale).
-    """
-    m, k, n = (np.asarray(x, np.float64) for x in (m, k, n))
-    K = m.shape[1]
-    knots, S = np.empty((K, bins)), np.empty((K, bins))
-    for j in range(K):
-        for b, idx in enumerate(np.array_split(np.argsort(m[:, j], kind="stable"), bins)):
-            mb = m[idx, j:j + 1]
-            knots[j, b] = np.median(logit(np.clip(mb, 1e-12, 1 - 1e-12)))
-            S[j, b] = fit_scale(mb, np.ones_like(mb), k[idx, j:j + 1], n[idx, j:j + 1])[0]
-    return knots, S
-
-
-def s_of_m(fit, m):
-    """Evaluate a fitted S*(m) at m [N, K]."""
-    knots, S = fit
-    x = logit(np.clip(np.asarray(m, np.float64), 1e-12, 1 - 1e-12))
-    out = np.empty_like(x)
-    for j in range(x.shape[1]):
-        if np.isinf(S[j]).any():             # n = 1 everywhere: tie-break S = inf
-            out[:, j] = np.inf
-            continue
-        order = np.argsort(knots[j])
-        out[:, j] = np.interp(x[:, j], knots[j][order], S[j][order])
-    return out
-
-
 # ---------------------------------------------------------------- vote pmf and panel probabilities
 def vote_pmf(m, S, n):
     """P(k | n, m, S) for k = 0..max(n): [N, K, max n + 1]; entries with k > n are 0. n may vary per sample."""
@@ -227,9 +193,3 @@ def threshold_at_recall(score, y, recall=0.90):
         out[j] = pos[need - 1]
     return out
 
-
-def pmaj_monotone(fit, n, grid=2001):
-    """Plan §3 point 2: is P_maj(m, S*(m)) non-decreasing in m on (0, 1)? Per head [K] bool (checked on a grid)."""
-    m = np.linspace(1e-4, 1 - 1e-4, grid)[:, None].repeat(fit[0].shape[0], 1)
-    pm = p_majority(vote_pmf(m, s_of_m(fit, m), np.full(m.shape, n)), np.full(m.shape, n))
-    return (np.diff(pm, axis=0) >= -1e-12).all(0)

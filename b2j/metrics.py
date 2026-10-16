@@ -95,18 +95,31 @@ def theta_mse(m, k, n):
 
 
 # ---------------------------------------------------------------- use-case endpoints
+def _precision_at(s, t, recalls):
+    """One head: precision at the first operating point (descending score) whose recall reaches each value of
+    `recalls`, read off the PR curve; tied scores enter together. None without positives."""
+    if t.sum() == 0:
+        return None
+    u, inv = np.unique(-s, return_inverse=True)                # distinct thresholds, descending score
+    tp = np.cumsum(np.bincount(inv, weights=t, minlength=len(u)))
+    npred = np.cumsum(np.bincount(inv, minlength=len(u)))
+    i = np.searchsorted(tp / t.sum(), np.asarray(recalls) - 1e-12, side="left")
+    return tp[i] / npred[i]
+
+
 def fcr_at_recall(score, y, recall=0.90):
-    """False-confirmation rate = 1 - precision at the first operating point (descending score) whose recall
-    reaches `recall`, read off the PR curve; tied scores enter together. Mean over heads."""
-    def one(s, t):
-        if t.sum() == 0:
-            return None
-        u, inv = np.unique(-s, return_inverse=True)            # distinct thresholds, descending score
-        tp = np.cumsum(np.bincount(inv, weights=t, minlength=len(u)))
-        npred = np.cumsum(np.bincount(inv, minlength=len(u)))
-        i = int(np.argmax(tp / t.sum() >= recall - 1e-12))
-        return 1 - tp[i] / npred[i]
+    """False-confirmation rate = 1 - precision at the first operating point whose recall reaches `recall`
+    (_precision_at). Mean over heads."""
+    one = lambda s, t: None if t.sum() == 0 else 1 - _precision_at(s, t, [recall])[0]
     return _heads(one, np.asarray(score, np.float64), np.asarray(y, bool))
+
+
+def precision_at_recalls(score, y, recalls):
+    """Precision on a recall grid (same operating-point rule as fcr_at_recall), mean over heads with positives.
+    Returns [len(recalls)]; F5's precision-recall curves."""
+    score, y = np.asarray(score, np.float64), np.asarray(y, bool)
+    vals = [v for j in range(score.shape[1]) if (v := _precision_at(score[:, j], y[:, j], recalls)) is not None]
+    return np.mean(vals, 0) if vals else np.full(len(recalls), np.nan)
 
 
 def fcr_at_threshold(score, y, threshold):

@@ -1,6 +1,6 @@
 """Module a: the registry of trained model variants (plan §4.1) and the factory that turns a variant + training labels into head + loss.
 
-Post-hoc comparisons (Global-S, S*(m), S*(m_B²), ensemble) are not trained and live in module d.
+Post-hoc comparisons (Binomial plug-in, Global-S, soft-BCE ensemble) are not trained and live in module d.
 """
 from dataclasses import dataclass, replace
 

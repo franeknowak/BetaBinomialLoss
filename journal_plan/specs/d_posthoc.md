@@ -1,6 +1,6 @@
 # Module d — post-hoc quantities (validation only)
 
-> **Pending change (2026-10-16 review, 05_plan amendment #3):** S\*(m), S\*(m_B²) and `pmaj_monotone` are dropped from the plan. Module h removes them from the code; until then this spec describes the old code.
+> **Changed 2026-10-16 (module h, 05_plan amendment #3):** S\*(m), S\*(m_B²) and `pmaj_monotone` were removed. Spreads are compared as a ladder: plug-in (S = ∞) → Global-S (soft BCE's m) → B²-r. Whether S carries information beyond m is shown by ranking B²-r frames by P_maj vs by m (F5, module f).
 
 Code: `b2j/posthoc.py` (its spread step was started in module c). Tests: `tests/test_module_d.py` (+ the spread tests in `tests/test_module_c.py`).
 Everything here is fitted on validation and applied unchanged to test; nothing is resampled in the bootstrap (plan §4.3).
@@ -8,9 +8,6 @@ Everything here is fitted on validation and applied unchanged to test; nothing i
 ## From a model's output to a panel prediction
 - `mean_spread(variant, out, eps)` → m (predicted share of "yes" votes) and the raw spread S0 (B²: α₀+α₁; BCE: ∞).
 - `panel(variant, out, scale)` applies the variant's spread step (module c, plan amendment 2026-10-14 #5): B² → S = c·S0; hard/soft BCE → Global-S (one S\* per criterion); B²-M native. The independent-raters plug-in is `S = ∞` (supplementary row).
-- `fit_s_of_m(m, k, n)` / `s_of_m(fit, m)`: **S\*(m)**, a spread that depends only on m (plan §2). Per criterion: 5 equal-size bins of validation m (by rank), one maximum-likelihood S per bin, knots at each bin's median logit m, **S interpolated linearly in logit m**, flat beyond the outer knots. Fitted on soft BCE's m (baseline row) and on B²-r's own m → S\*(m_B²), the per-sample comparator for H4.
-  - Interpolating S itself (not log S) follows the plan, and it matters: on the plan's steep example (S = 1 at m = 0.15 → 30 at 0.3), log-S interpolation makes P_maj monotone and would hide the effect R3 must check.
-- `pmaj_monotone(fit, n)`: plan §3 point 2 check, per criterion, on a 2,001-point grid of m. If false, S\*(m) is kept as an extra U1 comparator.
 
 ## Panel probabilities (from the vote distribution)
 - `vote_pmf(m, S, n)`: P(k of n say yes), Beta-Binomial (Binomial at S = ∞); n may differ per image (CIFAR-10H).
@@ -28,8 +25,6 @@ Everything here is fitted on validation and applied unchanged to test; nothing i
 - **the plan's boundary table (§3 point 3) and P_maj ranges (§3 point 4) reproduced to ±0.0015**;
 - P_maj > 0.5 ⟺ m > 0.5 for every S; even-n ties;
 - P(split) = 1 − P(unanimous) at n = 3; ensemble mixtures;
-- S\*(m) recovers a constant S and a step in S; linear interpolation and flat ends; n = 1 → ∞;
-- monotonicity check (slow S\*(m) passes, the plan's steep example fails);
 - BACC threshold against brute force with tied scores; recall threshold is the largest that meets 0.90.
 
 ## Not in this module

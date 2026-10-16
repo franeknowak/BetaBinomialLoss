@@ -1,4 +1,4 @@
-"""Unit tests for module e (metrics, two-level bootstrap, margins, verdicts).
+"""Unit tests for module e (metrics, two-level bootstrap, readings; no margins since 2026-10-16).
 
 Run: python -m pytest tests/test_module_e.py -q
 """
@@ -141,28 +141,53 @@ def test_paired_groups_narrow_within_model_contrasts():
     assert paired.estimate == pytest.approx(0.1)
 
 
-# ---------------------------------------------------------------- margins and verdicts
+def test_vector_metric_matches_scalar_runs():
+    """A metric returning an array gives the same pointwise CI as running each component as a scalar metric."""
+    rng = np.random.default_rng(3)
+    clusters = rng.integers(0, 40, 400)
+    models = {"a": [rng.normal(0, 1, (400, 2)) for _ in range(3)], "b": [rng.normal(0.2, 1, (400, 2)) for _ in range(3)]}
+    comb = lambda v: v["a"] - v["b"]
+    vec = St.two_level_bootstrap(lambda p, r: p[r].mean(0), models, comb, clusters, B=200)
+    assert vec.estimate.shape == vec.lo.shape == vec.hi.shape == (2,)
+    for j in range(2):
+        sc = St.two_level_bootstrap(lambda p, r: p[r, j].mean(), models, comb, clusters, B=200)
+        assert isinstance(sc.lo, float)
+        assert (sc.estimate, sc.lo, sc.hi) == pytest.approx((vec.estimate[j], vec.lo[j], vec.hi[j]))
+
+
+def test_precision_at_recalls_matches_fcr():
+    score, y = _data(K=3)
+    grid = np.array([0.5, 0.7, 0.9, 1.0])
+    prec = M.precision_at_recalls(score, y, grid)
+    assert prec.shape == (4,)
+    assert prec[2] == pytest.approx(1 - M.fcr_at_recall(score, y, 0.9))
+    assert prec[3] == pytest.approx(np.mean(y.mean(0) / np.mean(score >= np.min(np.where(y, score, 1), 0), 0)))
+
+
+# ---------------------------------------------------------------- readings (no margins)
 def _r(lo, hi):
     return St.Result((lo + hi) / 2, lo, hi, np.array([]))
 
 
-@pytest.mark.parametrize("kind, lo, hi, direction, delta, expected", [
-    ("superiority", -0.3, -0.1, -1, None, "success"),
-    ("superiority", 0.1, 0.3, -1, None, "fail"),
-    ("superiority", -0.1, 0.1, -1, None, "inconclusive"),
-    ("superiority", 0.1, 0.3, +1, None, "success"),
-    ("equivalence", -0.01, 0.02, -1, 0.03, "success"),
-    ("equivalence", 0.04, 0.06, -1, 0.03, "fail"),
-    ("equivalence", -0.01, 0.05, -1, 0.03, "inconclusive"),
-    ("equivalence", -0.01, 0.01, -1, None, "no claim"),
-    ("noninferiority", -0.2, 0.02, -1, 0.03, "success"),
-    ("noninferiority", 0.01, 0.05, -1, 0.03, "fail"),
-    ("noninferiority", -0.01, 0.05, -1, 0.03, "inconclusive"),
+@pytest.mark.parametrize("kind, lo, hi, direction, expected", [
+    ("superiority", -0.3, -0.1, -1, "success"),
+    ("superiority", 0.1, 0.3, -1, "fail"),
+    ("superiority", -0.1, 0.1, -1, "inconclusive"),
+    ("superiority", 0.1, 0.3, +1, "success"),
+    ("superiority", -0.3, -0.1, +1, "fail"),
+    ("difference", 0.01, 0.03, +1, "better"),                       # e.g. Δ BACC > 0
+    ("difference", -0.03, -0.01, +1, "worse"),
+    ("difference", -0.03, -0.01, -1, "better"),                     # e.g. Δ NLL or Δ FCR < 0
+    ("difference", 0.01, 0.03, -1, "worse"),
+    ("difference", -0.001, 0.001, +1, "no evidence of a difference"),   # a narrow CI is still never "equivalent"
 ])
-def test_verdicts(kind, lo, hi, direction, delta, expected):
-    assert St.verdict(_r(lo, hi), kind, delta, direction) == expected
+def test_verdicts(kind, lo, hi, direction, expected):
+    assert St.verdict(_r(lo, hi), kind, direction) == expected
 
 
-def test_margin_cap():
-    assert St.margin(_r(-0.01, 0.01), St.CAPS["bacc"]) == pytest.approx(0.02)
-    assert St.margin(_r(-0.02, 0.02), St.CAPS["bacc"]) is None       # 2h = 0.04 > 3 pp cap
+def test_no_margins_left():
+    assert not hasattr(St, "margin") and not hasattr(St, "CAPS")
+    with pytest.raises(ValueError):
+        St.verdict(_r(-0.01, 0.01), "equivalence")
+    with pytest.raises(ValueError):
+        St.verdict(_r(-0.01, 0.01), "difference", 0)

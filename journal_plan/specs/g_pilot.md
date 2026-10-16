@@ -1,6 +1,6 @@
-# Module g — tuning and pilot margins (validation only)
+# Module g — tuning and pilot (validation only)
 
-> **Pending change (2026-10-16 review, 05_plan amendment #1):** the margins step is dropped (no δ). The `pilot` block's finished runs stay as a validation preview; `results/journal/pilot/margins.md` is historical. Module h removes the `margins` command.
+> **Changed 2026-10-16 (module h, 05_plan amendment #1):** the margins step was removed (no δ); `python -m b2j.pilot margins` no longer exists. The `pilot` block's finished runs (job 7522400) stay as a validation preview; `results/journal/pilot/margins.md` on the cluster is historical. The section below is kept for history.
 
 Code: `b2j/pilot.py` (+ blocks `tune`, `pilot` in `b2j/blocks.py`). Tests: `tests/test_module_g.py`. Job: `jobs/pilot.qsub.sh` (cluster only).
 
@@ -14,7 +14,7 @@ Code: `b2j/pilot.py` (+ blocks `tune`, `pilot` in `b2j/blocks.py`). Tests: `test
 ## Pilot (block `pilot`, 20 frozen runs)
 Soft BCE and B²-r with the chosen settings, seeds 0–4, on Endoscapes and CIFAR-10H (the datasets on which every claim is decided; MHIST is confirmatory and its endpoints are superiority tests).
 
-## Margins (`python -m b2j.pilot margins`)
+## Margins (REMOVED 2026-10-16; history only)
 On validation, two-level bootstrap (2,000 resamples; videos for Endoscapes, images within class for CIFAR-10H), h = CI half-width, **δ = 2h**, compared with the plan's caps (above the cap → "CI reported, no claim"):
 
 | margin | contrast on validation | used by | cap |

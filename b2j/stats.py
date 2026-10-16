@@ -1,11 +1,12 @@
-"""Module e: two-level bootstrap, margins and three-way verdicts (plan §4.3, §5.1).
+"""Module e: two-level bootstrap and readings (plan §4.3, §5.1; no equivalence margins, 05_plan amendment 2026-10-16 #1).
 
 Bootstrap (2,000 resamples, 95% percentile CI):
   level 1: test clusters, resampled with replacement and shared by every model in the comparison
            (videos for Endoscapes, images for MHIST, images within class for CIFAR-10H);
   level 2: seeds, resampled independently per model (or jointly within a `paired` group, e.g. two scores
            of the same runs); the model's value is the per-seed metric averaged over the drawn seeds.
-Validation-fitted quantities (thresholds, c, S*, S*(m)) are inputs and are never refitted.
+Validation-fitted quantities (thresholds, c, Global-S) are inputs and are never refitted.
+The metric may return an array (e.g. precision on a recall grid): the CI is then pointwise.
 See journal_plan/specs/e_metrics_stats.md.
 """
 from dataclasses import dataclass
@@ -37,9 +38,9 @@ def resample_rows(rng, rows, strata_groups):
 
 @dataclass
 class Result:
-    estimate: float
-    lo: float
-    hi: float
+    estimate: float | np.ndarray
+    lo: float | np.ndarray
+    hi: float | np.ndarray
     samples: np.ndarray
 
     @property
@@ -52,7 +53,7 @@ def two_level_bootstrap(metric, models, combine, clusters, strata=None, paired=(
 
     metric(pred, rows) -> float evaluates one seed's predictions on the given test rows.
     models: {name: [pred_seed_1, ..., pred_seed_S]}.
-    combine: {name: value} -> float (e.g. lambda v: v["b2r"] - v["soft_bce"]).
+    combine: {name: value} -> float (e.g. lambda v: v["b2r"] - v["soft_bce"]); values may be arrays of one shape.
     paired: groups of model names that share seed draws (same runs scored two ways); they need equal seed counts.
     The estimate uses all rows and all seeds.
     """
@@ -60,8 +61,9 @@ def two_level_bootstrap(metric, models, combine, clusters, strata=None, paired=(
     rows, groups = cluster_indices(clusters, strata)
     all_rows = np.concatenate(rows)
     group_of = {m: tuple(g) for g in paired for m in g}
-    estimate = combine({m: float(np.mean([metric(p, all_rows) for p in ps])) for m, ps in models.items()})
-    out = np.empty(B)
+    avg = lambda vs: np.mean(np.asarray(vs, np.float64), 0)
+    estimate = combine({m: avg([metric(p, all_rows) for p in ps]) for m, ps in models.items()})
+    out = np.empty((B,) + np.shape(estimate))
     for b in range(B):
         r = resample_rows(rng, rows, groups)
         seed_draw = {}
@@ -70,40 +72,29 @@ def two_level_bootstrap(metric, models, combine, clusters, strata=None, paired=(
             key = group_of.get(m, (m,))
             if key not in seed_draw:
                 seed_draw[key] = rng.integers(0, len(ps), len(ps))
-            vals[m] = float(np.mean([metric(ps[s], r) for s in seed_draw[key]]))
+            vals[m] = avg([metric(ps[s], r) for s in seed_draw[key]])
         out[b] = combine(vals)
-    lo, hi = np.nanpercentile(out, [100 * alpha / 2, 100 * (1 - alpha / 2)])
-    return Result(estimate, float(lo), float(hi), out)
+    lo, hi = np.nanpercentile(out, [100 * alpha / 2, 100 * (1 - alpha / 2)], axis=0)
+    if np.ndim(estimate) == 0:
+        return Result(float(estimate), float(lo), float(hi), out)
+    return Result(np.asarray(estimate), lo, hi, out)
 
 
-# ---------------------------------------------------------------- margins and verdicts
-CAPS = {"bacc": 0.03, "map": 0.03, "fcr": 0.05, "ap": 0.05}     # vote NLL: 1% of the soft-BCE plug-in validation NLL
+# ---------------------------------------------------------------- readings
+def verdict(res: Result, kind: str, direction: int = -1) -> str:
+    """Reading of a difference's CI (plan §5.1). No margins: a CI containing 0 is never read as 'equivalent'.
 
-
-def margin(pilot: Result, cap: float):
-    """δ = 2h from the pilot CI half-width h (plan §4.3). Above the cap -> None ("CI reported, no claim")."""
-    d = 2 * pilot.half_width
-    return d if d <= cap else None
-
-
-def verdict(res: Result, kind: str, delta: float | None = None, direction: int = -1) -> str:
-    """Three-way verdict (plan §5.1): 'success' | 'fail' | 'inconclusive' | 'no claim'.
-
-    kind: 'superiority' (direction -1: predicted < 0; +1: predicted > 0), 'equivalence' (needs delta),
-    'noninferiority' (success if hi < delta; fail if the CI excludes 0 against the prediction, i.e. lo > 0).
-    A margin of None (above its cap) gives 'no claim'.
+    kind 'superiority': direction is the predicted sign (-1: < 0, +1: > 0) -> 'success' | 'fail' | 'inconclusive'.
+    kind 'difference':  direction is the sign that means the first model is better (+1 for BACC, -1 for NLL or
+                        FCR) -> 'better' | 'worse' | 'no evidence of a difference'.
     """
     lo, hi = res.lo, res.hi
+    if direction not in (-1, 1):
+        raise ValueError("direction must be -1 or +1")
+    favours = hi < 0 if direction < 0 else lo > 0          # CI excludes 0 on the predicted / better side
+    against = lo > 0 if direction < 0 else hi < 0
     if kind == "superiority":
-        if direction < 0:
-            return "success" if hi < 0 else "fail" if lo > 0 else "inconclusive"
-        return "success" if lo > 0 else "fail" if hi < 0 else "inconclusive"
-    if delta is None:
-        return "no claim"
-    if kind == "equivalence":
-        if -delta <= lo and hi <= delta:
-            return "success"
-        return "fail" if (lo > delta or hi < -delta) else "inconclusive"
-    if kind == "noninferiority":
-        return "success" if hi < delta else "fail" if lo > 0 else "inconclusive"
+        return "success" if favours else "fail" if against else "inconclusive"
+    if kind == "difference":
+        return "better" if favours else "worse" if against else "no evidence of a difference"
     raise ValueError(f"unknown verdict kind {kind}")

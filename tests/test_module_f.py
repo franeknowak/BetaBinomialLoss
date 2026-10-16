@@ -119,3 +119,50 @@ def test_analysis_refuses_test_before_r3(tmp_path):
         A.collect("smoke", "endoscapes", split="test", root=tmp_path)
     with pytest.raises(PermissionError):
         A.figures("smoke", split="test", root=tmp_path)
+
+
+def _fake_block(tmp_path, seeds=3):
+    """Fake mhist-like table (N = 300, K = 1, n = 7) and frozen soft BCE / B²-r runs at n = 7 (full) and n = 3."""
+    from dataclasses import asdict
+    rng = np.random.default_rng(0)
+    N = 300
+    theta = rng.beta(1, 1.5, (N, 1))
+    k = rng.binomial(7, theta).astype(float)
+    table = LabelTable(np.array([f"{i:04d}" for i in range(N)]), k, np.full_like(k, 7.0), np.arange(N),
+                       np.array(["train"] * 100 + ["val"] * 100 + ["test"] * 100), np.array([""] * N))
+    val = table.take("val")
+    z = np.log(theta[200 - 100:200] / (1 - theta[200 - 100:200]))
+    for n_sub in (None, 3):
+        for v in ("soft_bce", "b2r"):
+            for seed in range(seeds):
+                spec = R.RunSpec("mhist", v, seed=seed, n_sub=n_sub, block="fake")
+                d = spec.out_dir(tmp_path)
+                d.mkdir(parents=True)
+                (d / "spec.json").write_text(json.dumps(asdict(spec)))
+                (d / "summary.json").write_text("{}")
+                zz = z + rng.normal(0, 0.5, z.shape)
+                out = zz[..., None] if v == "soft_bce" else np.stack([-zz / 2 + 1, zz / 2 + 1], -1)
+                for c in "AB":
+                    np.savez(d / f"val_{c}.npz", ids=val.ids, out=out, scale=np.array([4.0 if v == "soft_bce" else 1.0]))
+    return table
+
+
+def test_fig2_and_fig5_on_fake_block(tmp_path, monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+    from b2j import analysis as A
+    table = _fake_block(tmp_path)
+    monkeypatch.setattr(A, "load_table", lambda ds: table)
+    out = tmp_path / "fig"
+    assert A.fig2_advantage_vs_n("fake", "mhist", "val", out, root=tmp_path, B=50).exists()
+    f2 = json.loads((out / "F2_advantage_mhist.json").read_text())
+    assert set(f2) == {"3", "7"} and all(r["lo"] <= r["estimate"] <= r["hi"] for r in f2.values())
+    assert all(r["seeds_gs"] == r["seeds_b2r"] == 3 for r in f2.values())
+    assert A.fig5_pr_and_risk("fake", "mhist", "val", out, root=tmp_path, B=50).exists()
+    f5 = json.loads((out / "F5_pr_mhist.json").read_text())
+    assert set(f5["precision"]) == {"B²-r P_maj", "B²-r m", "soft BCE m"}
+    d = f5["diff_pmaj_minus_m"]
+    assert len(d["estimate"]) == len(A.RECALL_GRID)
+    assert all(lo <= hi for lo, hi in zip(d["lo"], d["hi"]))
+    df = A.collect("fake", "mhist", "val", root=tmp_path)
+    assert not df["row"].str.contains(r"S\*").any() and "soft_bce:plugin" in set(df["row"])

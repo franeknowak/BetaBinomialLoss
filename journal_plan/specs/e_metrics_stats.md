@@ -1,6 +1,6 @@
 # Module e — metrics, two-level bootstrap, verdicts
 
-> **Pending change (2026-10-16 review, 05_plan amendment #1):** no equivalence margins. `margin()`, `CAPS` and the equivalence / non-inferiority verdicts are dropped; readings are superiority or difference ("better" / "worse" / "no evidence of a difference"). The bootstrap is unchanged. Module h applies this; until then this spec describes the old code.
+> **Changed 2026-10-16 (module h, 05_plan amendment #1):** no equivalence margins. `margin()`, `CAPS` and the equivalence / non-inferiority verdicts were removed; readings are superiority or difference. The bootstrap's random draws and scalar results are unchanged; it now also accepts array-valued metrics (pointwise CI, for F5).
 
 Code: `b2j/metrics.py`, `b2j/stats.py`. Tests: `tests/test_module_e.py`.
 
@@ -27,17 +27,17 @@ Code: `b2j/metrics.py`, `b2j/stats.py`. Tests: `tests/test_module_e.py`.
 - `two_level_bootstrap(metric, models, combine, clusters, strata, paired, B=2000)`:
   - level 1: test clusters resampled with replacement, **shared by every model** in the comparison (Endoscapes: videos; MHIST: images; CIFAR-10H: images within class via `strata`);
   - level 2: seeds resampled per model; a model's value = per-seed metric averaged over the drawn seeds. Models in a `paired` group (two scores of the same runs, e.g. P_maj vs m within B²-r for S6a) share the seed draw;
-  - `combine` maps the per-model values to the statistic (a Δ, or a difference of margins for S4b/S5c);
+  - `combine` maps the per-model values to the statistic (a Δ, or a difference of advantages for S4b/S5c);
+  - the metric may return an array (e.g. precision on a recall grid); the CI is then pointwise (`Result.estimate/lo/hi` are arrays);
   - estimate = all rows, all seeds; 95% percentile CI. Validation-fitted quantities are inputs, never refitted.
   - Ensemble: pass it as one model with one "seed" (resampled over test clusters only).
-- `margin(pilot, cap)`: δ = 2h (h = pilot CI half-width); above the cap → None → verdict "no claim". Caps: BACC/mAP 3 pp, FCR 5 pp, AP 0.05; vote NLL 1% of the soft-BCE plug-in validation NLL (computed in module g).
-- `verdict(result, kind, delta, direction)` — plan §5.1, three-way:
-  - superiority: success if the CI excludes 0 in the predicted direction; fail if in the other; else inconclusive;
-  - equivalence: success if CI ⊂ [−δ, δ]; fail if disjoint; else inconclusive;
-  - non-inferiority: success if upper bound < δ; fail if the CI excludes 0 against the prediction (lower bound > 0); else inconclusive.
+- `verdict(result, kind, direction)` — plan §5.1 (no margins):
+  - superiority (`direction` = predicted sign): success if the CI excludes 0 in the predicted direction; fail if in the other; else inconclusive;
+  - difference (`direction` = the sign that means the first model is better: +1 for BACC/mAP/AP, −1 for NLL/FCR): "better" / "worse" if the CI excludes 0; else "no evidence of a difference". Never "equivalent".
+- Metrics: `precision_at_recalls(score, y, grid)` uses the same operating-point rule as `fcr_at_recall` (first point whose recall reaches each grid value; ties enter together), mean over heads.
 
 ## Tests cover
-ACC/BACC/F1/mAP/AUROC against scikit-learn; weighted soft targets reduce to the usual metrics; split target equals the DUP target; FCR at recall against sklearn's PR curve and a hand case with ties; AURC, coverage and catch rate by hand; ECE ≈ 0 when calibrated and 0.4 for a constant 0.9; jackknife SE equals the SE of a mean; NLL by hand; bootstrap: identical models give exactly 0, a cluster spanning strata is refused, **coverage ≈ 95% in simulation** (shared cluster effects, 5 seeds), paired seed draws remove seed noise from within-model contrasts; every verdict branch; margin cap.
+ACC/BACC/F1/mAP/AUROC against scikit-learn; weighted soft targets reduce to the usual metrics; split target equals the DUP target; FCR at recall against sklearn's PR curve and a hand case with ties; AURC, coverage and catch rate by hand; ECE ≈ 0 when calibrated and 0.4 for a constant 0.9; jackknife SE equals the SE of a mean; NLL by hand; bootstrap: identical models give exactly 0, a cluster spanning strata is refused, **coverage ≈ 95% in simulation** (shared cluster effects, 5 seeds), paired seed draws remove seed noise from within-model contrasts; every reading branch (no margin functions left); an array-valued metric gives the same pointwise CI as the scalar runs; precision on a grid agrees with FCR at recall 0.90.
 
 ## Real-data check
 Run on the smoke-test validation predictions of the new models (module f), instead of MICCAI-era predictions (plan amendment 2026-10-14 #6).

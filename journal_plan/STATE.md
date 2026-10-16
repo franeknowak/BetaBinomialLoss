@@ -1,14 +1,19 @@
 # Journal plan — STATE
 
-## Current step (2026-10-16)
-Round 0, closing. The user reviewed the whole plan in a cloud session on 2026-10-16 (explanation only; no jobs, no cluster access). Three changes were agreed and are now in the docs: **05_plan.md amendments 2026-10-16 #1–#5 (top of file) and a rewritten §5**; HANDOFF.md updated. **The code does not reflect them yet** → module h below is the next unit of work. No jobs are running; none may be submitted without the user's go.
+## Current step (2026-10-16, local CLI session)
+Round 0, closing. **Module h DONE** (the code now matches 05_plan amendments 2026-10-16 #1–#3): spec `specs/h_review_2026-10-16.md`; tests: 98 pass, 1 skipped (CUDA) on the Mac. Commit `79e4d94` (plan review docs) was pushed this session, followed by the module h commit. No jobs running; none may be submitted without the user's go.
 
-The three changes in one line each (details: 05_plan amendments 2026-10-16):
-1. **No equivalence margins δ.** Every comparison = difference + two-level bootstrap 95% CI. CI excludes 0 → "better"/"worse"; contains 0 → "no evidence of a difference". Never "equivalent", no non-inferiority, no caps, no t-tests. Superiority endpoints unchanged.
-2. **Operating point stays FCR at test recall 0.90** on every dataset. F5 adds precision–recall curves of B²-r ranked by P_maj vs by m (+ faint soft BCE m) and a strip of the precision difference with its bootstrap band (descriptive). Discussion: task-specific operating points (CVS strict precision; MHIST high sensitivity).
-3. **S\*(m) and S\*(m_B²) dropped entirely.** Spread ladder: plug-in → Global-S (on soft BCE's m) → B²-r. "Advantage" = NLL(Global-S) − NLL(B²-r) (per vote on CIFAR-10H); S4a/S4b/S4c, S5c and F2 use it. "Beyond m" is shown by the P_maj-vs-m ranking.
+What module h changed (details in the spec): `stats.verdict` has superiority + difference ("better" / "worse" / "no evidence of a difference"), no margins/caps; bootstrap accepts array metrics (pointwise CI; scalar results unchanged); `posthoc` has no S\*(m)/`pmaj_monotone`; `analysis` has no `:S*(m)` rows, F2 = advantage NLL(Global-S) − NLL(B²-r) vs n with bootstrap CIs, F5 = P_maj-vs-m precision–recall curves + difference band + risk–coverage; `metrics.precision_at_recalls`; `pilot` has no `margins` command.
 
 ## Exact next action (2026-10-16)
+1. **Ask the user** (do not decide; 05_plan amendment 2026-10-16 #5):
+   - (a) H5: the re-head runs and the frozen part-B runs have no soft-BCE twin → how is their Global-S comparator defined?
+   - (b) Late-checkpoint check (proposed 2026-10-15, still pending): log train-subset metrics in eval mode at every evaluation; replace the 80%-budget late flag with a plateau check; rerun `tune` (the `pilot` rerun is no longer needed).
+   - (c) Optional training-set-size sweep (60 runs): add to R1 or not.
+   - (d) Pre-registration: commit and date the rewritten §5 when R0 closes, before any R1 job.
+2. Then the R1 blocks in `b2j/blocks.py` (main, H5 comparator, subsampling), the verdict script (readings per §5.1 via `stats.verdict`), and R1 on the cluster after the user's go.
+
+## Module h task list (2026-10-16, DONE; kept for history)
 1. **Module h — apply the 2026-10-16 review to the code** (spec `specs/h_review_2026-10-16.md` + tests, committed before anything else; run the full test suite on the Mac as for modules a–g):
    - `b2j/stats.py`: remove `margin()` and `CAPS`; `verdict()` keeps `superiority` and gains `difference` ("better" | "worse" | "no evidence of a difference"); remove the `equivalence`/`noninferiority` branches and the "no claim" case. Bootstrap untouched.
    - `b2j/posthoc.py`: remove `fit_s_of_m`, `s_of_m`, `pmaj_monotone` (and the S\*(m) note in the module docstring).

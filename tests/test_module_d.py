@@ -1,4 +1,4 @@
-"""Unit tests for module d (post-hoc: S*(m), panel probabilities, ensemble, thresholds).
+"""Unit tests for module d (post-hoc: panel probabilities, ensemble, thresholds; S*(m) dropped 2026-10-16).
 
 Run: python -m pytest tests/test_module_d.py -q
 """
@@ -68,32 +68,6 @@ def test_mixture():
     np.testing.assert_allclose(P.mixture_p_split3([a, b]), (P.p_split3(*a) + P.p_split3(*b)) / 2)
 
 
-# ---------------------------------------------------------------- S*(m)
-def _simulate(S_fn, N=30000, n=3, seed=0):
-    rng = np.random.default_rng(seed)
-    m = rng.uniform(0.05, 0.95, (N, 1))
-    S = S_fn(m)
-    k = rng.binomial(n, rng.beta(m * S, (1 - m) * S)).astype(float)
-    return m, k, np.full_like(k, float(n))
-
-
-def test_s_of_m_constant_and_varying():
-    m, k, n = _simulate(lambda m: np.full_like(m, 4.0))
-    fit = P.fit_s_of_m(m, k, n)
-    assert fit[0].shape == (1, 5)
-    np.testing.assert_allclose(fit[1], 4.0, rtol=0.35)
-    m, k, n = _simulate(lambda m: np.where(m < 0.5, 1.0, 20.0))
-    S_hat = P.fit_s_of_m(m, k, n)[1][0]
-    assert S_hat[0] < 2 and S_hat[1] < 2 and S_hat[-1] > 8 and S_hat[-2] > 8
-
-
-def test_s_of_m_interpolation():
-    fit = (np.array([[-2.0, 0.0, 2.0]]), np.array([[1.0, 4.0, 16.0]]))
-    m = 1 / (1 + np.exp(-np.array([[-5.0], [-2.0], [-1.0], [0.0], [1.0], [9.0]])))
-    np.testing.assert_allclose(P.s_of_m(fit, m)[:, 0], [1, 1, 2.5, 4, 10, 16], rtol=1e-9)   # linear in logit m, flat outside
-    assert np.isinf(P.s_of_m((fit[0], np.full((1, 3), np.inf)), m)).all()
-
-
 # ---------------------------------------------------------------- thresholds
 def test_threshold_max_bacc_brute_force():
     rng = np.random.default_rng(0)
@@ -120,10 +94,3 @@ def test_threshold_at_recall():
         assert (pos >= t[j]).mean() >= 0.9
         assert (pos > t[j]).mean() < 0.9                               # the largest such threshold
 
-
-def test_pmaj_monotonicity_check():
-    """Plan §3 point 2: a slowly varying S*(m) keeps P_maj monotone; S = 1 for m <= 0.15 rising to 30 at 0.3 does not."""
-    lg = lambda p: np.log(p / (1 - p))
-    slow = (np.array([[lg(0.1), lg(0.3), lg(0.5), lg(0.7), lg(0.9)]]), np.array([[2.0, 2.5, 3.0, 3.5, 4.0]]))
-    steep = (np.array([[lg(0.15), lg(0.3)]]), np.array([[1.0, 30.0]]))
-    assert P.pmaj_monotone(slow, 3)[0] and not P.pmaj_monotone(steep, 3)[0]

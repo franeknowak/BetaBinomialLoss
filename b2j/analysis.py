@@ -4,10 +4,11 @@
   python -m b2j.analysis figures <block> [--split val]
 
 split="test" raises unless --open-test is given: that flag belongs to R3 only (CLAUDE.md, HANDOFF rule 3).
-Every quantity fitted post hoc (thresholds, c, Global-S, S*(m)) comes from validation and is applied unchanged.
+Every quantity fitted post hoc (thresholds, c, Global-S) comes from validation and is applied unchanged.
 Rows per dataset: every trained variant (checkpoint A for discrimination, B for panel and use-case endpoints),
-plus post-hoc rows: <variant>:plugin (S = inf), <variant>:S*(m) (fitted on that variant's own validation m), and the
+plus post-hoc rows: <variant>:plugin (S = inf; step 1 of the spread ladder plug-in -> Global-S -> B²-r) and the
 soft-BCE ensemble (mean m; mixture of the members' Binomial vote distributions). Seeds: mean ± sd.
+Comparisons carry a two-level bootstrap 95% CI; there are no margins (05_plan amendment 2026-10-16 #1).
 See journal_plan/specs/f_launcher.md.
 """
 import argparse
@@ -20,16 +21,16 @@ from scipy.special import expit
 
 from b2j import metrics as M
 from b2j import posthoc as P
-from b2j.data import load_table
+from b2j import stats as St
+from b2j.data import DATA_ROOT, load_table
 from b2j.runs import RESULTS
 
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]  # fixed order
 LABEL = {"hard_bce": "hard BCE", "hard_bce_w": "hard BCE-w", "soft_bce": "soft BCE (Global-S)", "b2r": "B²-r",
          "b2r_w": "B²-r-w", "b2r_kl": "B²-r + KL", "b2m": "B²-M", "b2r_linear": "B²-r linear", "dup": "DUP",
-         "soft_bce:plugin": "soft BCE plug-in", "soft_bce:S*(m)": "S*(m)", "b2r:S*(m)": "S*(m_B²)",
-         "hard_bce:plugin": "hard BCE plug-in", "ensemble": "soft-BCE ensemble"}
+         "soft_bce:plugin": "soft BCE plug-in", "hard_bce:plugin": "hard BCE plug-in", "ensemble": "soft-BCE ensemble"}
 PLUGIN_ROWS = ("soft_bce", "hard_bce")
-SOFM_ROWS = ("soft_bce", "b2r")
+RECALL_GRID = np.round(np.linspace(0.5, 1.0, 51), 4)     # F5
 
 
 def guard(split, open_test=False):
@@ -37,6 +38,13 @@ def guard(split, open_test=False):
         raise PermissionError("test outputs are opened once, in R3 (pass --open-test only then)")
     if split not in ("val", "test"):
         raise ValueError(split)
+
+
+def boot_strata(dataset, tab):
+    """Bootstrap strata (plan §4.3): CIFAR-10H images are resampled within their CIFAR class; else none."""
+    if dataset == "cifar10h":
+        return np.load(DATA_ROOT / "cifar10h" / "test_labels.npy")[tab.cluster]
+    return None
 
 
 def main_runs(block, dataset, root=RESULTS, regime="frozen"):
@@ -58,7 +66,7 @@ def _pred(m_disc, thr, m, pmf, psplit):
 def run_rows(variant, d, split, ev, val):
     """Rows {name: pred} for one run on the evaluation table `ev` (validation-fitted quantities from `val`)."""
     za, zb = np.load(d / f"{split}_A.npz"), np.load(d / f"{split}_B.npz")
-    va, vb = np.load(d / "val_A.npz"), np.load(d / "val_B.npz")
+    va = np.load(d / "val_A.npz")
     assert (za["ids"] == ev.ids).all() and (va["ids"] == val.ids).all()
     yv = M.majority(val.k, val.n)
     if variant == "dup":
@@ -70,10 +78,6 @@ def run_rows(variant, d, split, ev, val):
     if variant in PLUGIN_ROWS:
         inf = np.full_like(mB, np.inf)
         rows[f"{variant}:plugin"] = _pred(mA, thr, mB, P.vote_pmf(mB, inf, ev.n), P.p_split3(mB, inf))
-    if variant in SOFM_ROWS:
-        vmB = P.panel(variant, vb["out"], vb["scale"])[0]
-        S = P.s_of_m(P.fit_s_of_m(vmB, val.k, val.n), mB)
-        rows[f"{variant}:S*(m)"] = _pred(mA, thr, mB, P.vote_pmf(mB, S, ev.n), P.p_split3(mB, S))
     return rows
 
 
@@ -89,15 +93,20 @@ def ensemble_row(dirs, split, ev, val):
 
 
 # ---------------------------------------------------------------- metrics per row
+def nll_rows(p, ev, per_vote):
+    """Vote NLL of each test row [N, K] from the row's pmf (divided by n when per vote, as on CIFAR-10H)."""
+    lik = np.take_along_axis(p["pmf"], ev.k.astype(int)[..., None], -1)[..., 0]
+    nll = -np.log(np.clip(lik, 1e-300, None))
+    return nll / ev.n if per_vote else nll
+
+
 def row_metrics(p, ev, per_vote):
     y = M.majority(ev.k, ev.n)
     out = {}
     if p["disc"] is not None:
         out.update(M.discrimination(p["disc"], y, p["thr"]))
     if p["pmf"] is not None:
-        lik = np.take_along_axis(p["pmf"], ev.k.astype(int)[..., None], -1)[..., 0]
-        nll = -np.log(np.clip(lik, 1e-300, None))
-        out["vote_nll"] = float((nll / ev.n).mean() if per_vote else nll.mean())
+        out["vote_nll"] = float(nll_rows(p, ev, per_vote).mean())
         pmaj = P.p_majority(p["pmf"], ev.n)
         out.update({"ece_pmaj": M.ece(pmaj, y), "brier_pmaj": M.brier(pmaj, y), "fcr90_m": M.fcr_at_recall(p["m"], y),
                     "fcr90_pmaj": M.fcr_at_recall(pmaj, y), "aurc": M.aurc(pmaj, y)})
@@ -255,68 +264,105 @@ def fig4_spread_over_training(block, dataset, outdir, root=RESULTS):
     return _save(fig, outdir, f"F4_spread_over_training_{dataset}")
 
 
-def fig5_fcr_and_risk(block, dataset, split, outdir, root=RESULTS, open_test=False):
-    """F5: (a) FCR (1 - precision) against recall for B²-r P_maj, B²-r m and soft-BCE m; (b) risk-coverage of P_maj."""
+def fig5_pr_and_risk(block, dataset, split, outdir, root=RESULTS, open_test=False, B=St.B_DEFAULT):
+    """F5 (05_plan amendment 2026-10-16 #2), descriptive; the only claim is at recall 0.90 (S6a/S6b).
+
+    (a) precision against recall for B²-r at checkpoint B ranked by P_maj and by m, soft BCE's m as a faint third
+        curve: precision on RECALL_GRID (mean over heads, then over seeds);
+    (b) the precision difference P_maj − m within B²-r with its two-level bootstrap 95% band (the same runs scored
+        two ways: seeds paired);
+    (c) risk–coverage of each score (first head, first seed).
+    The numbers go to F5_pr_<dataset>.json beside the figure.
+    """
     import matplotlib.pyplot as plt
-    from sklearn.metrics import precision_recall_curve
     guard(split, open_test)
     full = load_table(dataset)
     ev, val = full.take(split), full.take("val")
     y = M.majority(ev.k, ev.n)
     runs = main_runs(block, dataset, root)
-    curves = {}
-    if "b2r" in runs:
-        p = run_rows("b2r", runs["b2r"][0], split, ev, val)["b2r"]
-        curves["B²-r P_maj"] = P.p_majority(p["pmf"], ev.n)
-        curves["B²-r m"] = p["m"]
+    b2 = [run_rows("b2r", d, split, ev, val)["b2r"] for d in runs["b2r"]]
+    scores = {"B²-r P_maj": [P.p_majority(p["pmf"], ev.n) for p in b2], "B²-r m": [p["m"] for p in b2]}
     if "soft_bce" in runs:
-        curves["soft BCE m"] = run_rows("soft_bce", runs["soft_bce"][0], split, ev, val)["soft_bce"]["m"]
-    fig, ax = plt.subplots(1, 2, figsize=(8, 3.2))
-    for c, (name, s) in zip(COLORS, curves.items()):
-        prec, rec, _ = precision_recall_curve(y[:, 0], s[:, 0])
-        ax[0].plot(rec, 1 - prec, color=c, lw=1.5, label=name)
-        conf = np.maximum(s[:, 0], 1 - s[:, 0])
-        err = ((s[:, 0] >= 0.5) != y[:, 0])[np.argsort(-conf, kind="stable")]
-        cov = np.arange(1, len(err) + 1) / len(err)
-        ax[1].plot(cov, np.cumsum(err) / np.arange(1, len(err) + 1), color=c, lw=1.5, label=name)
-    ax[0].axvline(0.9, color="#8a8980", lw=0.8, ls="--")
-    ax[0].set(xlabel="recall", ylabel="false-confirmation rate", xlim=(0.5, 1))
-    ax[1].set(xlabel="coverage", ylabel="selective risk")
-    for a in ax:
+        scores["soft BCE m"] = [run_rows("soft_bce", d, split, ev, val)["soft_bce"]["m"] for d in runs["soft_bce"]]
+    curves = {k: np.mean([M.precision_at_recalls(s, y, RECALL_GRID) for s in v], 0) for k, v in scores.items()}
+    diff = St.two_level_bootstrap(lambda s, r: M.precision_at_recalls(s[r], y[r], RECALL_GRID),
+                                  {"pmaj": scores["B²-r P_maj"], "m": scores["B²-r m"]},
+                                  lambda v: v["pmaj"] - v["m"], ev.cluster, boot_strata(dataset, ev),
+                                  paired=[("pmaj", "m")], B=B)
+    fig, ax = plt.subplots(1, 3, figsize=(11, 3.2))
+    style = {"B²-r P_maj": (COLORS[1], 1.6, 1.0), "B²-r m": (COLORS[0], 1.6, 1.0), "soft BCE m": ("#8a8980", 1.0, 0.6)}
+    for name, prec in curves.items():
+        c, lw, al = style[name]
+        ax[0].plot(RECALL_GRID, prec, color=c, lw=lw, alpha=al, label=name)
+        s = scores[name][0][:, 0]
+        conf = np.maximum(s, 1 - s)
+        err = ((s >= 0.5) != y[:, 0])[np.argsort(-conf, kind="stable")]
+        ax[2].plot(np.arange(1, len(err) + 1) / len(err), np.cumsum(err) / np.arange(1, len(err) + 1),
+                   color=c, lw=lw, alpha=al, label=name)
+    ax[1].fill_between(RECALL_GRID, diff.lo, diff.hi, color=COLORS[1], alpha=0.2, lw=0)
+    ax[1].plot(RECALL_GRID, diff.estimate, color=COLORS[1], lw=1.5)
+    ax[1].axhline(0, color="#8a8980", lw=0.8)
+    for a in ax[:2]:
+        a.axvline(0.9, color="#8a8980", lw=0.8, ls="--")
+    ax[0].set(xlabel="recall", ylabel="precision")
+    ax[1].set(xlabel="recall", ylabel="precision, P_maj − m (B²-r)")
+    ax[2].set(xlabel="coverage", ylabel="selective risk (first head)")
+    for a in (ax[0], ax[2]):
         a.legend(frameon=False, fontsize=7)
+    for a in ax:
         _style(a)
-    fig.suptitle(f"{dataset}, first head ({split})", fontsize=9)
+    fig.suptitle(f"{dataset} ({split}; {len(b2)} B²-r seeds, mean over heads; 95% bootstrap band)", fontsize=9)
     fig.tight_layout()
-    return _save(fig, outdir, f"F5_fcr_risk_{dataset}")
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / f"F5_pr_{dataset}.json").write_text(json.dumps({
+        "recall": RECALL_GRID.tolist(), "precision": {k: v.tolist() for k, v in curves.items()},
+        "diff_pmaj_minus_m": {"estimate": diff.estimate.tolist(), "lo": diff.lo.tolist(), "hi": diff.hi.tolist()}},
+        indent=1))
+    return _save(fig, outdir, f"F5_pr_risk_{dataset}")
 
 
-def fig2_margin_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=False):
-    """F2: H4 margin = vote NLL per vote of B²-r minus S*(m_B²) (same run), against training raters n."""
+def fig2_advantage_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=False, B=St.B_DEFAULT):
+    """F2: H4 advantage = vote NLL of soft BCE + Global-S minus that of B²-r (positive = B²-r better; per vote on
+    CIFAR-10H), checkpoint B, against the training raters n. Different runs: the bootstrap shares the test clusters
+    and resamples seeds per model. Global-S sits on soft BCE's m, so the advantage mixes mean quality and spread.
+    The numbers go to F2_advantage_<dataset>.json beside the figure."""
     import matplotlib.pyplot as plt
+    from b2j.runs import RunSpec, tables as run_tables
     guard(split, open_test)
     full = load_table(dataset)
     ev = full.take(split)
-    pts = {}
-    for f in sorted((Path(root) / block / dataset).glob("b2r__frozen*/spec.json")):
+    per_vote = dataset == "cifar10h"
+    nll = {}                                            # (variant, n) -> per-seed [N, K] NLL
+    for f in sorted((Path(root) / block / dataset).glob("*/spec.json")):
         s = json.loads(f.read_text())
-        if s["part"] != "all" or s["val_full_panel"] or not (f.parent / "summary.json").exists():
+        if (s["variant"] not in ("soft_bce", "b2r") or s["regime"] != "frozen" or s["part"] != "all"
+                or s["val_full_panel"] or not (f.parent / "summary.json").exists()):
             continue
-        from b2j.runs import RunSpec, tables as run_tables
         _, val, _ = run_tables(RunSpec(**s), full)
-        r = run_rows("b2r", f.parent, split, ev, val)
-        nll = lambda p: float((-np.log(np.clip(np.take_along_axis(p["pmf"], ev.k.astype(int)[..., None], -1)[..., 0],
-                                                1e-300, None)) / ev.n).mean())
+        p = run_rows(s["variant"], f.parent, split, ev, val)[s["variant"]]
         n = s["n_sub"] or int(np.median(full.n))
-        pts.setdefault(n, []).append(nll(r["b2r"]) - nll(r["b2r:S*(m)"]))
+        nll.setdefault((s["variant"], n), []).append(nll_rows(p, ev, per_vote))
+    ns = sorted(n for v, n in nll if v == "b2r" and ("soft_bce", n) in nll)
+    if not ns:
+        raise ValueError(f"no soft BCE / B²-r pair at any n for {dataset}")
+    res = {n: St.two_level_bootstrap(lambda a, r: a[r].mean(), {"gs": nll[("soft_bce", n)], "b2r": nll[("b2r", n)]},
+                                     lambda v: v["gs"] - v["b2r"], ev.cluster, boot_strata(dataset, ev), B=B)
+           for n in ns}
     fig, ax = plt.subplots(figsize=(4, 3))
-    ns = sorted(pts)
-    ax.plot(ns, [np.mean(pts[n]) for n in ns], color=COLORS[1], lw=1.5, marker="o", ms=4)
+    est = np.array([res[n].estimate for n in ns])
+    err = np.array([[res[n].estimate - res[n].lo for n in ns], [res[n].hi - res[n].estimate for n in ns]])
+    ax.errorbar(ns, est, yerr=err, color=COLORS[1], lw=1.5, marker="o", ms=4, capsize=3)
     ax.axhline(0, color="#8a8980", lw=0.8)
-    ax.set(xscale="log", xlabel="training raters per image n", ylabel="Δ NLL/vote, B²-r − S*(m_B²)", xticks=ns)
+    unit = "NLL/vote" if per_vote else "NLL"
+    ax.set(xscale="log", xlabel="training raters per image n", ylabel=f"advantage ({unit}), Global-S − B²-r", xticks=ns)
     _style(ax)
     _plain_log(ax, "x")
     fig.tight_layout()
-    return _save(fig, outdir, f"F2_margin_vs_n_{dataset}")
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / f"F2_advantage_{dataset}.json").write_text(json.dumps(
+        {str(n): {"estimate": r.estimate, "lo": r.lo, "hi": r.hi, "seeds_gs": len(nll[("soft_bce", n)]),
+                  "seeds_b2r": len(nll[("b2r", n)])} for n, r in res.items()}, indent=1))
+    return _save(fig, outdir, f"F2_advantage_vs_n_{dataset}")
 
 
 def _save(fig, outdir, name):
@@ -338,9 +384,9 @@ def figures(block, split="val", root=RESULTS, open_test=False):
         if not (Path(root) / block / ds).exists():
             continue
         for f in (lambda: fig3_spread_vs_m(block, ds, split, out, root),
-                  lambda: fig5_fcr_and_risk(block, ds, split, out, root, open_test),
+                  lambda: fig5_pr_and_risk(block, ds, split, out, root, open_test),
                   lambda: fig4_spread_over_training(block, ds, out, root),
-                  lambda: fig2_margin_vs_n(block, ds, split, out, root, open_test)):
+                  lambda: fig2_advantage_vs_n(block, ds, split, out, root, open_test)):
             try:
                 made.append(f())
             except (FileNotFoundError, KeyError, IndexError, ValueError) as e:

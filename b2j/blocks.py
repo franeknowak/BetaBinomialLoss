@@ -1,5 +1,5 @@
-"""Module f: the run lists of each round block (plan §4.4). R1/R2 blocks are added after the module g pilot fixes
-the head lr / wd per loss family and the δ margins."""
+"""Module f: the run lists of each round block (plan §4.4). R1/R2 blocks use the head lr / wd per loss family
+chosen by module g (results/journal/tune/chosen.json). No margins (05_plan amendment 2026-10-16 #1)."""
 from b2j.runs import RunSpec
 from b2j.variants import VARIANTS
 
