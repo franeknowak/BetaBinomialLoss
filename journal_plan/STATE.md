@@ -13,7 +13,7 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 
 ## Exact next action
 1. When 7550711 ends: check the log (preflight ok, 54 ok), diff `tune/chosen.json` against `tune_2026-10-14/chosen.json` (frozen training should be unchanged → same choice expected); look at `curves_*.png` (training vs validation); report to the user.
-2. While R1 runs: write the verdict script (§5.1 readings for S0, ST-w, ST-KL, S4a/b/c, S6a/b on R1; S5c needs R2), validation-only until R3, test behind `--open-test`.
+2. Verdict script DONE (commit 9f66a66, `b2j/verdicts.py`, spec f). After R1: `python -m b2j.verdicts r1` (validation preview) in the analysis job.
 3. When R1 ends: check failures; run `python -m b2j.analysis tables r1` and `figures r1` (validation) on the cluster as a job; pull the small outputs; report (end of R1). Then round D (validation-only method iterations, `journal_plan/iterations.md`) and R2 (fine-tuning: tune 12 + main 30 runs; re-head dropped).
 
 ## Module h task list (2026-10-16, DONE; kept for history)
