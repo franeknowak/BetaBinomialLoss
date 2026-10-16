@@ -306,7 +306,9 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 
 ---
 
-## 5. Success criteria and outcomes (rewritten 2026-10-16, amendments #1–#3; to be committed and dated as the pre-registration when R0 closes, before any R1 job)
+## 5. Success criteria and outcomes (rewritten 2026-10-16, amendments #1–#3, #6)
+
+**PRE-REGISTERED 2026-10-16 for B²-r** (git tag `prereg-b2r-2026-10-16`), before any R1 job was submitted and before any test prediction was opened. Only validation outputs (smoke, tune, pilot) had been seen. Re-committed for B²-final at the end of round D.
 
 ### 5.1 Readings
 Every endpoint is a difference between two scores, reported with its two-level bootstrap 95% CI (§4.3). There are no equivalence margins and no equivalence or non-inferiority verdicts.
