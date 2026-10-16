@@ -122,7 +122,7 @@ def test_analysis_refuses_test_before_r3(tmp_path):
         A.figures("smoke", split="test", root=tmp_path)
 
 
-def _fake_block(tmp_path, seeds=3, ds="mhist"):
+def _fake_block(tmp_path, seeds=3, ds="mhist", variants=("soft_bce", "b2r")):
     """Fake mhist-like table (N = 300, K = 1, n = 7) and frozen soft BCE / B²-r runs at n = 7 (full) and n = 3,
     and at 10% of the training clusters."""
     from dataclasses import asdict
@@ -135,7 +135,7 @@ def _fake_block(tmp_path, seeds=3, ds="mhist"):
     val = table.take("val")
     z = np.log(theta[200 - 100:200] / (1 - theta[200 - 100:200]))
     for n_sub, frac in ((None, 1.0), (3, 1.0), (None, 0.1)):
-        for v in ("soft_bce", "b2r"):
+        for v in variants:
             for seed in range(seeds):
                 spec = R.RunSpec(ds, v, seed=seed, n_sub=n_sub, train_frac=frac, block="fake")
                 d = spec.out_dir(tmp_path)
@@ -143,9 +143,10 @@ def _fake_block(tmp_path, seeds=3, ds="mhist"):
                 (d / "spec.json").write_text(json.dumps(asdict(spec)))
                 (d / "summary.json").write_text("{}")
                 zz = z + rng.normal(0, 0.5, z.shape)
-                out = zz[..., None] if v == "soft_bce" else np.stack([-zz / 2 + 1, zz / 2 + 1], -1)
+                bce = v in ("soft_bce", "hard_bce", "hard_bce_w")
+                out = zz[..., None] if bce else np.stack([-zz / 2 + 1, zz / 2 + 1], -1)
                 for c in "AB":
-                    np.savez(d / f"val_{c}.npz", ids=val.ids, out=out, scale=np.array([4.0 if v == "soft_bce" else 1.0]))
+                    np.savez(d / f"val_{c}.npz", ids=val.ids, out=out, scale=np.array([4.0 if bce else 1.0]))
     return table
 
 
@@ -179,3 +180,19 @@ def test_train_fraction_figure_on_fake_block(tmp_path, monkeypatch):
     assert A.figS_train_fraction("fake", "val", tmp_path / "fig", root=tmp_path, B=50, datasets=("endoscapes",)).exists()
     r = json.loads((tmp_path / "fig" / "S_train_fraction.json").read_text())["endoscapes"]
     assert set(r) == {"0.1", "1.0"} and all(v["map"]["lo"] <= v["map"]["hi"] for v in r.values())
+
+
+def test_verdicts_on_fake_block(tmp_path, monkeypatch):
+    from b2j import analysis as A
+    from b2j import verdicts as V
+    table = _fake_block(tmp_path, variants=("soft_bce", "b2r", "b2r_w", "b2r_kl", "hard_bce", "hard_bce_w"))
+    monkeypatch.setattr(V, "load_table", lambda ds: table)
+    rows = V.read("fake", "val", root=tmp_path, B=30, datasets=("mhist",))
+    got = {(r["id"], r["contrast"]): r for r in rows}
+    assert {r["id"] for r in rows} == {"S0", "ST-w", "ST-KL", "S4a", "S4b", "S6b"}
+    assert all(r["reading"] in ("success", "fail", "inconclusive", "better", "worse", "no evidence of a difference")
+               for r in rows)
+    assert all(r["lo"] <= r["estimate"] <= r["hi"] or r["lo"] <= r["hi"] for r in rows)
+    assert (tmp_path / "fake" / "verdicts_val.md").exists()
+    with pytest.raises(PermissionError):
+        V.read("fake", "test", root=tmp_path, datasets=("mhist",))

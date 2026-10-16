@@ -38,4 +38,4 @@ Endoscapes ids were pandas object arrays, which `np.load` refuses without pickle
 - Checked on the smoke validation outputs (pulled to the Mac without any test file): tables match the smoke report; figures rendered and inspected. F3 shows B²-M's `+1` floor on real data.
 
 ## Still to do in module f
-Verdict script (S0 … S6b with bootstrap CIs and the §5.1 readings; no margins) and the R1/R2 blocks, after module g; F6 on the cluster.
+~~Verdict script~~ DONE 2026-10-16: `b2j/verdicts.py` (`python -m b2j.verdicts <block> [--fine-tune-block r2]`): one row per §5.1 endpoint and dataset (S0, ST-w, ST-KL with/without c, S4a all + ambiguous, S4b, S4c, S6a/S6b, S5c when a fine-tuning block is given), two-level bootstrap CI, `stats.verdict` reading; ST-w compares weighted and unweighted with the same validation BACC-threshold rule; MHIST rows marked confirmatory; validation = preview, test behind `--open-test`. Earlier text: verdict script (S0 … S6b with bootstrap CIs and the §5.1 readings; no margins) and the R1/R2 blocks, after module g; F6 on the cluster.
