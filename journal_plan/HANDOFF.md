@@ -1,21 +1,23 @@
 # HANDOFF — for the local Claude Code session that builds and runs the experiments
 
-*Written 2026-10-09 by the planning session (cloud). Read this, then `STATE.md`, then `05_plan.md`. Do not redo the planning.*
+*Written 2026-10-09 by the planning session (cloud); updated 2026-10-16 after the user's plan review (cloud). Read this, then `STATE.md`, then `05_plan.md`. Do not redo the planning.*
+
+**2026-10-16 review (read first).** The user reviewed the plan and agreed three changes, recorded as the 2026-10-16 amendments at the top of `05_plan.md` (§5 rewritten to match): (1) no equivalence margins δ — every comparison is a difference with its bootstrap 95% CI; (2) the operating point stays FCR at recall 0.90, and F5 gains P_maj-vs-m precision–recall curves; (3) S\*(m) and S\*(m_B²) are dropped — spreads are compared as plug-in → Global-S (on soft BCE's m) → B²-r. **The code does not reflect these yet**: the first task is module h in `STATE.md` → Exact next action.
 
 ## What exists
-- `05_plan.md`: **the plan to execute**. Amendments dated 2026-10-09 at the top override anything below them.
+- `05_plan.md`: **the plan to execute**. The dated amendments at the top (2026-10-09, 2026-10-14, 2026-10-16) override anything below them; the latest wins where they differ.
 - `01_foundations.md` + `01b_feedback_and_step2_brief.md`: the theory and the Step-1 findings (why the recipe changed).
 - `04_target_journal.md`, `06_cuts_and_unverified.md`.
 - History, read only if needed: `02_*`, `03_*`, `analysis/`.
 
 ## Your job
-Round 0 of `05_plan.md` §4.4 (modules a → g in order, each with a short spec and a unit test, committed before the next starts). Then launch R1 and R2 on the cluster, R3 analysis, and R4 (CVS Challenge, last). Stop and report to the user at the end of each round, and whenever a pre-specified rule is triggered (ε fallback, margin cap, access delay).
+Round 0 of `05_plan.md` §4.4 (modules a → g in order, each with a short spec and a unit test, committed before the next starts). Then launch R1 and R2 on the cluster, R3 analysis, and R4 (CVS Challenge, last). Stop and report to the user at the end of each round, and whenever a pre-specified rule is triggered (ε fallback, access delay). Round D (validation-only method development, plan amendment 2026-10-14 #1) sits between R1 and R2.
 
 ## Hard rules
 1. **Git:** work only on branch `journal-extension`. Never commit to or push `main`. Commit small; push after each module.
-2. **Pre-registration:** the success criteria (`05_plan.md` §5) with the δ values filled in are committed and dated at the end of R0, before any R1 job is submitted.
+2. **Pre-registration:** the success criteria (`05_plan.md` §5, rewritten 2026-10-16; no δ values any more) are committed and dated at the end of R0, before any R1 job is submitted, and re-committed for B²-final at the end of round D.
 3. **Test discipline:** test predictions are written to disk but never printed, plotted or summarised before R3 (CVS Challenge: after R3, in R4). The trainer must not print test metrics (the current `main.py` does; remove that).
-4. **Validation only** for tuning, thresholds, c, S\* and S\*(m), checkpoint choice and the margin pilot.
+4. **Validation only** for tuning, thresholds, c, Global-S (S\*), checkpoint choice and the pilot.
 5. **Do not change the design mid-round.** A bug means fix it and re-run the whole affected block. Anything else goes to the user.
 6. **Keep `journal_plan/STATE.md` current** after every unit of work: current step, what is done, the exact next action, open questions. The user's Claude usage is limited and sessions may be cut off.
 7. Fixed scientific choices (do not revisit):
@@ -23,7 +25,9 @@ Round 0 of `05_plan.md` §4.4 (modules a → g in order, each with a short spec 
    - softplus + ε head (no `+1`);
    - single images; no per-video evaluation;
    - 5 seeds everywhere; recall 0.90;
-   - metrics include at least ACC, BACC, mAP, F1.
+   - metrics include at least ACC, BACC, mAP, F1;
+   - operating point FCR at test recall 0.90 on every dataset;
+   - no equivalence margins; no S\*(m) (2026-10-16).
 
 ## Cluster access (from the user; treat as facts to work with, not a script)
 - From the user's Mac: `ssh -o BatchMode=yes comic '<command>'`. `comic` is an `~/.ssh/config` alias for `fnowak@comic.cs.ucl.ac.uk`, reached via ProxyJump through `tails.cs.ucl.ac.uk`. Connections are multiplexed (ControlMaster, about 4 h).

@@ -36,6 +36,13 @@
 > 6. Module e's real-data check uses the smoke-test validation predictions of the new models instead of MICCAI-era predictions (the MICCAI results files hold only per-epoch summaries; user decision).
 > 7. Loss device (§2 table): the B² loss stays on the GPU but without `torch.lgamma` — with integer votes the Beta-Binomial NLL is computed exactly as sums of logs; log C(n, k) and the KL term run on the CPU. Reason: `lgamma`/`digamma` on CUDA fail on some UCL nodes (user's GitHub issue #22; pilot job 7522356). Same values to 1e-9.
 
+> **Amendments, 2026-10-16 (user review of the whole plan in a Claude cloud session; these override anything below, including the 2026-10-09 and 2026-10-14 amendments where they differ).** The user keeps the agreed changes in a Claude Doc, "B² journal extension — plan change log"; this block is the repo copy and is what execution follows. §5 was rewritten in place to match.
+> 1. **No equivalence margins (δ); intervals only.** δ = 2h, the caps (3 pp / 5 pp / 0.05 / 1% NLL) and every "equivalence" or "non-inferiority" verdict are dropped (§4.3 "Margins", §5.1, module g's margins step, and the ±δ wording in the 2026-10-14 amendments #1 and #2). Every comparison is reported as the estimated difference with its two-level bootstrap 95% CI; the bootstrap itself is unchanged (2,000 resamples; test clusters shared by all models; seeds resampled per model; validation-fitted quantities fixed). Reading: CI excludes 0 → evidence of a difference, direction stated; CI contains 0 → "no evidence of a difference", CI shown, never "equivalent". Superiority endpoints keep "CI excludes 0 in the predicted direction". No t-tests; a p-value, if ever shown, comes from the same bootstrap. Reason (user): δ = 2h ties "the same" to how noisy the experiment is, not to what matters (pilot 2h for BACC: Endoscapes ≈ 2.5 pp, CIFAR-10H ≈ 0.16 pp); intervals are simpler to read. Consequences: the expert-review proposal of fixed practical margins (STATE, 2026-10-15) is moot; the 5-seed `pilot` block (20 runs, done) no longer feeds a margin and stays only as a validation preview.
+> 2. **Operating point unchanged: FCR = 1 − precision at test recall 0.90**, the same rule on every dataset (S6a, S6b, MHIST). A "recall at fixed precision" endpoint was considered and rejected: it adds a choice (the precision level) and breaks consistency across datasets. The rule was fixed in advance (2026-10-09) and still tests the benefit of S: P_maj and m order frames differently only where S varies per frame. **Added to F5:** per dataset, B²-r at checkpoint B ranked by P_maj and by m (soft BCE's m as a faint third curve), with a strip of the precision difference (P_maj − m) along recall and its bootstrap band. By construction the two B²-r curves meet at the point that corresponds to m = 0.5. Descriptive only: no claim from any point other than recall 0.90. **Discussion paragraph** (task-specific operating points): CVS → a strict, high-precision point (a false confirmation leads towards clipping too early); MHIST → high sensitivity (missing the precancerous SSA is the costly error); CIFAR-10H → no cost structure, mechanism only. **Wording fix** (§1, §3): S moves the decision at high thresholds as well as low ones (for n = 3, P_maj(1 − m) = 1 − P_maj(m)), not only "at the low thresholds ≈ 0.15–0.3".
+> 3. **S\*(m) and S\*(m_B²) are dropped entirely** (no main-text or supplementary row). Spread comparisons become a three-step ladder: Binomial plug-in (S = ∞) → **Global-S** (one S per criterion, fitted on validation, **on soft BCE's m**; user decision) → B²-r (per-image S × c). Because Global-S sits on soft BCE's m, B²-r − Global-S reflects mean quality and spread together; the text says so. "Does S carry information beyond m?" is answered by the P_maj-vs-m ranking of #2 (if S were only a function of m, the two rankings and curves would coincide). Removed: the S\*(m) bullet of §2 "Post-hoc steps" and its rows in §2/§4.1; H4 prediction (a)'s "S\*(m_B²) beats Global-S"; §3 shared-maths point 2's R3 monotonicity check (`pmaj_monotone`); S\*(m) comparators in U1/U2. Redefined: the **H4 advantage** = vote NLL (per vote on CIFAR-10H) of Global-S minus that of B²-r, same dataset, n and checkpoint B (positive = B²-r better); S4a/S4b/S4c and F2 use it. **H5:** the frozen and fine-tuned advantages use the soft-BCE run of the same regime for Global-S (S5c = frozen advantage − fine-tuned advantage). The re-head arm and the frozen part-B arm have no soft-BCE twin → **open, ask the user** (see #5).
+> 4. **Order of the experiments in the paper** (for writing and for the analysis scripts): (0) setup + theory figure F1; (1) discrimination, H0, T1; (2) ablations of the MICCAI ingredients, HT, F3; (3) the spread ladder against the number of raters, H4, F2; (4) decisions: P_maj vs m within B²-r, FCR at recall 0.90, the precision–recall curves of F5, AURC (H6, U1); (5) annotation triage with P(split) against 3m(1−m), DUP and the soft-BCE ensemble (U2); (6) frozen vs fine-tuned encoder, H5, F4; (7) CVS Challenge replication (R4). B²-final (round D) is reported beside B²-r in (1), (3) and (4); every round-D iteration, kept or dropped, goes to the supplement.
+> 5. **Open (ask the user; do not decide):** (a) how the H5 re-head and frozen-part-B arms get a Global-S comparator without a soft-BCE twin; (b) the R0 items still pending in STATE (late-checkpoint check and rerun of `tune`; optional training-set-size sweep); (c) the pre-registration commit of the rewritten §5, which happens when R0 is closed and before any R1 job.
+
 ## 1. Summary (one page)
 
 **Paper.** *Predicting the expert panel: when does a Beta-Binomial head add to soft labels? An analysis with application to the Critical View of Safety.* The paper is a substantial departure from MICCAI: one common single-image model, no spatiotemporal model, no majority-vote encoder adaptation, no video-level evaluation, and no MICCAI numbers reused.
@@ -104,7 +111,7 @@ Writing adds about 15 user-days.
 - Thresholds: maximise validation BACC (for ACC, BACC, F1).
 - c: for every B² arm.
 - S\* (Global-S): one value per criterion.
-- **S\*(m)**: 5 equal-mass bins of m, MLE of S per bin, piecewise-linear interpolation in logit m. Fitted on **soft BCE's m** (baseline row) **and on B²-r's own m**, written S\*(m_B²). The second is the per-sample comparator, because it holds the mean fixed.
+- *(Dropped 2026-10-16, amendment #3.)* **S\*(m)**: 5 equal-mass bins of m, MLE of S per bin, piecewise-linear interpolation in logit m. Fitted on **soft BCE's m** (baseline row) **and on B²-r's own m**, written S\*(m_B²). The second is the per-sample comparator, because it holds the mean fixed.
 
 **Checkpoints (same rules for every arm).**
 - **A** = best validation mAP. Used for discrimination: table T1, H0 and HT-w.
@@ -148,7 +155,7 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
   - *Prediction:* non-inferiority of no-KL, i.e. the upper bound of Δ NLL (B²-r − KL) < +δ.
   - *Refuted if:* the CI excludes 0 in favour of the KL.
 
-**H4 (core): does the per-sample S carry information beyond m?**
+**H4 (core): does the per-sample S carry information beyond m?** *(2026-10-16 #3: comparator is Global-S on soft BCE's m; S\*(m) dropped; read with §5)*
 - *Arms, all at checkpoint B:* B²-r against **S\*(m_B²)** (the per-sample test); S\*(m) from soft BCE and Global-S (secondary rows); soft BCE with the Binomial plug-in.
 - *Design:* CIFAR-10H with training (and validation) votes subsampled to n ∈ {1, 3, 5, 10, all ≈ 51}, test scored against the full panel; MHIST with n ∈ {1, 3, 5, 7}; Endoscapes at n = 3.
   - n = 1 is an anchor: S is unconstrained there and the tie-break c = S\* = ∞ makes the margin zero by construction.
@@ -161,7 +168,7 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
   - (d) The plug-in loses to every spread arm.
 - *Refuted if:* (a) fails (§5.1 superiority rule) → outcome C.
 
-**H5: what S means under a frozen vs a fine-tuned encoder.**
+**H5: what S means under a frozen vs a fine-tuned encoder.** *(2026-10-16 #3: margins use Global-S, not S\*(m); re-head comparator open)*
 - *Arms:* frozen (R1, 5 seeds) against full fine-tuning (R2, 5 seeds), for hard BCE, soft BCE and B²-r, on Endoscapes and CIFAR-10H.
   - Memorisation check: a B²-r linear-head arm, and the ratio of median S on training images to median S on validation images.
   - Held-out re-head (CIFAR-10H): B²-r fine-tuned on 80% of the training images (part A); a fresh B²-r head trained on the cached fine-tuned features of the other 20% (part B).
@@ -174,7 +181,7 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
   - (d) train/val S ratio ≤ 1.5 when frozen. If it exceeds 1.5, the H4 primary is read from whichever frozen head (linear or MLP) has the lower validation NLL.
 - *Refuted if:* (c) fails.
 
-**H6: panel probabilities at a fixed operating point (tests U1, U2).**
+**H6: panel probabilities at a fixed operating point (tests U1, U2).** *(2026-10-16 #2: recall 0.90 kept; F5 adds P_maj-vs-m precision–recall curves; S\*(m) comparators dropped)*
 - *All scores from checkpoint B.*
 - *Operating-point rule, the same for every dataset:* false-confirmation rate **FCR = 1 − precision at test recall 0.90**, read off each score's test PR curve. This is threshold-free and compares rankings at identical sensitivity. Secondary: FCR at a validation-chosen threshold for sensitivity 0.90, with the realised test sensitivity.
 - *Justification:* shared maths points 1–5, and Chow's rule for referral.
@@ -236,7 +243,7 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
   - Test clusters are resampled and shared across arms: videos (Endoscapes), images (MHIST), images stratified by class (CIFAR-10H).
   - Seeds are resampled independently per arm; the statistic is the per-seed metric averaged over the resampled seeds.
   - Validation-fitted quantities are not resampled. Clustering is only a resampling unit; there is no per-video evaluation.
-- **Margins:**
+- **Margins:** *(dropped 2026-10-16, amendment #1: intervals only)*
   - The R0 pilot (tuned soft BCE and B²-r, 5 seeds each, validation only) gives the bootstrap CI half-width h for each margin metric, and **δ = 2h**. That gives a 95% chance of declaring equivalence when the true difference is 0, and it matches the 5 seeds of the main runs.
   - Caps: 3 pp (BACC, mAP), 5 pp (FCR), 0.05 (AP), 1% of the soft-BCE plug-in validation NLL (vote NLL). A δ above its cap turns that test into "CI reported, no claim", decided before R1.
 - **Primary comparison families (5):** H0, HT, H4, H5c, H6. Everything else is secondary and descriptive. No p-values.
@@ -292,37 +299,41 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 
 ---
 
-## 5. Success criteria and outcomes (committed with the δ values at the end of R0)
+## 5. Success criteria and outcomes (rewritten 2026-10-16, amendments #1–#3; to be committed and dated as the pre-registration when R0 closes, before any R1 job)
 
-### 5.1 Verdict definitions
-- **Superiority:** success if the 95% CI excludes 0 in the predicted direction; fail if it excludes 0 in the other direction; otherwise inconclusive.
-- **Equivalence:** success if the CI ⊂ [−δ, δ]; fail if the CI is disjoint from [−δ, δ]; otherwise inconclusive.
-- **Non-inferiority:** success if the upper bound is < δ; fail if the CI excludes 0 against the prediction; otherwise inconclusive.
+### 5.1 Readings
+Every endpoint is a difference between two scores, reported with its two-level bootstrap 95% CI (§4.3). There are no equivalence margins and no equivalence or non-inferiority verdicts.
+- **Superiority** (the endpoint names a predicted direction): success if the CI excludes 0 in that direction; fail if it excludes 0 in the other direction; otherwise inconclusive.
+- **Difference** (no claim of equality is possible): "better" or "worse" if the CI excludes 0 (direction stated); otherwise "no evidence of a difference", with the CI shown. Never "equivalent".
 
-| ID | Endpoint (test, frozen unless stated) | Type | Datasets |
+"Advantage" = vote NLL of Global-S (soft BCE's m + one S per criterion) minus vote NLL of B²-r, same dataset, n and checkpoint B; positive = B²-r better (per vote on CIFAR-10H).
+
+| ID | Endpoint (test, frozen unless stated) | Reading | Datasets |
 |---|---|---|---|
-| S0 | Δ BACC, Δ mAP on m, B²-r − soft BCE (checkpoint A) | equivalence | Endoscapes + CIFAR-10H |
-| ST-w | Δ BACC, weighted − (unweighted + threshold), for B²-r and hard BCE | equivalence | Endoscapes + CIFAR-10H |
-| ST-KL | Δ vote NLL, B²-r − KL (with c) | non-inferiority | Endoscapes + CIFAR-10H |
-| S4a | Δ vote NLL per vote, B²-r − S\*(m_B²), n = all; all images and the ambiguous subset | superiority (< 0) | CIFAR-10H |
-| S4b | margin(all) − margin(3) | superiority (> 0) | CIFAR-10H |
-| S4c | Δ vote NLL, B²-r − S\*(m_B²) | equivalence | Endoscapes |
-| S5c | frozen margin − fine-tuned margin | superiority (> 0) | CIFAR-10H |
-| S6a | Δ FCR at test recall 0.90, P_maj − m within B²-r | equivalence | Endoscapes |
+| S0 | Δ BACC, Δ mAP on m, B²-r − soft BCE (checkpoint A) | difference (open question, two-sided) | Endoscapes + CIFAR-10H |
+| ST-w | Δ BACC, weighted − (unweighted + threshold), for B²-r and hard BCE; diagnostics ECE, mean m against the validation vote fraction | difference | Endoscapes + CIFAR-10H |
+| ST-KL | Δ vote NLL, B²-r − (B²-r + KL), with c (also reported without c) | difference; theory predicts < 0 | Endoscapes + CIFAR-10H |
+| S4a | advantage at n = all; all images and the ambiguous subset | superiority (> 0) | CIFAR-10H |
+| S4b | advantage(all) − advantage(3) | superiority (> 0) | CIFAR-10H |
+| S4c | advantage at n = 3 | difference | Endoscapes |
+| S5c | frozen advantage − fine-tuned advantage (Global-S from the soft-BCE run of the same regime) | superiority (> 0) | CIFAR-10H |
+| S6a | Δ FCR at test recall 0.90, P_maj − m within B²-r | difference | Endoscapes |
 | S6b | same, full-panel-majority target | superiority (< 0) | CIFAR-10H |
 
-MHIST runs the S4a/b and S6b endpoints in parallel, as confirmatory evidence (n_train ∈ {3, 5, 7} for S4b).
+MHIST runs S4a/b and S6b in parallel as confirmatory evidence (n_train ∈ {3, 5, 7} for S4b). F5's precision–recall curves are descriptive (amendment 2026-10-16 #2).
+
+**Claim rule:** a claim needs the predicted reading on both Endoscapes and CIFAR-10H, unless the endpoint names one dataset. MHIST and the CVS Challenge are confirmatory: reported, never creating or removing a core claim (MHIST can upgrade B to B+).
 
 ### 5.2 Outcome → story → venue (decided after R3, with no new experiments)
 
-| Outcome | Condition | Story | Venue (proposer's view; the orchestrator decides) |
+| Outcome | Condition | Story | Venue (proposer's view) |
 |---|---|---|---|
-| **A** | S4a success **and, on Endoscapes**, either S4c favours B²-r or S6a shows a gain (FCR lower, CI excluding 0) | "A per-sample panel spread is learnable from 3 raters under a frozen foundation encoder, and it reduces false CVS confirmations" | MedIA |
-| **B+** | S4a success; Endoscapes equivalent or inconclusive; MHIST shows the S4a and S6b effects | "A spread needs more than 3 raters: shown on natural and pathology images. For 3-rater CVS data, use B²-r with a mean-dependent spread" | MedIA |
+| **A** | S4a success **and, on Endoscapes,** S4c "better" (advantage > 0) or S6a "better" (FCR lower) | "A per-sample panel spread is learnable from 3 raters under a frozen foundation encoder, and it reduces false CVS confirmations" | MedIA |
+| **B+** | S4a success; on Endoscapes neither S4c nor S6a is "better" (no evidence of a difference, or worse); MHIST shows the S4a and S6b effects | "A spread needs more than 3 raters: shown on natural and pathology images. For 3-rater CVS data, B²-r adds no spread benefit over one fitted spread" | MedIA |
 | **B** (expected) | as B+, but MHIST null or inconclusive | the same story, with natural-image evidence only | TMLR (MedIA borderline) |
-| **C** | S4a fail or inconclusive | "B² = soft BCE + a mean-dependent spread: theory, the traps, and how many raters a spread needs" | TMLR |
+| **C** | S4a fail or inconclusive | "B² = soft BCE + a spread: theory, the traps, and how many raters a spread needs" | TMLR |
 
-H0 and HT are reportable under every outcome. An H0 fail is reported as a finding and does not change the letter. TMI and TPAMI are not recommended: the paper is a loss analysis with half of its evidence non-medical, and the general technique is prior art (§7).
+S0 and the HT rows are reportable under every outcome, whatever their reading; they do not change the letter.
 
 ---
 

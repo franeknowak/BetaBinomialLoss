@@ -18,6 +18,9 @@
 | CVS Challenge | User suggestion | Demoted to optional add-on; **the user decides** | The Grand Challenge page forbids use or publication outside the challenge; the loader costs ~2 user-days. It enters only with written permission before R1 |
 | U3 (audit/teaching use case) | r0 | Folded into the metrics | No decision differs from U1/U2 |
 | U2 vote-allocation simulation | r0 | Cut | Leaks the reference votes and has a straw-man comparator (uniform allocation) |
+| Equivalence margins δ = 2h, caps, equivalence / non-inferiority verdicts | plan §4.3, §5.1 | Cut (2026-10-16, user) | δ followed the experiment's noise, not what matters; every comparison is now a difference with its bootstrap CI |
+| S\*(m) and S\*(m_B²) (mean-dependent spread) | r1 H4 | Cut (2026-10-16, user) | Hard to explain; Global-S answers the "one constant" objection and the P_maj-vs-m ranking shows information beyond m |
+| Recall-at-fixed-precision operating point | 2026-10-16 review | Not adopted | Adds a choice (the precision level) and breaks cross-dataset consistency; FCR at recall 0.90 kept, PR curves added |
 | Label auditing / posterior-predictive check | 01b D.4 | At most one exploratory figure | The known Endoscapes artefact (sequential/hierarchical marking) is per rater and across criteria, so a per-criterion panel Beta cannot see it |
 | Variable-n use case | 01b D.5 | Replaced by controlled vote subsampling | No core dataset has materially variable n |
 | OOD detection via S | User's synthetic notes | Cut | Nothing in the likelihood makes S fall off-distribution; not a claim the paper can make |

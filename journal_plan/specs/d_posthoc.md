@@ -1,5 +1,7 @@
 # Module d — post-hoc quantities (validation only)
 
+> **Pending change (2026-10-16 review, 05_plan amendment #3):** S\*(m), S\*(m_B²) and `pmaj_monotone` are dropped from the plan. Module h removes them from the code; until then this spec describes the old code.
+
 Code: `b2j/posthoc.py` (its spread step was started in module c). Tests: `tests/test_module_d.py` (+ the spread tests in `tests/test_module_c.py`).
 Everything here is fitted on validation and applied unchanged to test; nothing is resampled in the bootstrap (plan §4.3).
 

@@ -1,5 +1,7 @@
 # Module g — tuning and pilot margins (validation only)
 
+> **Pending change (2026-10-16 review, 05_plan amendment #1):** the margins step is dropped (no δ). The `pilot` block's finished runs stay as a validation preview; `results/journal/pilot/margins.md` is historical. Module h removes the `margins` command.
+
 Code: `b2j/pilot.py` (+ blocks `tune`, `pilot` in `b2j/blocks.py`). Tests: `tests/test_module_g.py`. Job: `jobs/pilot.qsub.sh` (cluster only).
 
 ## Tuning (block `tune`, 54 frozen runs, seed 0)

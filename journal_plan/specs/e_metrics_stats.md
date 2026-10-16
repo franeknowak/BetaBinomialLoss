@@ -1,5 +1,7 @@
 # Module e — metrics, two-level bootstrap, verdicts
 
+> **Pending change (2026-10-16 review, 05_plan amendment #1):** no equivalence margins. `margin()`, `CAPS` and the equivalence / non-inferiority verdicts are dropped; readings are superiority or difference ("better" / "worse" / "no evidence of a difference"). The bootstrap is unchanged. Module h applies this; until then this spec describes the old code.
+
 Code: `b2j/metrics.py`, `b2j/stats.py`. Tests: `tests/test_module_e.py`.
 
 ## Targets (from the evaluation panel k, n)

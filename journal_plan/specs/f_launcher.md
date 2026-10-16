@@ -1,5 +1,7 @@
 # Module f — run specs, launcher, smoke test
 
+> **Pending change (2026-10-16 review, 05_plan amendments #2, #3):** the `:S*(m)` post-hoc rows are dropped; F2 plots the advantage of B²-r over Global-S (soft BCE); F5 adds P_maj-vs-m precision–recall curves. Module h applies this.
+
 Code: `b2j/runs.py`, `b2j/blocks.py`, `b2j/launch.py`, `b2j/report_smoke.py`. Tests: `tests/test_module_f.py`. Job scripts live on the cluster only (`BetaBinomialLoss/jobs/*.qsub.sh`, gitignored).
 
 ## Runs
