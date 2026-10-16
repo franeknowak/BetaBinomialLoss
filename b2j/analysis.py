@@ -52,7 +52,8 @@ def main_runs(block, dataset, root=RESULTS, regime="frozen"):
     out = {}
     for f in sorted((Path(root) / block / dataset).glob("*/spec.json")):
         s = json.loads(f.read_text())
-        if (s["regime"] == regime and s["n_sub"] is None and s["part"] == "all" and not s["val_full_panel"]
+        if (s["regime"] == regime and s["n_sub"] is None and s.get("part", "all") == "all"
+                and s.get("train_frac", 1.0) == 1.0 and not s["val_full_panel"]
                 and (f.parent / "summary.json").exists()):
             out.setdefault(s["variant"], []).append(f.parent)
     return out
@@ -335,10 +336,11 @@ def fig2_advantage_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=F
     nll = {}                                            # (variant, n) -> per-seed [N, K] NLL
     for f in sorted((Path(root) / block / dataset).glob("*/spec.json")):
         s = json.loads(f.read_text())
-        if (s["variant"] not in ("soft_bce", "b2r") or s["regime"] != "frozen" or s["part"] != "all"
-                or s["val_full_panel"] or not (f.parent / "summary.json").exists()):
+        spec = RunSpec.from_json(s)
+        if (spec is None or spec.variant not in ("soft_bce", "b2r") or spec.regime != "frozen" or spec.train_frac != 1.0
+                or spec.val_full_panel or not (f.parent / "summary.json").exists()):
             continue
-        _, val, _ = run_tables(RunSpec(**s), full)
+        _, val, _ = run_tables(spec, full)
         p = run_rows(s["variant"], f.parent, split, ev, val)[s["variant"]]
         n = s["n_sub"] or int(np.median(full.n))
         nll.setdefault((s["variant"], n), []).append(nll_rows(p, ev, per_vote))
@@ -365,6 +367,62 @@ def fig2_advantage_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=F
     return _save(fig, outdir, f"F2_advantage_vs_n_{dataset}")
 
 
+def figS_train_fraction(block, split, outdir, root=RESULTS, open_test=False, B=St.B_DEFAULT,
+                        datasets=("endoscapes", "cifar10h")):
+    """Supplement (05_plan amendment 2026-10-16 #6): Δ = B²-r − soft BCE on mAP and BACC (m at checkpoint A,
+    validation threshold) against the share of training clusters kept, with two-level bootstrap 95% CIs (different
+    runs: shared test clusters, seeds resampled per model). The 100% point is the main configuration.
+    The numbers go to S_train_fraction.json beside the figure."""
+    import matplotlib.pyplot as plt
+    from b2j.runs import RunSpec
+    guard(split, open_test)
+    res = {}
+    for ds in datasets:
+        full = load_table(ds)
+        ev, val = full.take(split), full.take("val")
+        y = M.majority(ev.k, ev.n)
+        preds = {}                                      # (variant, frac) -> per-seed predictions
+        for f in sorted((Path(root) / block / ds).glob("*/spec.json")):
+            spec = RunSpec.from_json(json.loads(f.read_text()))
+            if (spec is None or spec.variant not in ("soft_bce", "b2r") or spec.regime != "frozen"
+                    or spec.n_sub is not None or spec.val_full_panel or not (f.parent / "summary.json").exists()):
+                continue
+            preds.setdefault((spec.variant, spec.train_frac), []).append(
+                run_rows(spec.variant, f.parent, split, ev, val)[spec.variant])
+        fracs = sorted(fr for v, fr in preds if v == "b2r" and ("soft_bce", fr) in preds)
+        res[ds] = {}
+        for fr in fracs:
+            res[ds][fr] = {}
+            for key in ("map", "bacc"):
+                r = St.two_level_bootstrap(lambda p, rows: M.discrimination(p["disc"][rows], y[rows], p["thr"])[key],
+                                           {"b2r": preds[("b2r", fr)], "soft": preds[("soft_bce", fr)]},
+                                           lambda v: v["b2r"] - v["soft"], ev.cluster, boot_strata(ds, ev), B=B)
+                res[ds][fr][key] = {"estimate": r.estimate, "lo": r.lo, "hi": r.hi}
+    if not any(res.values()):
+        raise ValueError("no training-fraction runs")
+    fig, ax = plt.subplots(1, 2, figsize=(7.5, 3))
+    for c, (ds, by) in zip(COLORS, res.items()):
+        fr = sorted(by)
+        for a, key in zip(ax, ("map", "bacc")):
+            est = np.array([by[f][key]["estimate"] for f in fr])
+            err = np.array([[by[f][key]["estimate"] - by[f][key]["lo"] for f in fr],
+                            [by[f][key]["hi"] - by[f][key]["estimate"] for f in fr]])
+            a.errorbar(fr, est, yerr=err, color=c, lw=1.5, marker="o", ms=4, capsize=3, label=ds)
+    for a, key in zip(ax, ("mAP", "BACC")):
+        a.axhline(0, color="#8a8980", lw=0.8)
+        a.set(xscale="log", xlabel="share of training clusters", ylabel=f"Δ {key}, B²-r − soft BCE")
+        a.set_xticks([0.1, 0.3, 1.0])
+        _style(a)
+        _plain_log(a, "x")
+    ax[0].legend(frameon=False, fontsize=7)
+    fig.suptitle(f"Training-set size ({split}; 95% bootstrap CI)", fontsize=9)
+    fig.tight_layout()
+    outdir.mkdir(parents=True, exist_ok=True)
+    (outdir / "S_train_fraction.json").write_text(json.dumps(
+        {ds: {str(f): v for f, v in by.items()} for ds, by in res.items()}, indent=1))
+    return _save(fig, outdir, "S_train_fraction")
+
+
 def _save(fig, outdir, name):
     import matplotlib.pyplot as plt
     outdir.mkdir(parents=True, exist_ok=True)
@@ -380,6 +438,10 @@ def figures(block, split="val", root=RESULTS, open_test=False):
     guard(split, open_test)
     out = Path(root) / block / f"figures_{split}"
     made = [fig1_theory(out)]
+    try:
+        made.append(figS_train_fraction(block, split, out, root, open_test))
+    except (FileNotFoundError, KeyError, ValueError) as e:
+        print(f"skipped the training-fraction figure: {e!r}")
     for ds in ("endoscapes", "cifar10h", "mhist"):
         if not (Path(root) / block / ds).exists():
             continue

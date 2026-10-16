@@ -2,6 +2,8 @@
 
 > **Changed 2026-10-16 (module h, 05_plan amendments #2, #3):** the `:S*(m)` rows were removed; F2 plots the advantage of B²-r over Global-S with bootstrap CIs; F5 shows P_maj-vs-m precision–recall curves with the difference band.
 
+> **Changed 2026-10-16 (05_plan amendment #6):** the `rehead` regime and `part` A/B are removed (`RunSpec.from_json` returns None for old runs of those designs); `train_frac` keeps a nested share of the training clusters (seed-specific order, the same rows for every variant). Block `r1` = main 135 + full-panel check 10 + subsampling 95 + size sweep 40 = 280 frozen runs. Supplementary figure `figS_train_fraction`: Δ (B²-r − soft BCE) on mAP and BACC against the training fraction, with bootstrap CIs. The smoke block lists 34 runs (the re-head and part-B runs of job 7519912 are history).
+
 Code: `b2j/runs.py`, `b2j/blocks.py`, `b2j/launch.py`, `b2j/report_smoke.py`. Tests: `tests/test_module_f.py`. Job scripts live on the cluster only (`BetaBinomialLoss/jobs/*.qsub.sh`, gitignored).
 
 ## Runs

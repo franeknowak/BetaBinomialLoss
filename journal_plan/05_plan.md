@@ -42,6 +42,11 @@
 > 3. **S\*(m) and S\*(m_B²) are dropped entirely** (no main-text or supplementary row). Spread comparisons become a three-step ladder: Binomial plug-in (S = ∞) → **Global-S** (one S per criterion, fitted on validation, **on soft BCE's m**; user decision) → B²-r (per-image S × c). Because Global-S sits on soft BCE's m, B²-r − Global-S reflects mean quality and spread together; the text says so. "Does S carry information beyond m?" is answered by the P_maj-vs-m ranking of #2 (if S were only a function of m, the two rankings and curves would coincide). Removed: the S\*(m) bullet of §2 "Post-hoc steps" and its rows in §2/§4.1; H4 prediction (a)'s "S\*(m_B²) beats Global-S"; §3 shared-maths point 2's R3 monotonicity check (`pmaj_monotone`); S\*(m) comparators in U1/U2. Redefined: the **H4 advantage** = vote NLL (per vote on CIFAR-10H) of Global-S minus that of B²-r, same dataset, n and checkpoint B (positive = B²-r better); S4a/S4b/S4c and F2 use it. **H5:** the frozen and fine-tuned advantages use the soft-BCE run of the same regime for Global-S (S5c = frozen advantage − fine-tuned advantage). The re-head arm and the frozen part-B arm have no soft-BCE twin → **open, ask the user** (see #5).
 > 4. **Order of the experiments in the paper** (for writing and for the analysis scripts): (0) setup + theory figure F1; (1) discrimination, H0, T1; (2) ablations of the MICCAI ingredients, HT, F3; (3) the spread ladder against the number of raters, H4, F2; (4) decisions: P_maj vs m within B²-r, FCR at recall 0.90, the precision–recall curves of F5, AURC (H6, U1); (5) annotation triage with P(split) against 3m(1−m), DUP and the soft-BCE ensemble (U2); (6) frozen vs fine-tuned encoder, H5, F4; (7) CVS Challenge replication (R4). B²-final (round D) is reported beside B²-r in (1), (3) and (4); every round-D iteration, kept or dropped, goes to the supplement.
 > 5. **Open (ask the user; do not decide):** (a) how the H5 re-head and frozen-part-B arms get a Global-S comparator without a soft-BCE twin; (b) the R0 items still pending in STATE (late-checkpoint check and rerun of `tune`; optional training-set-size sweep); (c) the pre-registration commit of the rewritten §5, which happens when R0 is closed and before any R1 job.
+> 6. **User decisions on the open items of #5 (2026-10-16, local session):**
+>    - (a) **The held-out re-head and its frozen part-B control are dropped** (no code, no runs). H5 is frozen vs fine-tuned only, scored exactly like the other experiments: advantage = vote NLL of soft BCE + Global-S − vote NLL of B²-r, each regime against the soft-BCE run of the same regime. S5c = frozen advantage − fine-tuned advantage (CIFAR-10H).
+>    - (b) **Late checkpoints:** the 80%-of-budget "late" flag is dropped (with cosine decay to 0 the last epochs are near-identical, so the flag said nothing). Instead every evaluation also logs mAP and vote NLL on a fixed training subset (as many images as validation, eval mode, spread fitted on validation), so training and validation curves sit on one footing. The `tune` block is rerun to get these curves (`tune/curves_<dataset>.png`); the selection rule is unchanged.
+>    - (c) **Training-set-size sweep: added to R1.** Soft BCE and B²-r, frozen, 5 seeds, 10% and 30% of the training clusters (nested; the 100% point is the main block), Endoscapes + CIFAR-10H = 40 runs. One supplementary figure: Δ (B²-r − soft BCE) on mAP and BACC against the training fraction, with two-level bootstrap 95% CIs; one sentence in the discussion. Descriptive: no endpoint, no claim.
+>    - (d) **Pre-registration:** the rewritten §5 (with (a)) is committed and dated when R0 closes, before any R1 job.
 
 ## 1. Summary (one page)
 
@@ -168,8 +173,8 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
   - (d) The plug-in loses to every spread arm.
 - *Refuted if:* (a) fails (§5.1 superiority rule) → outcome C.
 
-**H5: what S means under a frozen vs a fine-tuned encoder.** *(2026-10-16 #3: margins use Global-S, not S\*(m); re-head comparator open)*
-- *Arms:* frozen (R1, 5 seeds) against full fine-tuning (R2, 5 seeds), for hard BCE, soft BCE and B²-r, on Endoscapes and CIFAR-10H.
+**H5: what S means under a frozen vs a fine-tuned encoder.** *(2026-10-16 #3, #6: advantage over Global-S; re-head and part-B arms dropped — the bullets on them below are void)*
+- *Arms:* frozen (R1, 5 seeds) against full fine-tuning (R2, 5 seeds), for hard BCE, soft BCE and B²-r, on Endoscapes and CIFAR-10H. *(2026-10-16 #6: scored as advantage = NLL(soft BCE + Global-S) − NLL(B²-r) within each regime; S5c = frozen − fine-tuned advantage.)*
   - Memorisation check: a B²-r linear-head arm, and the ratio of median S on training images to median S on validation images.
   - Held-out re-head (CIFAR-10H): B²-r fine-tuned on 80% of the training images (part A); a fresh B²-r head trained on the cached fine-tuned features of the other 20% (part B).
   - **Its comparator:** a frozen-encoder B²-r head trained on the **same part B**.
@@ -268,9 +273,11 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 | Block | Datasets | Arms | Seeds | Runs |
 |---|---|---|---|---|
 | Main | Endoscapes, CIFAR-10H, MHIST | hard BCE, hard BCE-w, soft BCE, B²-r, B²-r-w, B²-r + KL, B²-M, B²-r linear, DUP | 5 | 135 |
-| H5 comparator | CIFAR-10H | B²-r frozen, part B only | 5 | 5 |
+| ~~H5 comparator~~ | dropped 2026-10-16 #6 | | | 0 |
+| Full-panel validation check | CIFAR-10H n = 3 | soft BCE, B²-r | 5 | 10 |
+| Training-set size (supplement) | Endoscapes, CIFAR-10H; 10%, 30% of training clusters | soft BCE, B²-r | 5 | 40 |
 | Subsampling | CIFAR-10H n ∈ {1, 3, 5, 10}; MHIST n ∈ {1, 3, 5} | soft BCE, B²-r (all n); DUP (n ≥ 3) | 5 | 55 + 40 |
-| Post-hoc | all | Global-S, S\*(m), S\*(m_B²), c, ensemble | – | – |
+| Post-hoc | all | plug-in, Global-S, c, ensemble (S\*(m) dropped, #3) | – | – |
 
 **R2: full fine-tuning (1 user-day; ≈ 40 GPU-h).** Supports H5 and secondary rows of T1/T2; figure F4. It can launch right after R1.
 
@@ -278,7 +285,7 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 |---|---|---|---|---|
 | Tuning (5 epochs) | Endoscapes, CIFAR-10H | hard BCE, soft BCE, B²-r × 2 encoder lr | 1 | 12 |
 | Main | Endoscapes, CIFAR-10H | hard BCE, soft BCE, B²-r | 5 | 30 |
-| Re-head | CIFAR-10H | B²-r fine-tuned on part A + fresh head on part-B features | 5 | 5 + 5 |
+| ~~Re-head~~ | dropped 2026-10-16 #6 | | | 0 |
 
 **R3: lock and analyse (5–6 user-days; no training).** Open the test predictions once and write down the verdicts.
 - **Tables.** T1 discrimination; T2 panel prediction and the HT ablation; T3 use cases.
@@ -316,11 +323,11 @@ Every endpoint is a difference between two scores, reported with its two-level b
 | S4a | advantage at n = all; all images and the ambiguous subset | superiority (> 0) | CIFAR-10H |
 | S4b | advantage(all) − advantage(3) | superiority (> 0) | CIFAR-10H |
 | S4c | advantage at n = 3 | difference | Endoscapes |
-| S5c | frozen advantage − fine-tuned advantage (Global-S from the soft-BCE run of the same regime) | superiority (> 0) | CIFAR-10H |
+| S5c | frozen advantage − fine-tuned advantage (Global-S from the soft-BCE run of the same regime; no re-head arm, amendment #6) | superiority (> 0) | CIFAR-10H |
 | S6a | Δ FCR at test recall 0.90, P_maj − m within B²-r | difference | Endoscapes |
 | S6b | same, full-panel-majority target | superiority (< 0) | CIFAR-10H |
 
-MHIST runs S4a/b and S6b in parallel as confirmatory evidence (n_train ∈ {3, 5, 7} for S4b). F5's precision–recall curves are descriptive (amendment 2026-10-16 #2).
+MHIST runs S4a/b and S6b in parallel as confirmatory evidence (n_train ∈ {3, 5, 7} for S4b). F5's precision–recall curves are descriptive (amendment 2026-10-16 #2), and so is the training-set-size figure (supplement, amendment #6).
 
 **Claim rule:** a claim needs the predicted reading on both Endoscapes and CIFAR-10H, unless the endpoint names one dataset. MHIST and the CVS Challenge are confirmatory: reported, never creating or removing a core claim (MHIST can upgrade B to B+).
 

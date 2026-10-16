@@ -18,22 +18,26 @@ HAVE_C10H = (DATA_ROOT / "cifar10h" / "cifar10h-counts.npy").exists()
 
 def test_names_unique_and_smoke_block():
     specs = BLOCKS["smoke"]()
-    assert len({(s.dataset, s.name) for s in specs}) == len(specs) == 36
-    assert {s.regime for s in specs} == {"frozen", "finetune", "rehead"}
+    assert len({(s.dataset, s.name) for s in specs}) == len(specs) == 34
+    assert {s.regime for s in specs} == {"frozen", "finetune"}
 
 
 @pytest.mark.skipif(not HAVE_C10H, reason="CIFAR-10H counts not present")
-def test_tables_subsample_part_and_test_full_panel():
+def test_tables_subsample_fraction_and_test_full_panel():
     full = load_table("cifar10h")
     tr, va, te = R.tables(R.RunSpec("cifar10h", "b2r", n_sub=3), full)
     assert (tr.n == 3).all() and (va.n == 3).all() and (te.n >= 47).all()          # test keeps the full panel
     assert np.array_equal(te.k, full.take("test").k)
     _, va_full, _ = R.tables(R.RunSpec("cifar10h", "b2r", n_sub=3, val_full_panel=True), full)
     assert (va_full.n >= 47).all()
-    a, _, _ = R.tables(R.RunSpec("cifar10h", "b2r", part="A", seed=2), full)
-    b, _, _ = R.tables(R.RunSpec("cifar10h", "b2r", part="B", seed=2), full)
-    assert len(a.ids) + len(b.ids) == 6000 and not set(a.ids) & set(b.ids)
-    assert abs(len(a.ids) / 6000 - 0.8) < 0.01
+    f10, f30 = (R.tables(R.RunSpec("cifar10h", "b2r", train_frac=f, seed=2), full)[0] for f in (0.1, 0.3))
+    assert (len(f10.ids), len(f30.ids)) == (600, 1800) and set(f10.ids) <= set(f30.ids)      # nested
+    other = R.tables(R.RunSpec("cifar10h", "soft_bce", train_frac=0.1, seed=2), full)[0]
+    assert np.array_equal(other.ids, f10.ids)                                            # same rows for every variant
+    assert not np.array_equal(R.tables(R.RunSpec("cifar10h", "b2r", train_frac=0.1, seed=3), full)[0].ids, f10.ids)
+    assert "frac0.1" in R.RunSpec("cifar10h", "b2r", train_frac=0.1).name
+    assert R.RunSpec.from_json({"dataset": "x", "variant": "b2r", "part": "B"}) is None
+    assert R.RunSpec.from_json({"dataset": "x", "variant": "b2r", "part": "all"}) == R.RunSpec("x", "b2r")
 
 
 @pytest.mark.skipif(not HAVE_C10H, reason="CIFAR-10H counts not present")
@@ -64,7 +68,7 @@ class Stub(nn.Module):
         return self.net(x)
 
 
-def test_finetune_and_rehead_paths(tmp_path, monkeypatch):
+def test_finetune_path(tmp_path, monkeypatch):
     from PIL import Image
     rng = np.random.default_rng(0)
     N = 40
@@ -79,14 +83,11 @@ def test_finetune_and_rehead_paths(tmp_path, monkeypatch):
     kw = dict(encoder_lr=1e-4, epochs=1, block="t")
     s = R.execute(R.RunSpec("cifar10h", "soft_bce", regime="finetune", **kw), root=tmp_path / "res", device="cpu", verbose=False, num_workers=0)
     assert s["finetune"] and s["n_train"] == 24
-    spec = R.RunSpec("cifar10h", "b2r", regime="rehead", **kw)
-    s = R.execute(spec, root=tmp_path / "res", device="cpu", verbose=False, num_workers=0)
-    out = spec.out_dir(tmp_path / "res")
-    assert s["finetune"]["n_train"] + s["rehead"]["n_train"] == 24                     # parts A and B
-    assert (out / "features_ftB.npz").exists() and (out / "rehead" / "test_B.npz").exists()
-    assert not list(out.rglob("*encoder*"))
+    assert not list((tmp_path / "res").rglob("*encoder*"))
     with pytest.raises(ValueError):
         R.execute(R.RunSpec("cifar10h", "b2r", regime="finetune", block="t2"), root=tmp_path / "res", device="cpu")
+    with pytest.raises(ValueError):
+        R.execute(R.RunSpec("cifar10h", "b2r", regime="rehead", encoder_lr=1e-4, block="t3"), root=tmp_path / "res", device="cpu")
 
 
 @pytest.mark.skipif(not (DATA_ROOT / "endoscapes" / "all_metadata.csv").exists(), reason="Endoscapes metadata not present")
@@ -121,8 +122,9 @@ def test_analysis_refuses_test_before_r3(tmp_path):
         A.figures("smoke", split="test", root=tmp_path)
 
 
-def _fake_block(tmp_path, seeds=3):
-    """Fake mhist-like table (N = 300, K = 1, n = 7) and frozen soft BCE / B²-r runs at n = 7 (full) and n = 3."""
+def _fake_block(tmp_path, seeds=3, ds="mhist"):
+    """Fake mhist-like table (N = 300, K = 1, n = 7) and frozen soft BCE / B²-r runs at n = 7 (full) and n = 3,
+    and at 10% of the training clusters."""
     from dataclasses import asdict
     rng = np.random.default_rng(0)
     N = 300
@@ -132,10 +134,10 @@ def _fake_block(tmp_path, seeds=3):
                        np.array(["train"] * 100 + ["val"] * 100 + ["test"] * 100), np.array([""] * N))
     val = table.take("val")
     z = np.log(theta[200 - 100:200] / (1 - theta[200 - 100:200]))
-    for n_sub in (None, 3):
+    for n_sub, frac in ((None, 1.0), (3, 1.0), (None, 0.1)):
         for v in ("soft_bce", "b2r"):
             for seed in range(seeds):
-                spec = R.RunSpec("mhist", v, seed=seed, n_sub=n_sub, block="fake")
+                spec = R.RunSpec(ds, v, seed=seed, n_sub=n_sub, train_frac=frac, block="fake")
                 d = spec.out_dir(tmp_path)
                 d.mkdir(parents=True)
                 (d / "spec.json").write_text(json.dumps(asdict(spec)))
@@ -166,3 +168,14 @@ def test_fig2_and_fig5_on_fake_block(tmp_path, monkeypatch):
     assert all(lo <= hi for lo, hi in zip(d["lo"], d["hi"]))
     df = A.collect("fake", "mhist", "val", root=tmp_path)
     assert not df["row"].str.contains(r"S\*").any() and "soft_bce:plugin" in set(df["row"])
+
+
+def test_train_fraction_figure_on_fake_block(tmp_path, monkeypatch):
+    import matplotlib
+    matplotlib.use("Agg")
+    from b2j import analysis as A
+    table = _fake_block(tmp_path, ds="endoscapes")
+    monkeypatch.setattr(A, "load_table", lambda ds: table)
+    assert A.figS_train_fraction("fake", "val", tmp_path / "fig", root=tmp_path, B=50, datasets=("endoscapes",)).exists()
+    r = json.loads((tmp_path / "fig" / "S_train_fraction.json").read_text())["endoscapes"]
+    assert set(r) == {"0.1", "1.0"} and all(v["map"]["lo"] <= v["map"]["hi"] for v in r.values())

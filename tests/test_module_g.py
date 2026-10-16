@@ -21,12 +21,27 @@ def test_choose_rule(tmp_path, monkeypatch):
         d = RunSpec("endoscapes", "b2r", lr=lr, wd=wd, block="tune").out_dir(tmp_path)
         d.mkdir(parents=True)
         (d / "summary.json").write_text(json.dumps(_summary(*v)))
-    chosen, late = G.choose(tmp_path)
+    chosen = G.choose(tmp_path)
     c = chosen["endoscapes"]["b2r"]
     assert (c["lr"], c["wd"]) == (3e-4, 1e-2)          # within 1e-3 of the best mAP, lower NLL wins; 0.53 is out
-    assert late == ["endoscapes/b2r"]                   # B at epoch 14 > 80% of 15
+    assert "late" not in c                              # the 80%-budget flag was dropped (2026-10-16)
     assert G.hyper("endoscapes", "b2r_kl", tmp_path) == {"lr": 3e-4, "wd": 1e-2}   # inherited by the family
     assert (tmp_path / "tune" / "tune_report.md").exists()
+    log = [{"epoch": e, "val_map": 0.5, "val_nll_per_vote": 0.3, "train_map": 0.6, "train_nll_per_vote": 0.2}
+           for e in (0.25, 0.5, 0.75)]
+    (RunSpec("endoscapes", "b2r", lr=3e-4, wd=1e-2, block="tune").out_dir(tmp_path) / "log.jsonl").write_text(
+        "\n".join(map(json.dumps, log)))
+    assert all(f.exists() for f in G.curves(tmp_path))
+
+
+def test_r1_block(tmp_path):
+    from b2j.blocks import r1
+    (tmp_path / "tune").mkdir()
+    G.chosen_path(tmp_path).write_text(json.dumps({ds: {f: {"lr": 1e-3, "wd": 1e-4} for f in G.FAMILIES} for ds in G.DATASETS}))
+    specs = r1(tmp_path)
+    assert len(specs) == 135 + 10 + 55 + 40 + 40 == len({(s.dataset, s.name) for s in specs})
+    assert all(s.regime == "frozen" and s.block == "r1" and s.lr == 1e-3 for s in specs)
+    assert sum(s.train_frac < 1 for s in specs) == 40 and sum(s.val_full_panel for s in specs) == 10
 
 
 

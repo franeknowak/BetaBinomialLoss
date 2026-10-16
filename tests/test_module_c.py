@@ -167,11 +167,13 @@ def test_finetune_path_and_feature_cache(image_table, tmp_path, monkeypatch):
     cfg = T.TrainConfig.finetune("b2r", encoder_lr=1e-4, epochs=2, batch_size=4, num_workers=0)
     enc = StubEncoder()
     w0 = enc.net[0].weight.detach().clone()
-    s, model = T.run(cfg, sp["train"], sp["val"], sp["test"], tmp_path / "run", encoder=enc, device="cpu",
-                     return_model_B=True, verbose=False)
-    assert s["finetune"] and not torch.equal(model.encoder.net[0].weight, w0)      # encoder was trained
+    s = T.run(cfg, sp["train"], sp["val"], sp["test"], tmp_path / "run", encoder=enc, device="cpu", verbose=False)
+    assert s["finetune"] and not torch.equal(enc.net[0].weight, w0)                # encoder was trained (state at B)
     assert np.load(tmp_path / "run" / "test_B.npz")["out"].shape == (6, 1, 2)
-    # re-head: cache features from the fine-tuned encoder kept in memory, then train a fresh frozen head on them
+    log = [json.loads(l) for l in (tmp_path / "run" / "log.jsonl").read_text().splitlines()]
+    assert all("train_map" in r and "train_nll_per_vote" in r for r in log)       # training-set probe on images
+    # feature cache from a trained encoder, then a frozen head on it
+    model = T.Model(None, enc)
     monkeypatch.setattr(E, "CACHE_DIR", tmp_path / "cache")
     path = E.build_cache(t, "cifar10h", torch.device("cpu"), tag="ft_test", encoder=model.encoder, num_workers=0)
     shuffled = t.subset(np.random.default_rng(1).permutation(len(t.ids)))
@@ -182,5 +184,5 @@ def test_finetune_path_and_feature_cache(image_table, tmp_path, monkeypatch):
     with pytest.raises(KeyError):
         E.load_cache(LabelTable(np.array(["nope"]), *(getattr(t, f)[:1] for f in ("k", "n", "cluster", "split", "paths"))), path)
     fr = {s: T.split_from_table(t.take(s), E.load_cache(t.take(s), path), labelled=s != "test") for s in ("train", "val", "test")}
-    T.run(T.TrainConfig("b2r", epochs=2), fr["train"], fr["val"], fr["test"], tmp_path / "rehead", device="cpu", verbose=False)
-    assert (tmp_path / "rehead" / "val_B.npz").exists()
+    T.run(T.TrainConfig("b2r", epochs=2), fr["train"], fr["val"], fr["test"], tmp_path / "head", device="cpu", verbose=False)
+    assert (tmp_path / "head" / "val_B.npz").exists()

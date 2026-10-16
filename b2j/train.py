@@ -8,6 +8,10 @@ early stopping (plan amendment 2026-10-14 #5). At each evaluation it fits the va
   DUP has no panel prediction: A and B are both its validation loss.
 Each checkpoint is the evaluation with the best centred moving average (window cfg.smooth) of its criterion;
 the kept weights are the real state at that evaluation.
+At each evaluation it also scores a fixed subset of training images (as many as validation; eval mode, dropout
+off) with the same metrics and the spread fitted on validation at that evaluation (train_map,
+train_nll_per_vote / train_dup_bce): train and validation curves on one footing (05_plan amendment 2026-10-16 #6).
+The subset is drawn with its own generator, so training is unchanged.
 After the last epoch it writes, for A and B: validation and test raw head outputs, the fitted scale and the head
 weights. Test labels never reach the trainer (Split.k is None for test), no test metric is computed or printed,
 and no encoder weights or per-epoch checkpoints are written (storage policy, plan amendment 2026-10-14 #3).
@@ -114,22 +118,36 @@ def predict(model, split: Split, device, batch_size=1024, num_workers=4) -> np.n
 
 
 # ---------------------------------------------------------------- validation scoring
-def score_val(name, out, k, n, eps=None) -> dict:
-    """Validation selection quantities for one epoch. Uses validation labels only."""
+def score_split(name, out, k, n, scale, eps=None, prefix="val") -> dict:
+    """mAP of m against the majority vote and vote NLL per vote with a given spread scale (DUP: its BCE)."""
     if posthoc.spread_rule(name) == "dup":
         t = split_target(torch.as_tensor(k), torch.as_tensor(n)).numpy()
         p = np.clip(expit(out[..., 0].astype(np.float64)), 1e-12, 1 - 1e-12)
-        bce = float(-(t * np.log(p) + (1 - t) * np.log1p(-p)).mean())
-        return {"val_dup_bce": bce, "sel_A": -bce, "sel_B": bce, "scale": None}
-    scale = posthoc.fit_spread(name, out, k, n, eps)
+        return {f"{prefix}_dup_bce": float(-(t * np.log(p) + (1 - t) * np.log1p(-p)).mean())}
     m, S = posthoc.panel(name, out, scale, eps)
     nll = float((posthoc.vote_nll(m, S, k, n) / n).mean())
     y = 2 * k > n
     aps = [average_precision_score(y[:, j], m[:, j]) for j in range(y.shape[1]) if 0 < y[:, j].sum() < len(y)]
-    vmap = float(np.mean(aps)) if aps else float("nan")
-    return {"val_map": vmap, "val_nll_per_vote": nll, "sel_A": vmap, "sel_B": nll,
-            "scale": None if scale is None else scale.tolist(),
-            "val_median_S": np.median(S, 0).tolist()}
+    return {f"{prefix}_map": float(np.mean(aps)) if aps else float("nan"), f"{prefix}_nll_per_vote": nll,
+            f"{prefix}_median_S": np.median(S, 0).tolist()}
+
+
+def score_val(name, out, k, n, eps=None) -> dict:
+    """Validation selection quantities for one evaluation. Uses validation labels only."""
+    scale = posthoc.fit_spread(name, out, k, n, eps)
+    sc = score_split(name, out, k, n, scale, eps)
+    if posthoc.spread_rule(name) == "dup":
+        return {**sc, "sel_A": -sc["val_dup_bce"], "sel_B": sc["val_dup_bce"], "scale": None}
+    return {**sc, "sel_A": sc["val_map"], "sel_B": sc["val_nll_per_vote"],
+            "scale": None if scale is None else scale.tolist()}
+
+
+def train_probe(train: "Split", n_val: int, seed: int) -> "Split":
+    """Fixed subset of training rows (min(n_train, n_val)), drawn with its own generator (training RNG untouched)."""
+    N = len(train.ids)
+    idx = np.sort(np.random.default_rng(10_000 + seed).permutation(N)[: min(N, n_val)])
+    x = train.x.subset(idx) if isinstance(train.x, ImageSet) else train.x[idx]
+    return Split(x, train.ids[idx], train.k[idx], train.n[idx])
 
 
 def _lr_lambda(warmup_steps, total_steps):
@@ -150,9 +168,8 @@ def _jsonable(d):
 
 
 # ---------------------------------------------------------------- the trainer
-def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encoder=None, device=None,
-        return_model_B=False, verbose=True):
-    """Train one variant, select A and B on validation, write predictions. Returns the summary (+ model at B)."""
+def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encoder=None, device=None, verbose=True):
+    """Train one variant, select A and B on validation, write predictions. Returns the summary."""
     if test.k is not None or test.n is not None:
         raise ValueError("test Split must not carry labels (use split_from_table(..., labelled=False))")
     finetune = cfg.encoder_lr is not None
@@ -168,6 +185,7 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
     if not finetune:   # embeddings live on the device for the whole run
         train, val, test = (Split(torch.as_tensor(np.asarray(s.x), dtype=torch.float32, device=device), s.ids, s.k, s.n)
                             for s in (train, val, test))
+    probe = train_probe(train, len(val.ids), cfg.seed)
     in_dim = encoder.num_features if finetune else train.x.shape[1]
     k_tr, n_tr = torch.as_tensor(train.k, dtype=torch.float32), torch.as_tensor(train.n, dtype=torch.float32)
     head, loss_fn = build(cfg.variant, in_dim, k_tr, n_tr, eps=cfg.eps)
@@ -233,8 +251,11 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
             t = len(hist)
             val_out = predict(model, val, device, num_workers=cfg.num_workers)
             sc = score_val(cfg.variant, val_out, val.k, val.n, cfg.eps)
+            scale = None if sc["scale"] is None else np.asarray(sc["scale"])
+            tr = score_split(cfg.variant, predict(model, probe, device, num_workers=cfg.num_workers), probe.k, probe.n,
+                             scale, cfg.eps, prefix="train")
             rec = {"eval": t, "epoch": round(epoch + b / steps_per_epoch, 3), "train_loss": loss_sum / max(n_steps, 1),
-                   "nonfinite_steps": nonfinite, "lr": sched.get_last_lr()[0], **_jsonable(sc)}
+                   "nonfinite_steps": nonfinite, "lr": sched.get_last_lr()[0], **_jsonable(sc), **tr}
             if is_b2:
                 rec["train_stuck_share"] = (stuck_num / stuck_den.clamp(min=1)).tolist()
             nonfinite_total += nonfinite
@@ -275,4 +296,4 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
         S_va = posthoc.panel(cfg.variant, np.load(out_dir / "val_B.npz")["out"], scale, cfg.eps)[1]
         summary["B"]["train_val_S_ratio"] = (np.median(S_tr, 0) / np.median(S_va, 0)).tolist()
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=1))
-    return (summary, model) if return_model_B else summary
+    return summary

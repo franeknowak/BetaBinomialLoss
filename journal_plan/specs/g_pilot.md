@@ -2,6 +2,8 @@
 
 > **Changed 2026-10-16 (module h, 05_plan amendment #1):** the margins step was removed (no δ); `python -m b2j.pilot margins` no longer exists. The `pilot` block's finished runs (job 7522400) stay as a validation preview; `results/journal/pilot/margins.md` on the cluster is historical. The section below is kept for history.
 
+> **Changed 2026-10-16 (05_plan amendment #6):** the 80%-of-budget late flag was removed. `choose` also writes `tune/curves_<dataset>.png` (training-subset vs validation mAP and NLL per evaluation for each chosen setting, A and B marked). The `tune` block is rerun to get the training curves; the old outputs are moved to `results/journal/tune_2026-10-14/`.
+
 Code: `b2j/pilot.py` (+ blocks `tune`, `pilot` in `b2j/blocks.py`). Tests: `tests/test_module_g.py`. Job: `jobs/pilot.qsub.sh` (cluster only).
 
 ## Tuning (block `tune`, 54 frozen runs, seed 0)

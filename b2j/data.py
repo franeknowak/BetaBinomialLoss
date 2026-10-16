@@ -150,6 +150,11 @@ class ImageSet:
     def __len__(self):
         return len(self.table.ids)
 
+    def subset(self, idx):
+        out = ImageSet.__new__(ImageSet)
+        out.table, out.tf = self.table.subset(idx), self.tf
+        return out
+
     def __getitem__(self, i):
         from PIL import Image
         import torch

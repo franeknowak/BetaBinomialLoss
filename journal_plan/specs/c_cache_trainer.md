@@ -1,5 +1,7 @@
 # Module c — embedding cache and one trainer
 
+> **Changed 2026-10-16 (05_plan amendment #6):** every evaluation also scores a fixed training subset (min(n_train, n_val) rows, own generator, eval mode) with the validation-fitted spread: `train_map`, `train_nll_per_vote` (DUP: `train_dup_bce`) in `log.jsonl`. Frozen training is unchanged (no extra draws from the training RNG). `run(..., return_model_B)` removed with the re-head.
+
 Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the spread fit the trainer needs at every evaluation; module d extends this file). Tests: `tests/test_module_c.py` (CPU, synthetic data, stub encoder instead of DINOv3).
 
 ## Embedding cache (`embed.py`)
