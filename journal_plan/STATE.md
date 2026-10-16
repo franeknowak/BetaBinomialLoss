@@ -1,17 +1,20 @@
 # Journal plan — STATE
 
-## Current step (2026-10-16, local CLI session)
-Round 0, closing. **Module h DONE** (the code now matches 05_plan amendments 2026-10-16 #1–#3): spec `specs/h_review_2026-10-16.md`; tests: 98 pass, 1 skipped (CUDA) on the Mac. Commit `79e4d94` (plan review docs) was pushed this session, followed by the module h commit. No jobs running; none may be submitted without the user's go.
+## Current step (2026-10-16 evening)
+**R0 closed; R1 submitted.** User decisions on the open items, now 05_plan amendment 2026-10-16 #6:
+- (a) re-head and part-B arms DROPPED (code removed); H5 = frozen vs fine-tuned, advantage over Global-S within each regime.
+- (b) 80%-budget late flag DROPPED (user: nonsense). Training-subset metrics are logged at every evaluation (`train_map`, `train_nll_per_vote`); `tune` rerun for the curves.
+- (c) Size sweep ADDED to R1 (10%/30% training clusters, soft BCE + B²-r, Endoscapes + CIFAR-10H, 40 runs); one supplementary figure Δ (B²-r − soft BCE) mAP/BACC vs fraction with CIs (`analysis.figS_train_fraction`); one sentence in the discussion.
+- (d) Pre-registration DONE: commit b9cbb72, tag `prereg-b2r-2026-10-16` (pushed), before any R1 job.
 
-What module h changed (details in the spec): `stats.verdict` has superiority + difference ("better" / "worse" / "no evidence of a difference"), no margins/caps; bootstrap accepts array metrics (pointwise CI; scalar results unchanged); `posthoc` has no S\*(m)/`pmaj_monotone`; `analysis` has no `:S*(m)` rows, F2 = advantage NLL(Global-S) − NLL(B²-r) vs n with bootstrap CIs, F5 = P_maj-vs-m precision–recall curves + difference band + risk–coverage; `metrics.precision_at_recalls`; `pilot` has no `margins` command.
+Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026-10-14/`):
+- **7550711 `tune2`**: tuning grid rerun (54 runs) + `pilot choose` → `tune/chosen.json`, `tune_report.md`, `tune/curves_<ds>.png`.
+- **7550712 `r1`** (array 1–4, `-hold_jid 7550711`): block `r1`, 280 frozen runs → `results/journal/r1/`. Logs `jobs/logs/`.
 
-## Exact next action (2026-10-16)
-1. **Ask the user** (do not decide; 05_plan amendment 2026-10-16 #5):
-   - (a) H5: the re-head runs and the frozen part-B runs have no soft-BCE twin → how is their Global-S comparator defined?
-   - (b) Late-checkpoint check (proposed 2026-10-15, still pending): log train-subset metrics in eval mode at every evaluation; replace the 80%-budget late flag with a plateau check; rerun `tune` (the `pilot` rerun is no longer needed).
-   - (c) Optional training-set-size sweep (60 runs): add to R1 or not.
-   - (d) Pre-registration: commit and date the rewritten §5 when R0 closes, before any R1 job.
-2. Then the R1 blocks in `b2j/blocks.py` (main, H5 comparator, subsampling), the verdict script (readings per §5.1 via `stats.verdict`), and R1 on the cluster after the user's go.
+## Exact next action
+1. When 7550711 ends: check the log (preflight ok, 54 ok), diff `tune/chosen.json` against `tune_2026-10-14/chosen.json` (frozen training should be unchanged → same choice expected); look at `curves_*.png` (training vs validation); report to the user.
+2. While R1 runs: write the verdict script (§5.1 readings for S0, ST-w, ST-KL, S4a/b/c, S6a/b on R1; S5c needs R2), validation-only until R3, test behind `--open-test`.
+3. When R1 ends: check failures; run `python -m b2j.analysis tables r1` and `figures r1` (validation) on the cluster as a job; pull the small outputs; report (end of R1). Then round D (validation-only method iterations, `journal_plan/iterations.md`) and R2 (fine-tuning: tune 12 + main 30 runs; re-head dropped).
 
 ## Module h task list (2026-10-16, DONE; kept for history)
 1. **Module h — apply the 2026-10-16 review to the code** (spec `specs/h_review_2026-10-16.md` + tests, committed before anything else; run the full test suite on the Mac as for modules a–g):
