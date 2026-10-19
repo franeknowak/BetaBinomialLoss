@@ -11,14 +11,15 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 - **7550711 `tune2`**: tuning grid rerun (54 runs) + `pilot choose` → `tune/chosen.json`, `tune_report.md`, `tune/curves_<ds>.png`.
 - **7550712 `r1`** (array 1–4, `-hold_jid 7550711`): block `r1`, 280 frozen runs → `results/journal/r1/`. Logs `jobs/logs/`.
 
-## Exact next action (2026-10-19)
-Results of 7550711 / 7550712 (checked 2026-10-19):
-- `tune2` 7550711: preflight ok, 54/54 ok. `chosen.json` IDENTICAL to `tune_2026-10-14/chosen.json` (only the dropped `late` field differs).
-- Curves (`tune/curves_<ds>.png`, copy in scratchpad): every late pick (Endoscapes soft BCE B 14.5; MHIST soft BCE B 12.5; CIFAR-10H hard BCE A 13.3) sits on a flat validation plateau while the training-subset curve keeps rising → max of a noisy plateau, not undertraining; 15-epoch frozen budget is enough. CIFAR-10H B²-r and hard BCE validation NLL rise after epoch ~2–3 (overfitting; selection at A/B catches it).
-- `r1` 7550712: 4×70 = 280 ok, 0 failed.
-1. DONE: job 7558343 `r1an` ok (0 skipped figures). Validation outputs pulled to the Mac `results/journal/r1/{tables_val,figures_val,verdicts_val.md}` (gitignored). **End-of-R1 report given to the user 2026-10-19; waiting for the user before round D.**
-   R1 validation preview: S0 (B²-r vs soft BCE, BACC/mAP) no evidence of a difference on all 3 datasets; ST-w (class weights) and ST-KL no difference; S4a advantage (NLL Global-S − B²-r, n = all) success on CIFAR-10H (+0.0012 [+0.0010,+0.0013]) and MHIST (+0.043 [+0.017,+0.068]), also on ambiguous subsets; S4c Endoscapes n = 3 +0.005 [−0.008,+0.018]; S4b and S6a/b inconclusive/no difference. Class-weighted variants (hard BCE-w, B²-r-w, B²-M) clearly worse vote NLL/ECE. Size sweep: Endoscapes Δ mAP +0.06 at 10%, +0.02 at 30%, 0 at 100%, CIs all include 0; CIFAR-10H flat. MHIST F2: advantage negative at n = 1 (−0.03, CI incl. 0), positive from n = 3.
-2. Then round D (validation-only method iterations, `journal_plan/iterations.md`) and R2 (fine-tuning: tune 12 + main 30 runs).
+## Exact next action (2026-10-19, round D started)
+**User direction after R1:** gains are significant but too small to matter; make B² *useful*. Endoscapes may stay flat (reason known). New datasets allowed. **Rules (user, 2026-10-19): datasets are downloaded and training runs ON THE CLUSTER ONLY; draft code locally; packages on the Mac are fine.** Cluster SSH outage since ~13:00 — user will say when it is back.
+Done locally (pushed): `journal_plan/iterations.md` (R1 diagnosis, D0 plan, candidates, dataset shortlist); AMi-Br loader + tests (`data.amibr_labels`, 66900c5); D0 diagnostics `b2j/diag.py` + test; D1 mean-spread head `b2ms` and D2 spread shrinkage `b2ms_shrink` (losses/posthoc/variants, tests `tests/test_round_d.py`; 55c2ff4); blocks smoke/r1 pinned to `variants.MAIN`. 112 tests pass.
+When the cluster is back:
+1. `git merge --ff-only` on the cluster; copy `jobs/download_datasets.qsub.sh` (local draft, adds `amibr`) and `qsub jobs/download_datasets.qsub.sh amibr`; then `python -m pytest tests/test_module_b.py -k amibr` there (real-data test) and build the cache (`python -m b2j.embed amibr` in a GPU job).
+2. D0: `python -m b2j.diag r1` (CPU job) → `results/journal/r1/diag_d0_val.md`; pull it; fill D0 outcome in iterations.md; decide D1/D2 (write the entry before running).
+3. Add AMi-Br to `blocks.DATASETS`/`pilot.DATASETS`/analysis (tune 18 runs + main runs) — after D0.
+4. Ask the user about the non-medical shortlist (Galaxy Zoo DECaLS, FER+, So2Sat votes) — in iterations.md.
+Earlier (R1, done): R1 analysis job 7558343 ok; validation outputs in `results/journal/r1/` on the Mac; end-of-R1 report given.
 
 ## Module h task list (2026-10-16, DONE; kept for history)
 1. **Module h — apply the 2026-10-16 review to the code** (spec `specs/h_review_2026-10-16.md` + tests, committed before anything else; run the full test suite on the Mac as for modules a–g):
