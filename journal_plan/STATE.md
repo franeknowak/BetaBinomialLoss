@@ -11,10 +11,13 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 - **7550711 `tune2`**: tuning grid rerun (54 runs) + `pilot choose` → `tune/chosen.json`, `tune_report.md`, `tune/curves_<ds>.png`.
 - **7550712 `r1`** (array 1–4, `-hold_jid 7550711`): block `r1`, 280 frozen runs → `results/journal/r1/`. Logs `jobs/logs/`.
 
-## Exact next action
-1. When 7550711 ends: check the log (preflight ok, 54 ok), diff `tune/chosen.json` against `tune_2026-10-14/chosen.json` (frozen training should be unchanged → same choice expected); look at `curves_*.png` (training vs validation); report to the user.
-2. Verdict script DONE (commit 9f66a66, `b2j/verdicts.py`, spec f). After R1: `python -m b2j.verdicts r1` (validation preview) in the analysis job.
-3. When R1 ends: check failures; run `python -m b2j.analysis tables r1` and `figures r1` (validation) on the cluster as a job; pull the small outputs; report (end of R1). Then round D (validation-only method iterations, `journal_plan/iterations.md`) and R2 (fine-tuning: tune 12 + main 30 runs; re-head dropped).
+## Exact next action (2026-10-19)
+Results of 7550711 / 7550712 (checked 2026-10-19):
+- `tune2` 7550711: preflight ok, 54/54 ok. `chosen.json` IDENTICAL to `tune_2026-10-14/chosen.json` (only the dropped `late` field differs).
+- Curves (`tune/curves_<ds>.png`, copy in scratchpad): every late pick (Endoscapes soft BCE B 14.5; MHIST soft BCE B 12.5; CIFAR-10H hard BCE A 13.3) sits on a flat validation plateau while the training-subset curve keeps rising → max of a noisy plateau, not undertraining; 15-epoch frozen budget is enough. CIFAR-10H B²-r and hard BCE validation NLL rise after epoch ~2–3 (overfitting; selection at A/B catches it).
+- `r1` 7550712: 4×70 = 280 ok, 0 failed.
+1. Job **7558334 `r1an`** (CPU, `jobs/r1_analysis.qsub.sh`): `analysis tables r1`, `figures r1`, `verdicts r1` — validation only. When it ends: check log `jobs/logs/r1an.o7558334`, pull `results/journal/r1/*.md` + figures (validation only), report end of R1 to the user.
+2. Then round D (validation-only method iterations, `journal_plan/iterations.md`) and R2 (fine-tuning: tune 12 + main 30 runs).
 
 ## Module h task list (2026-10-16, DONE; kept for history)
 1. **Module h — apply the 2026-10-16 review to the code** (spec `specs/h_review_2026-10-16.md` + tests, committed before anything else; run the full test suite on the Mac as for modules a–g):
