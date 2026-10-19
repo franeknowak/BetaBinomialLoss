@@ -16,7 +16,7 @@ Results of 7550711 / 7550712 (checked 2026-10-19):
 - `tune2` 7550711: preflight ok, 54/54 ok. `chosen.json` IDENTICAL to `tune_2026-10-14/chosen.json` (only the dropped `late` field differs).
 - Curves (`tune/curves_<ds>.png`, copy in scratchpad): every late pick (Endoscapes soft BCE B 14.5; MHIST soft BCE B 12.5; CIFAR-10H hard BCE A 13.3) sits on a flat validation plateau while the training-subset curve keeps rising → max of a noisy plateau, not undertraining; 15-epoch frozen budget is enough. CIFAR-10H B²-r and hard BCE validation NLL rise after epoch ~2–3 (overfitting; selection at A/B catches it).
 - `r1` 7550712: 4×70 = 280 ok, 0 failed.
-1. Job **7558334 `r1an`** (CPU, `jobs/r1_analysis.qsub.sh`): `analysis tables r1`, `figures r1`, `verdicts r1` — validation only. When it ends: check log `jobs/logs/r1an.o7558334`, pull `results/journal/r1/*.md` + figures (validation only), report end of R1 to the user.
+1. Job **7558343 `r1an`** (resubmit; 7558334 failed: pandas to_markdown needs tabulate, missing on cluster → fixed e9f60a2) (CPU, `jobs/r1_analysis.qsub.sh`): `analysis tables r1`, `figures r1`, `verdicts r1` — validation only. When it ends: check log `jobs/logs/r1an.o7558343`, pull `results/journal/r1/*.md` + figures (validation only), report end of R1 to the user.
 2. Then round D (validation-only method iterations, `journal_plan/iterations.md`) and R2 (fine-tuning: tune 12 + main 30 runs).
 
 ## Module h task list (2026-10-16, DONE; kept for history)
