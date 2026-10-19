@@ -24,7 +24,11 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
   2. How much predicted S varies across images; rank correlation of predicted S with the observed disagreement on validation.
   3. Ceiling: on CIFAR-10H (≈50 raters) the per-image vote fraction is close to the truth, so the NLL of a 3-rater panel under the best possible per-image Beta can be approximated; compare B²-r and Global-S against it.
 - **Expected:** tells whether to work on the spread head (D1/D2) or on data (more experts per image / other datasets).
-- **Outcome:** (pending)
+- **Outcome (2026-10-19, `results/journal/r1/diag_d0_val.md`; validation):**
+  1. *Where the gain is.* CIFAR-10H: all of it on images with a small dissenting minority (≤ 15% of ≈50 votes: 13% of image–class pairs, +131% of the total gain); B²-r is slightly *worse* on unanimous pairs (85%, −38%). MHIST (7 votes): the gain is spread evenly and is *smallest* on the genuinely split images (30–50% minority: +3% of the gain; unanimous + near-unanimous: +81%). Endoscapes (3 votes): all of the gain on unanimous images; split images ≈ 0.
+  2. *Does S say anything beyond m?* No. Within deciles of m, the rank correlation of B²-r's predicted overdispersion ρ = 1/(S+1) with "the panel split" is ≈ 0 on every head (CIFAR-10H −0.07 to +0.04; Endoscapes −0.08 to −0.01) and of the wrong sign on MHIST (−0.14). S does vary across images (10th–90th percentile ≈ 0.4–0.6 decades), but that variation does not track disagreement.
+  - *Reading:* B²-r's R1 advantage comes from better-calibrated vote probabilities (mostly in the tails, near-unanimous images), not from knowing which images split. So the MHIST triage-AP gain (0.55 → 0.60) must come through m, not S; the reading in the R1 table above is wrong on that point. A per-image spread that carries information is what B² does not yet deliver → targets D1/D2.
+  3. *Ceiling (CIFAR-10H).* First run invalid: the reference (Jeffreys-smoothed Binomial from the other ≈47 votes) was beaten by every model (0.030 vs 0.034 per vote), so it was not a ceiling. Replaced by the empirical-Bayes posterior predictive (d3001d5); rerun job 7559168 — result pending.
 
 ## Candidate iterations (to be fixed after D0)
 

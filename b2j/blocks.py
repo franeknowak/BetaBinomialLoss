@@ -3,7 +3,8 @@ chosen by module g (results/journal/tune/chosen.json). No margins (05_plan amend
 from b2j.runs import RunSpec
 from b2j.variants import MAIN, VARIANTS
 
-DATASETS = ("endoscapes", "cifar10h", "mhist")
+DATASETS = ("endoscapes", "cifar10h", "mhist")   # R0-R1 blocks, pinned
+ROUND_D_DATASETS = ("amibr",)                   # added in round D (2026-10-19)
 SMOKE_ENCODER_LR = 1e-5
 
 
@@ -57,4 +58,13 @@ def r1(root=None):
     return out
 
 
-BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1}
+def d_base(root=None):
+    """Round D: the R1 main block (every variant in MAIN, frozen, 5 seeds) on the datasets added in round D (45 runs on
+    AMi-Br). Needs their rows in tune/chosen.json (block `tune` then `pilot choose`)."""
+    from b2j.pilot import hyper
+    kw = {} if root is None else {"root": root}
+    return [RunSpec(ds, v, seed=s, block="d_base", **hyper(ds, v, **kw)) for ds in ROUND_D_DATASETS for v in MAIN
+            for s in SEEDS]
+
+
+BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base}

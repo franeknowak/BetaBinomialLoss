@@ -170,7 +170,7 @@ def _md_table(t):
                      + ["| " + " | ".join(r) + " |" for r in rows[1:]])
 
 
-def tables(block, split="val", root=RESULTS, open_test=False, datasets=("endoscapes", "cifar10h", "mhist")):
+def tables(block, split="val", root=RESULTS, open_test=False, datasets=("endoscapes", "cifar10h", "mhist", "amibr")):
     outdir = Path(root) / block / f"tables_{split}"
     outdir.mkdir(parents=True, exist_ok=True)
     md = [f"# Tables ({block}, {split})", ""]
@@ -449,7 +449,7 @@ def figures(block, split="val", root=RESULTS, open_test=False):
         made.append(figS_train_fraction(block, split, out, root, open_test))
     except (FileNotFoundError, KeyError, ValueError) as e:
         print(f"skipped the training-fraction figure: {e!r}")
-    for ds in ("endoscapes", "cifar10h", "mhist"):
+    for ds in ("endoscapes", "cifar10h", "mhist", "amibr"):
         if not (Path(root) / block / ds).exists():
             continue
         for f in (lambda: fig3_spread_vs_m(block, ds, split, out, root),

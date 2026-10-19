@@ -14,7 +14,7 @@ from pathlib import Path
 
 from b2j.runs import RESULTS, RunSpec
 
-DATASETS = ("endoscapes", "cifar10h", "mhist")
+DATASETS = ("endoscapes", "cifar10h", "mhist", "amibr")   # amibr added in round D (2026-10-19)
 PILOT_DATASETS = ("endoscapes", "cifar10h")          # the datasets where claims are decided
 FAMILIES = ("hard_bce", "soft_bce", "b2r")
 FAMILY = {"hard_bce": "hard_bce", "hard_bce_w": "hard_bce", "soft_bce": "soft_bce", "dup": "soft_bce",
@@ -51,6 +51,10 @@ def choose(root=RESULTS):
                          "| dataset | family | lr | wd | val mAP (A) | val NLL/vote (B) | A epoch | B epoch | chosen |",
                          "|---|---|---|---|---|---|---|---|---|"]
     for ds in DATASETS:
+        if not all((RunSpec(ds, f, lr=lr, wd=wd, block="tune").out_dir(root) / "summary.json").exists()
+                   for f in FAMILIES for lr, wd in GRID):
+            print(f"choose: tuning of {ds} incomplete, skipped")
+            continue
         chosen[ds] = {}
         for fam in FAMILIES:
             cands = []
@@ -80,7 +84,7 @@ def curves(root=RESULTS):
     import matplotlib.pyplot as plt
     chosen = json.loads(chosen_path(root).read_text())
     made = []
-    for ds in DATASETS:
+    for ds in (d for d in DATASETS if d in chosen):
         fig, ax = plt.subplots(2, len(FAMILIES), figsize=(3.2 * len(FAMILIES), 5), squeeze=False)
         for j, fam in enumerate(FAMILIES):
             c = chosen[ds][fam]

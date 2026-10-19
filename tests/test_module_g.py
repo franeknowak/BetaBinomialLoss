@@ -21,7 +21,9 @@ def test_choose_rule(tmp_path, monkeypatch):
         d = RunSpec("endoscapes", "b2r", lr=lr, wd=wd, block="tune").out_dir(tmp_path)
         d.mkdir(parents=True)
         (d / "summary.json").write_text(json.dumps(_summary(*v)))
+    monkeypatch.setattr(G, "DATASETS", ("endoscapes", "amibr"))        # amibr not tuned yet -> skipped
     chosen = G.choose(tmp_path)
+    assert set(chosen) == {"endoscapes"}
     c = chosen["endoscapes"]["b2r"]
     assert (c["lr"], c["wd"]) == (3e-4, 1e-2)          # within 1e-3 of the best mAP, lower NLL wins; 0.53 is out
     assert "late" not in c                              # the 80%-budget flag was dropped (2026-10-16)
@@ -43,6 +45,14 @@ def test_r1_block(tmp_path):
     assert all(s.regime == "frozen" and s.block == "r1" and s.lr == 1e-3 for s in specs)
     assert sum(s.train_frac < 1 for s in specs) == 40 and sum(s.val_full_panel for s in specs) == 10
 
+
+def test_d_base_block(tmp_path):
+    from b2j.blocks import d_base, r1
+    (tmp_path / "tune").mkdir()
+    G.chosen_path(tmp_path).write_text(json.dumps({ds: {f: {"lr": 1e-3, "wd": 1e-4} for f in G.FAMILIES} for ds in G.DATASETS}))
+    specs = d_base(tmp_path)
+    assert len(specs) == 45 == len({s.name for s in specs}) and {s.dataset for s in specs} == {"amibr"}
+    assert "amibr" not in {s.dataset for s in r1(tmp_path)}              # R1 stays pinned
 
 
 def test_no_margins_command():
