@@ -95,6 +95,44 @@ def mhist_labels(annotations_csv, image_dir, val_frac=0.2, seed=0) -> LabelTable
     return LabelTable(ids, k, np.full_like(k, 7.0), np.arange(len(d)), split.astype(str), paths)
 
 
+# ---------------------------------------------------------------- AMi-Br (round D)
+AMIBR_RATERS = ("expert1_atypical", "expert2_atypical", "expert3_atypical")
+
+
+def slide_split(slides, strata, fracs=(0.6, 0.2, 0.2), seed=0):
+    """Assign whole slides to train/val/test, stratified by source dataset (fixed seed). Returns [N] split per row."""
+    rng = np.random.default_rng(seed)
+    out = np.full(len(slides), "", dtype=object)
+    for s in np.unique(strata):
+        sl = rng.permutation(np.unique(slides[strata == s]))
+        cut = np.round(np.cumsum(fracs) / sum(fracs) * len(sl)).astype(int)
+        for name, part in zip(("train", "val", "test"), np.split(sl, cut[:-1])):
+            out[np.isin(slides, part) & (strata == s)] = name
+    return out.astype(str)
+
+
+def amibr_labels(root, seed=0) -> LabelTable:
+    """AMi-Br (Bertram et al., BVM 2025): k = atypical votes of 3 pathologists per mitotic figure.
+
+    Patches: patches/<atypical|normal>/<dataset>_<uid>.png, foldered by the majority vote. Bootstrap unit and
+    split unit = slide (patient); slide names are only unique within a source dataset, so the key is both.
+    No official split (the authors' patient-level split is unseeded): 60/20/20 of the slides per source.
+    """
+    root = Path(root)
+    d = pd.read_csv(root / "AMI-BR.csv", index_col=0)
+    k = d[list(AMIBR_RATERS)].astype(bool).sum(1).values[:, None].astype(np.float64)
+    if ((k >= 2)[:, 0] != d["majority_atypical"].astype(bool).values).any():
+        raise ValueError("expert votes disagree with majority_atypical")
+    slide = (d["dataset"] + "/" + d["slide"].astype(str)).values.astype(str)
+    split = slide_split(slide, d["dataset"].values.astype(str), seed=seed)
+    ids = (d["dataset"] + "_" + d["uid"].astype(str)).values.astype(str)
+    if len(set(ids)) != len(ids):
+        raise ValueError("duplicate (dataset, uid) ids")
+    folder = np.where(d["majority_atypical"].astype(bool).values, "atypical", "normal")
+    paths = np.array([str(root / "patches" / f / f"{i}.png") for f, i in zip(folder, ids)])
+    return LabelTable(ids, k, np.full_like(k, 3.0), slide, split, paths)
+
+
 # ---------------------------------------------------------------- subsampling and subsets
 def subsample(table: LabelTable, n_sub: int, seed: int) -> LabelTable:
     """Draw n_sub raters per image without replacement from its votes (hypergeometric), fixed per seed.
@@ -128,12 +166,13 @@ def split_frame_counts(table: LabelTable) -> np.ndarray:
 
 
 # ---------------------------------------------------------------- images
-INPUT_SIZE = {"endoscapes": 384, "cifar10h": 224, "mhist": 224}
+INPUT_SIZE = {"endoscapes": 384, "cifar10h": 224, "mhist": 224, "amibr": 224}
 IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
 
 def transform(dataset: str):
-    """No augmentation. Endoscapes: centre-crop 480 (as MICCAI) then 384². CIFAR-10H: 32 → 224 bicubic. MHIST: native 224."""
+    """No augmentation. Endoscapes: centre-crop 480 (as MICCAI) then 384². CIFAR-10H: 32 → 224 bicubic. MHIST: native 224.
+    AMi-Br: 128 → 224 bicubic."""
     from torchvision import transforms as T
     steps = [T.CenterCrop(480)] if dataset == "endoscapes" else []
     steps += [T.Resize((INPUT_SIZE[dataset],) * 2, interpolation=T.InterpolationMode.BICUBIC, antialias=True),
@@ -190,4 +229,6 @@ def load_table(dataset: str, root=None) -> LabelTable:
         return cifar10h_labels(np.load(root / "cifar10h-counts.npy"), np.load(root / "test_labels.npy"), root / "images")
     if dataset == "mhist":
         return mhist_labels(root / "annotations.csv", root / "images")
+    if dataset == "amibr":
+        return amibr_labels(root)
     raise ValueError(f"unknown dataset {dataset}")

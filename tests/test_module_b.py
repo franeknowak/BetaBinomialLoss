@@ -125,3 +125,45 @@ def test_cifar10h_real():
 def test_ids_are_plain_strings():
     """Object-dtype ids cannot be read back from .npz without pickle (caches and prediction files)."""
     assert D.endoscapes_labels(ENDO).ids.dtype.kind == "U"
+
+
+def _fake_amibr(root, rng):
+    rows = []
+    for ds, n_sl in (("MIDOG21", 10), ("TUPAC16", 5)):
+        for s in range(n_sl):
+            for u in range(4):
+                v = rng.random(3) < 0.3
+                rows.append({"slide": f"{s:03d}.tiff", "dataset": ds, "uid": s * 10 + u, "x": 0, "y": 0,
+                             **{c: bool(x) for c, x in zip(D.AMIBR_RATERS, v)}, "majority_atypical": bool(v.sum() >= 2)})
+    pd.DataFrame(rows).to_csv(root / "AMI-BR.csv")
+    return pd.DataFrame(rows)
+
+
+def test_amibr_parsing(tmp_path):
+    df = _fake_amibr(tmp_path, np.random.default_rng(0))
+    t = D.amibr_labels(tmp_path)
+    assert (t.n == 3).all() and t.k[:, 0].tolist() == df[list(D.AMIBR_RATERS)].sum(1).tolist()
+    # same slide name in both sources stays two slides; every slide lies in one split
+    assert len(np.unique(t.cluster)) == 15
+    for c in np.unique(t.cluster):
+        assert len(np.unique(t.split[t.cluster == c])) == 1
+    # stratified by source: each source contributes to every split
+    for ds in ("MIDOG21", "TUPAC16"):
+        assert set(t.split[np.char.startswith(t.ids, ds)]) == {"train", "val", "test"}
+    assert t.paths[0].endswith(("atypical/MIDOG21_0.png", "normal/MIDOG21_0.png"))
+    assert (np.char.find(t.paths, "/atypical/") >= 0).tolist() == df.majority_atypical.tolist()
+    df.loc[0, "majority_atypical"] = not df.loc[0, "majority_atypical"]
+    df.to_csv(tmp_path / "AMI-BR.csv")
+    with pytest.raises(ValueError):
+        D.amibr_labels(tmp_path)
+
+
+AMIBR = D.DATA_ROOT / "amibr" / "AMI-BR.csv"
+
+
+@pytest.mark.skipif(not AMIBR.exists(), reason="AMi-Br not present (cluster only)")
+def test_amibr_real():
+    t = D.amibr_labels(AMIBR.parent)
+    assert len(t.ids) == 3720 and len(np.unique(t.cluster)) == 202
+    assert np.bincount(t.k[:, 0].astype(int)).tolist() == [2496, 392, 420, 412]
+    assert all(__import__("os").path.exists(p) for p in t.paths)
