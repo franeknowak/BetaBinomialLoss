@@ -239,7 +239,7 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
                 nn.utils.clip_grad_norm_(model.parameters(), cfg.clip)
                 opt.step()
                 loss_sum, n_steps = loss_sum + loss.item(), n_steps + 1
-                if is_b2:
+                if is_b2 and VARIANTS[cfg.variant].loss.param == "alpha":     # alpha_1 logit; not defined for 'ms'
                     pos = kb >= 1
                     stuck_num += ((out.detach()[..., 1] < STUCK_LOGIT) & pos).sum(0)
                     stuck_den += pos.sum(0)

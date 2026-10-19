@@ -72,6 +72,20 @@ def alphas(logits: torch.Tensor, eps: float, plus_one: bool = False):
     return a[..., 0], a[..., 1]
 
 
+LOG_S_BOUNDS = (-10.0, 15.0)        # mean-spread heads: log S clamp (S from 4.5e-5 to 3.3e6)
+LOGIT_M_BOUND = 30.0                 # |logit m| clamp: m in [1e-13, 1 - 1e-13], logs stay finite in float64
+
+
+def ms_alphas(out: torch.Tensor):
+    """Mean-spread head (round D, D1): [..., 2] = (logit m, log S) -> (a0, a1, log S) with a1 = m S, a0 = (1 - m) S.
+
+    Built in log space (log a1 = log sigmoid(l) + log S) so neither alpha underflows to 0.
+    """
+    lm = out[..., 0].clamp(-LOGIT_M_BOUND, LOGIT_M_BOUND)
+    log_s = out[..., 1].clamp(*LOG_S_BOUNDS)
+    return torch.exp(F.logsigmoid(-lm) + log_s), torch.exp(F.logsigmoid(lm) + log_s), log_s
+
+
 def _log_beta(x, y):
     return torch.lgamma(x) + torch.lgamma(y) - torch.lgamma(x + y)
 
@@ -127,6 +141,8 @@ class LossConfig:
     plus_one: bool = False          # legacy B²-M only
     weighted: bool = False          # majority-vote per-sample weights w±
     kl_lambda: float = 0.0          # 0 = no KL
+    param: str = "alpha"            # B² head output: 'alpha' (two softplus alphas) | 'ms' (logit m, log S; round D)
+    s_shrink: float = 0.0           # 'ms' only: lambda * (log S - log S_prior)^2, S_prior from the prior (round D, D2)
 
     def __post_init__(self):
         if self.kind not in ("hard_bce", "soft_bce", "b2", "dup"):
@@ -137,6 +153,10 @@ class LossConfig:
             raise ValueError("plus_one only applies to B² heads")
         if self.weighted and self.kind not in ("hard_bce", "b2"):
             raise ValueError("weighting is defined for hard BCE and B² only")
+        if self.param not in ("alpha", "ms") or (self.param == "ms" and (self.kind != "b2" or self.plus_one)):
+            raise ValueError("param 'ms' is a B²-r head option (not B²-M, not BCE)")
+        if self.s_shrink and self.param != "ms":
+            raise ValueError("s_shrink needs the mean-spread head")
 
     @property
     def out_dim(self) -> int:
@@ -155,8 +175,8 @@ class PanelLoss(nn.Module):
         self.cfg = cfg
         if cfg.weighted and weights is None:
             raise ValueError("weighted loss needs class weights")
-        if cfg.kl_lambda and prior is None:
-            raise ValueError("KL needs a prior")
+        if (cfg.kl_lambda or cfg.s_shrink) and prior is None:
+            raise ValueError("KL and spread shrinkage need a prior")
         self.register_buffer("weights", None if weights is None else torch.as_tensor(weights, dtype=torch.float32))
         self.register_buffer("prior", None if prior is None else torch.as_tensor(prior, dtype=torch.float32))
 
@@ -164,8 +184,14 @@ class PanelLoss(nn.Module):
         cfg = self.cfg
         if cfg.kind == "b2":
             # float64: at large S the log terms differ by tiny amounts that float32 loses
-            a0, a1 = alphas(out.double(), cfg.eps, cfg.plus_one)
+            if cfg.param == "ms":
+                a0, a1, log_s = ms_alphas(out.double())
+            else:
+                a0, a1 = alphas(out.double(), cfg.eps, cfg.plus_one)
             loss = beta_binomial_nll(a0, a1, k.double(), n.double())
+            if cfg.s_shrink:
+                log_s0 = torch.log(self.prior[:, 0] + self.prior[:, 1]).double()
+                loss = loss + cfg.s_shrink * (log_s - log_s0) ** 2
         else:
             z = out[..., 0]
             target = {"hard_bce": lambda: majority(k, n),

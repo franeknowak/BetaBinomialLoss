@@ -38,6 +38,10 @@ def mean_spread(name: str, out: np.ndarray, eps: float | None = None):
     """
     cfg = VARIANTS[name].loss
     out = np.asarray(out, dtype=np.float64)
+    if cfg.kind == "b2" and cfg.param == "ms":
+        from b2j.losses import LOG_S_BOUNDS, LOGIT_M_BOUND
+        return (expit(np.clip(out[..., 0], -LOGIT_M_BOUND, LOGIT_M_BOUND)),
+                np.exp(np.clip(out[..., 1], *LOG_S_BOUNDS)))
     if cfg.kind == "b2":
         e = eps if (eps is not None and not cfg.plus_one) else cfg.eps
         a = np.logaddexp(0.0, out) + e + (1.0 if cfg.plus_one else 0.0)

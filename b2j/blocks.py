@@ -1,7 +1,7 @@
 """Module f: the run lists of each round block (plan §4.4). R1/R2 blocks use the head lr / wd per loss family
 chosen by module g (results/journal/tune/chosen.json). No margins (05_plan amendment 2026-10-16 #1)."""
 from b2j.runs import RunSpec
-from b2j.variants import VARIANTS
+from b2j.variants import MAIN, VARIANTS
 
 DATASETS = ("endoscapes", "cifar10h", "mhist")
 SMOKE_ENCODER_LR = 1e-5
@@ -12,7 +12,7 @@ def smoke():
     loss (Endoscapes), and the subsampling / full-panel-validation code paths. (Job 7519912 also ran a re-head pass
     and a part-B run; both designs were dropped on 2026-10-16.)"""
     b = "smoke"
-    specs = [RunSpec(ds, v, block=b) for ds in DATASETS for v in VARIANTS]
+    specs = [RunSpec(ds, v, block=b) for ds in DATASETS for v in MAIN]
     specs += [RunSpec("endoscapes", v, regime="finetune", encoder_lr=SMOKE_ENCODER_LR, epochs=1, block=b)
               for v in ("hard_bce", "soft_bce", "b2r")]
     specs += [RunSpec("cifar10h", "b2r", n_sub=3, block=b),
@@ -48,7 +48,7 @@ def r1(root=None):
     from b2j.pilot import hyper
     kw = {} if root is None else {"root": root}
     spec = lambda ds, v, s, **x: RunSpec(ds, v, seed=s, block="r1", **hyper(ds, v, **kw), **x)
-    out = [spec(ds, v, s) for ds in DATASETS for v in VARIANTS for s in SEEDS]
+    out = [spec(ds, v, s) for ds in DATASETS for v in MAIN for s in SEEDS]
     out += [spec("cifar10h", v, s, n_sub=3, val_full_panel=True) for v in ("soft_bce", "b2r") for s in SEEDS]
     out += [spec(ds, v, s, n_sub=n) for ds, ns in SUBSAMPLE_N.items() for n in ns for v in ("soft_bce", "b2r", "dup")
             for s in SEEDS if n >= VARIANTS[v].min_n]
