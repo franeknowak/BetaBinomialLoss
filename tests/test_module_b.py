@@ -217,6 +217,10 @@ def test_prepare_ferplus_keeps_only_unambiguous_originals(tmp_path, capsys):
         z.writestr("validation/neutral/fer0000003.png", png(3))
         z.writestr("test/contempt/fer0000003.png", png(4))           # same name, different file: ambiguous
     prepare_ferplus.main(tmp_path / "ferplus.zip", tmp_path)          # fer0000006 is missing from the zip
-    assert sorted(p.name for p in (tmp_path / "images").iterdir()) == ["fer0000000.png"]
+    assert not (tmp_path / "images").exists()                          # nothing unpacked (file limit)
     out = capsys.readouterr().out
     assert "names with several different files: 1" in out and "test: 0 / 1" in out
+    t = D.ferplus_labels(tmp_path)                                     # now restricted to the indexed faces
+    assert t.ids.tolist() == ["fer0000000"] and D.image_exists(t.paths[0])
+    assert np.asarray(D.open_image(t.paths[0])).max() == 1             # the original, not the augmented copy
+    assert not D.image_exists(f"{tmp_path / 'ferplus.zip'}{D.ZIP_SEP}missing.png")

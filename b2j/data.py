@@ -144,8 +144,9 @@ def ferplus_labels(root) -> LabelTable:
     Kept: rows with a unique image name (FER+ removed 173; 4 names occur twice, and a folder of images keeps only
     one of each pair, so all 8 rows are dropped) whose plurality vote is an emotion (drops faces the crowd
     called unknown / not a face). One-vs-rest heads over the 8 emotions; n = the image's emotion votes (unknown / NF
-    votes are not part of the panel), so n varies (mostly 6-10). Images: images/<Image name> (originals only, see
-    jobs/download_datasets.qsub.sh ferplus). Cluster = image.
+    votes are not part of the panel), so n varies (mostly 6-10). Cluster = image.
+    Images: read inside the Kaggle zip via zip_index.csv (b2j.prepare_ferplus; faces without an unambiguous original
+    in the zip are dropped); without the index (Mac), images/<name>.png.
     """
     root = Path(root)
     d = pd.read_csv(root / "fer2013new.csv")
@@ -161,7 +162,12 @@ def ferplus_labels(root) -> LabelTable:
     n = np.repeat(counts.sum(1, keepdims=True), counts.shape[1], 1)
     split = d["Usage"].map(FERPLUS_SPLIT).values.astype(str)
     paths = np.array([str(root / "images" / f"{i}.png") for i in ids])
-    return LabelTable(ids, counts.copy(), n, np.arange(len(ids)), split, paths, counts=counts)
+    t = LabelTable(ids, counts.copy(), n, np.arange(len(ids)), split, paths, counts=counts)
+    if (root / "zip_index.csv").exists():
+        idx = pd.read_csv(root / "zip_index.csv", dtype=str).set_index("id")
+        t = t.subset(np.isin(t.ids, idx.index.values))
+        t.paths = np.array([f"{root / idx.at[i, 'archive']}{ZIP_SEP}{idx.at[i, 'member']}" for i in t.ids])
+    return t
 
 
 # ---------------------------------------------------------------- subsampling and subsets
@@ -211,6 +217,40 @@ def transform(dataset: str):
     return T.Compose(steps)
 
 
+ZIP_SEP = "::"      # an image inside an archive: "<archive>::<member>"; read in place (cluster file limit, 2026-10-19)
+_ZIPS: dict = {}
+
+
+def _zip(archive):
+    import os
+    import zipfile
+    key = (os.getpid(), archive)                     # one handle per process (DataLoader workers fork)
+    if key not in _ZIPS:
+        _ZIPS[key] = zipfile.ZipFile(archive)
+    return _ZIPS[key]
+
+
+def open_image(path):
+    from PIL import Image
+    if ZIP_SEP not in path:
+        return Image.open(path)
+    import io
+    archive, member = path.split(ZIP_SEP, 1)
+    return Image.open(io.BytesIO(_zip(archive).read(member)))
+
+
+def image_exists(path) -> bool:
+    if ZIP_SEP not in path:
+        return Path(path).exists()
+    archive, member = path.split(ZIP_SEP, 1)
+    if not Path(archive).exists():
+        return False
+    z = _zip(archive)
+    if not hasattr(z, "_b2j_names"):
+        z._b2j_names = set(z.namelist())
+    return member in z._b2j_names
+
+
 class ImageSet:
     """torch-style dataset over a LabelTable: returns (image, k, n, index)."""
 
@@ -226,9 +266,8 @@ class ImageSet:
         return out
 
     def __getitem__(self, i):
-        from PIL import Image
         import torch
-        img = self.tf(Image.open(self.table.paths[i]).convert("RGB"))
+        img = self.tf(open_image(self.table.paths[i]).convert("RGB"))
         return img, torch.from_numpy(self.table.k[i]).float(), torch.from_numpy(self.table.n[i]).float(), i
 
 

@@ -2,22 +2,27 @@
 
   python -m b2j.prepare_ferplus <zip> [<dataset dir>]     (cluster job: jobs/download_datasets.qsub.sh ferplus)
 
-Reports what the zip holds, then writes only the originals named in fer2013new.csv (the faces kept by
-b2j.data.ferplus_labels) to <dataset dir>/images/<name>.png. Augmented copies are never unpacked (file limit).
-A name that maps to several different files in the zip is ambiguous and skipped.
+Nothing is unpacked (cluster file limit, user 2026-10-19). Reports what the zip holds, then writes
+<dataset dir>/zip_index.csv (id, archive, member) for the originals named in fer2013new.csv (the faces kept by
+b2j.data.ferplus_labels); b2j.data reads them inside the zip. Augmented copies are ignored. A name that maps to
+several different files in the zip is ambiguous and left out.
 """
 import collections
 import hashlib
+import io
 import re
 import sys
 import zipfile
 from pathlib import Path
 
+import pandas as pd
+
 from b2j.data import DATA_ROOT, ferplus_labels
 
 
 def main(zip_path, root=DATA_ROOT / "ferplus"):
-    root = Path(root)
+    root, zip_path = Path(root), Path(zip_path)
+    (root / "zip_index.csv").unlink(missing_ok=True)          # label the full csv, not a previous index
     t = ferplus_labels(root)
     want = dict(zip(t.ids, t.split))
     z = zipfile.ZipFile(zip_path)
@@ -36,16 +41,15 @@ def main(zip_path, root=DATA_ROOT / "ferplus"):
         ids = [i for i, x in want.items() if x == s]
         have = sum(i in by and i not in conflict for i in ids)
         print(f"{s}: {have} / {len(ids)} kept faces present ({have / len(ids):.1%})")
-    out = root / "images"
-    out.mkdir(exist_ok=True)
-    for i in ok:
-        (out / f"{i}.png").write_bytes(z.read(by[i][0]))
     from PIL import Image
     sizes = collections.Counter()
-    for p in sorted(out.glob("*.png"))[:500]:
-        with Image.open(p) as im:
+    for i in ok[:500]:
+        with Image.open(io.BytesIO(z.read(by[i][0]))) as im:
             sizes[(im.size, im.mode)] += 1
-    print(f"wrote {len(ok)} images; sizes/modes of the first 500: {dict(sizes)}")
+    print(f"sizes/modes of the first 500: {dict(sizes)}")
+    pd.DataFrame({"id": ok, "archive": zip_path.name, "member": [by[i][0] for i in ok]}).to_csv(
+        root / "zip_index.csv", index=False)
+    print(f"wrote {root / 'zip_index.csv'}: {len(ok)} faces")
 
 
 if __name__ == "__main__":

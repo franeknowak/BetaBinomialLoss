@@ -29,7 +29,7 @@ One row per image: `k, n` float `[N, K]`, `cluster` (bootstrap unit), `split`, `
 - Labels `fer2013new.csv` (Microsoft FERPlus repo): 10 crowd votes per FER2013 face over 8 emotions + unknown + NF. Kept: unique image name (173 unnamed rows and 4 names occurring twice are dropped) and plurality vote = an emotion (drops 399 unknown/NF faces) → 35,481 faces.
 - K = 8 one-vs-rest heads; n = the face's emotion votes (unknown/NF votes are not part of the panel), 4–10, < 10 for 33%; 61% ambiguous (plurality < 0.9). `counts` set → joint subsampling (only n_sub ≤ 4 is possible on the full set).
 - Official split: Training / PublicTest / PrivateTest → train / val / test = 28,383 / 3,553 / 3,545. Cluster = image.
-- Images: Kaggle copy arnabkumarroy02/ferplus (112 px, class folders, training set augmented); `b2j.prepare_ferplus` unpacks only the originals named in the csv, skipping names that map to different files. Grayscale → RGB → 224 bicubic.
+- Images: Kaggle copy arnabkumarroy02/ferplus (112 px, class folders, training set augmented). **Never unpacked** (file limit, user 2026-10-19): `b2j.prepare_ferplus` writes `zip_index.csv` for the originals named in the csv (names mapping to different files are left out) and `data.open_image` reads `<zip>::<member>` paths in place; the loader keeps only indexed faces. Grayscale → RGB → 224 bicubic. Same mechanism planned for Galaxy Zoo.
 
 ## Subsampling
 `subsample(table, n_sub, seed)`: without replacement, fixed per seed. CIFAR-10H draws jointly from the 10 category counts (multivariate hypergeometric) so the one-vs-rest heads stay consistent (Σ_c k_c = n_sub); binary tables draw per head. Applied to train and val only; test is always scored against the full panel (caller's responsibility, module c/f).
