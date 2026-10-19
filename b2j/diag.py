@@ -8,8 +8,10 @@
    rho = 1 / (S + 1) and the observed split indicator (any disagreement); averaged over deciles and seeds. Zero
    means S only re-encodes m.
 3. Ceiling (CIFAR-10H only, ≈50 raters per image): a fresh panel of 3 validation votes per image, drawn from the
-   full panel; the reference is the Binomial with θ estimated from the image's other ≈47 votes (Jeffreys
-   smoothing), close to the best any model of exchangeable raters can do. Reported: NLL per vote of each model on
+   full panel; the reference is the empirical-Bayes posterior predictive from the image's other ≈47 votes (per-class
+   Beta prior fitted to the training panels; until 2026-10-19 a Jeffreys-smoothed Binomial, which every model beat).
+   A strong reference, not a strict bound: a model could still beat it on some images. Reported: NLL per vote of
+   each model on
    the 3-vote panel and the share of the Global-S → reference gap that B²-r closes.
 """
 import json
@@ -17,7 +19,8 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from scipy.stats import spearmanr
+from scipy.optimize import minimize
+from scipy.stats import betabinom, spearmanr
 
 from b2j import posthoc as P
 from b2j.analysis import guard, main_runs
@@ -64,16 +67,29 @@ def spread_beyond_mean(runs, ev):
     return out
 
 
+def beta_prior(counts):
+    """Per class, the Beta(a, b) prior on the one-vs-rest vote share that maximises the Beta-Binomial likelihood of
+    the full panels (empirical Bayes). Jeffreys smoothing (0.5 per class) is far too heavy for CIFAR-10H, where most
+    images are unanimous: every model beat that reference (2026-10-19)."""
+    n = counts.sum(1)
+    ab = []
+    for j in range(counts.shape[1]):
+        nll = lambda x: -betabinom.logpmf(counts[:, j], n, *np.exp(x)).sum()
+        ab.append(np.exp(minimize(nll, np.log([0.1, 1.0]), method="Nelder-Mead").x))
+    a, b = np.array(ab).T
+    return a, b
+
+
 def cifar_ceiling(block, root, full, n_panel=3, seed=999):
     """NLL per vote on a fresh 3-vote validation panel, for each (variant, training n) in the block."""
     val = full.take("val")
     rng = np.random.default_rng(seed)
     drawn = np.stack([rng.multivariate_hypergeometric(c.astype(np.int64), n_panel) for c in val.counts]).astype(float)
     rest = val.counts - drawn
-    theta = (rest + 0.5) / (rest.sum(1, keepdims=True) + 0.5 * rest.shape[1])
-    theta = theta / theta.sum(1, keepdims=True)
     k3, n3 = drawn, np.full_like(drawn, float(n_panel))
-    ref = (P.vote_nll(theta, np.full_like(theta, np.inf), k3, n3) / n3).mean()
+    a, b = beta_prior(full.take("train").counts)
+    rk, rn = rest, rest.sum(1, keepdims=True)
+    ref = (P.vote_nll((a + rk) / (a + b + rn), a + b + rn, k3, n3) / n3).mean()
     res = {}
     for f in sorted((Path(root) / block / "cifar10h").glob("*/spec.json")):
         s = json.loads(f.read_text())
@@ -119,8 +135,8 @@ def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "am
                       f"{np.mean([x['log10S_p10'] for x in r]):.2f} | {np.mean([x['log10S_p90'] for x in r]):.2f} |")
         if ds == "cifar10h":
             ref, res = cifar_ceiling(block, root, full)
-            md += ["", f"Ceiling on a fresh 3-vote validation panel (NLL per vote). Reference (θ from the other ≈47 "
-                   f"votes): **{ref:.4f}**.", "", "| model | trained on n | NLL/vote | sd | seeds |", "|---|---|---|---|---|"]
+            md += ["", f"Ceiling on a fresh 3-vote validation panel (NLL per vote). Reference (empirical-Bayes Beta prior "
+                   f"updated with the other ≈47 votes): **{ref:.4f}**.", "", "| model | trained on n | NLL/vote | sd | seeds |", "|---|---|---|---|---|"]
             for (v, n), (mu, sd, c) in sorted(res.items(), key=lambda kv: (str(kv[0][1]), kv[0][0])):
                 md.append(f"| {v} | {n} | {mu:.4f} | {sd:.4f} | {c} |")
             for n in sorted({n for _, n in res}, key=str):

@@ -13,7 +13,7 @@ def _fake(tmp_path, monkeypatch, ds="cifar10h", N=60, K=10):
     rng = np.random.default_rng(0)
     counts = rng.multinomial(50, np.ones(K) / K, size=N).astype(float)
     t = D.LabelTable(np.array([f"{i:05d}" for i in range(N)]), counts.copy(), np.repeat(counts.sum(1, keepdims=True), K, 1),
-                     np.arange(N), np.array(["val"] * N), np.array([""] * N), counts=counts)
+                     np.arange(N), np.array(["train", "val"] * (N // 2)), np.array([""] * N), counts=counts)
     monkeypatch.setattr(diag, "load_table", lambda name: t)
     import b2j.analysis as A
     monkeypatch.setattr(A, "load_table", lambda name: t)
@@ -25,15 +25,15 @@ def _fake(tmp_path, monkeypatch, ds="cifar10h", N=60, K=10):
                 d.mkdir(parents=True)
                 (d / "spec.json").write_text(json.dumps(asdict(spec)))
                 (d / "summary.json").write_text("{}")
-                out = rng.normal(size=(N, K, 2 if v == "b2r" else 1))
-                np.savez(d / "val_B.npz", ids=t.ids, out=out, scale=np.full(K, 2.0))
+                out = rng.normal(size=(N // 2, K, 2 if v == "b2r" else 1))
+                np.savez(d / "val_B.npz", ids=t.take("val").ids, out=out, scale=np.full(K, 2.0))
     return t
 
 
 def test_report_runs_and_bins_cover_everything(tmp_path, monkeypatch):
     t = _fake(tmp_path, monkeypatch)
     runs = diag.main_runs("blk", "cifar10h", tmp_path)
-    rows = diag.gain_by_ambiguity(runs, t)
+    rows = diag.gain_by_ambiguity(runs, t.take("val"))
     for s in (0, 1):
         r = [x for x in rows if x["seed"] == s]
         assert abs(sum(x["share"] for x in r) - 1) < 1e-9                 # the bins partition the (image, head) pairs
