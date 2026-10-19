@@ -14,11 +14,11 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 ## Exact next action (2026-10-19, round D started)
 **User direction after R1:** gains are significant but too small to matter; make B² *useful*. Endoscapes may stay flat (reason known). New datasets allowed. **Rules (user, 2026-10-19): datasets are downloaded and training runs ON THE CLUSTER ONLY; draft code locally; packages on the Mac are fine.** Cluster SSH outage since ~13:00 — user will say when it is back.
 Done locally (pushed): `journal_plan/iterations.md` (R1 diagnosis, D0 plan, candidates, dataset shortlist); AMi-Br loader + tests (`data.amibr_labels`, 66900c5); D0 diagnostics `b2j/diag.py` + test; D1 mean-spread head `b2ms` and D2 spread shrinkage `b2ms_shrink` (losses/posthoc/variants, tests `tests/test_round_d.py`; 55c2ff4); blocks smoke/r1 pinned to `variants.MAIN`. 112 tests pass.
-When the cluster is back:
-1. `git merge --ff-only` on the cluster; copy `jobs/download_datasets.qsub.sh` (local draft, adds `amibr`) and `qsub jobs/download_datasets.qsub.sh amibr`; then `python -m pytest tests/test_module_b.py -k amibr` there (real-data test) and build the cache (`python -m b2j.embed amibr` in a GPU job).
-2. D0: `python -m b2j.diag r1` (CPU job) → `results/journal/r1/diag_d0_val.md`; pull it; fill D0 outcome in iterations.md; decide D1/D2 (write the entry before running).
+Cluster back 2026-10-19 15:40 (cluster repo at 3b4cac1). **SSH rule (user, 2026-10-19): if an ssh call fails or the connection drops, do NOT retry/reconnect — stop and tell the user** (repeated attempts locked the account).
+1. Submitted: AMi-Br download job **7559140**; D0 diagnostics CPU job **7559141** (`jobs/d0_diag.qsub.sh`). Next: check logs `jobs/logs/dl_datasets.o7559140`, `d0diag.o7559141`; then `python -m pytest tests/test_module_b.py -k amibr` on the cluster (real-data test, in a job) and build the cache (`python -m b2j.embed amibr` in a GPU job).
+2. D0: pull `results/journal/r1/diag_d0_val.md`; fill D0 outcome in iterations.md; decide D1/D2 (write the entry before running).
 3. Add AMi-Br to `blocks.DATASETS`/`pilot.DATASETS`/analysis (tune 18 runs + main runs) — after D0.
-4. Ask the user about the non-medical shortlist (Galaxy Zoo DECaLS, FER+, So2Sat votes) — in iterations.md.
+4. Non-medical datasets: user approved **Galaxy Zoo DECaLS + FER+** (2026-10-19). Open: (i) GZ: no unzip (file limit) — embed from zips or subset? (ii) FER+: user to supply fer2013.csv (Kaggle login). Then loaders + download jobs (see iterations.md).
 Earlier (R1, done): R1 analysis job 7558343 ok; validation outputs in `results/journal/r1/` on the Mac; end-of-R1 report given.
 
 ## Module h task list (2026-10-16, DONE; kept for history)
