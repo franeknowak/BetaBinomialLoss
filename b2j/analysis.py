@@ -163,6 +163,13 @@ def summarise(df, cols, posthoc_rows=True):
     return out.dropna(how="all")
 
 
+def _md_table(t):
+    """DataFrame → GitHub markdown table (no `tabulate` dependency; it is not in the cluster env)."""
+    rows = [["", *map(str, t.columns)], *[[str(i), *map(str, r)] for i, r in zip(t.index, t.to_numpy())]]
+    return "\n".join(["| " + " | ".join(rows[0]) + " |", "|" + "---|" * len(rows[0])]
+                     + ["| " + " | ".join(r) + " |" for r in rows[1:]])
+
+
 def tables(block, split="val", root=RESULTS, open_test=False, datasets=("endoscapes", "cifar10h", "mhist")):
     outdir = Path(root) / block / f"tables_{split}"
     outdir.mkdir(parents=True, exist_ok=True)
@@ -176,7 +183,7 @@ def tables(block, split="val", root=RESULTS, open_test=False, datasets=("endosca
             t = summarise(df, cols, posthoc_rows=name != "T1_discrimination")
             t = t[[c for c in t.columns if c == "seeds" or t[c].ne("–").any()]]
             t = t[t.drop(columns="seeds").ne("–").any(axis=1)]
-            md += [f"## {name} — {ds}", "", t.to_markdown(), ""]
+            md += [f"## {name} — {ds}", "", _md_table(t), ""]
     (outdir / "tables.md").write_text("\n".join(md))
     return outdir / "tables.md"
 
