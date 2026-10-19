@@ -22,6 +22,15 @@ One row per image: `k, n` float `[N, K]`, `cluster` (bootstrap unit), `split`, `
 ## MHIST
 - `annotations.csv`: vote column matched by name containing "ssa" and "number"/"vote" (header UNVERIFIED; fails loudly otherwise), cross-checked against `Majority Vote Label` (k > 3.5 ⟺ SSA). n = 7. Official `Partition` train/test; val = 20% of train by image (seed 0). Cluster = image. 224² native. **Awaiting access.**
 
+## AMi-Br (round D, 2026-10-19)
+- `AMI-BR.csv` (GitHub DeepMicroscopy/AMi-Br, commit 20a217b): k = atypical votes of 3 pathologists, n = 3; checked against `majority_atypical`. 3,720 mitoses from 202 slides; votes 0/1/2/3 = 2496/392/420/412. Split 60/20/20 by slide within source (MIDOG21/TUPAC16), seed 0. Cluster = slide. 128 px → 224 bicubic. Real-data check passed on the cluster (job 7559142).
+
+## FER+ (round D, 2026-10-19)
+- Labels `fer2013new.csv` (Microsoft FERPlus repo): 10 crowd votes per FER2013 face over 8 emotions + unknown + NF. Kept: unique image name (173 unnamed rows and 4 names occurring twice are dropped) and plurality vote = an emotion (drops 399 unknown/NF faces) → 35,481 faces.
+- K = 8 one-vs-rest heads; n = the face's emotion votes (unknown/NF votes are not part of the panel), 4–10, < 10 for 33%; 61% ambiguous (plurality < 0.9). `counts` set → joint subsampling (only n_sub ≤ 4 is possible on the full set).
+- Official split: Training / PublicTest / PrivateTest → train / val / test = 28,383 / 3,553 / 3,545. Cluster = image.
+- Images: Kaggle copy arnabkumarroy02/ferplus (112 px, class folders, training set augmented); `b2j.prepare_ferplus` unpacks only the originals named in the csv, skipping names that map to different files. Grayscale → RGB → 224 bicubic.
+
 ## Subsampling
 `subsample(table, n_sub, seed)`: without replacement, fixed per seed. CIFAR-10H draws jointly from the 10 category counts (multivariate hypergeometric) so the one-vs-rest heads stay consistent (Σ_c k_c = n_sub); binary tables draw per head. Applied to train and val only; test is always scored against the full panel (caller's responsibility, module c/f).
 

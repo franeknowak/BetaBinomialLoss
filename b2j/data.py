@@ -133,6 +133,37 @@ def amibr_labels(root, seed=0) -> LabelTable:
     return LabelTable(ids, k, np.full_like(k, 3.0), slide, split, paths)
 
 
+# ---------------------------------------------------------------- FER+
+FERPLUS_EMOTIONS = ("neutral", "happiness", "surprise", "sadness", "anger", "disgust", "fear", "contempt")
+FERPLUS_SPLIT = {"Training": "train", "PublicTest": "val", "PrivateTest": "test"}   # official FER+ usage
+
+
+def ferplus_labels(root) -> LabelTable:
+    """FER+ (Barsoum et al., ICMI 2016): 10 crowd votes per FER2013 face over 8 emotions + "unknown" + "not a face".
+
+    Kept: rows with a unique image name (FER+ removed 173; 4 names occur twice, and a folder of images keeps only
+    one of each pair, so all 8 rows are dropped) whose plurality vote is an emotion (drops faces the crowd
+    called unknown / not a face). One-vs-rest heads over the 8 emotions; n = the image's emotion votes (unknown / NF
+    votes are not part of the panel), so n varies (mostly 6-10). Images: images/<Image name> (originals only, see
+    jobs/download_datasets.qsub.sh ferplus). Cluster = image.
+    """
+    root = Path(root)
+    d = pd.read_csv(root / "fer2013new.csv")
+    votes = d[list(FERPLUS_EMOTIONS) + ["unknown", "NF"]].values.astype(np.float64)
+    name = d["Image name"]
+    keep = name.notna().values & ~name.duplicated(keep=False).values & (votes.argmax(1) < len(FERPLUS_EMOTIONS))
+    d, counts = d[keep].reset_index(drop=True), votes[keep, :len(FERPLUS_EMOTIONS)]
+    if (counts.sum(1) == 0).any():
+        raise ValueError("kept image without emotion votes")
+    ids = d["Image name"].str.replace(".png", "", regex=False).values.astype(str)
+    if len(set(ids)) != len(ids):
+        raise ValueError("duplicate image names")
+    n = np.repeat(counts.sum(1, keepdims=True), counts.shape[1], 1)
+    split = d["Usage"].map(FERPLUS_SPLIT).values.astype(str)
+    paths = np.array([str(root / "images" / f"{i}.png") for i in ids])
+    return LabelTable(ids, counts.copy(), n, np.arange(len(ids)), split, paths, counts=counts)
+
+
 # ---------------------------------------------------------------- subsampling and subsets
 def subsample(table: LabelTable, n_sub: int, seed: int) -> LabelTable:
     """Draw n_sub raters per image without replacement from its votes (hypergeometric), fixed per seed.
@@ -166,13 +197,13 @@ def split_frame_counts(table: LabelTable) -> np.ndarray:
 
 
 # ---------------------------------------------------------------- images
-INPUT_SIZE = {"endoscapes": 384, "cifar10h": 224, "mhist": 224, "amibr": 224}
+INPUT_SIZE = {"endoscapes": 384, "cifar10h": 224, "mhist": 224, "amibr": 224, "ferplus": 224}
 IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
 
 
 def transform(dataset: str):
     """No augmentation. Endoscapes: centre-crop 480 (as MICCAI) then 384². CIFAR-10H: 32 → 224 bicubic. MHIST: native 224.
-    AMi-Br: 128 → 224 bicubic."""
+    AMi-Br: 128 → 224 bicubic. FER+: grayscale (48 px, or 112 px upscaled in the Kaggle copy) → RGB → 224 bicubic."""
     from torchvision import transforms as T
     steps = [T.CenterCrop(480)] if dataset == "endoscapes" else []
     steps += [T.Resize((INPUT_SIZE[dataset],) * 2, interpolation=T.InterpolationMode.BICUBIC, antialias=True),
@@ -231,4 +262,6 @@ def load_table(dataset: str, root=None) -> LabelTable:
         return mhist_labels(root / "annotations.csv", root / "images")
     if dataset == "amibr":
         return amibr_labels(root)
+    if dataset == "ferplus":
+        return ferplus_labels(root)
     raise ValueError(f"unknown dataset {dataset}")

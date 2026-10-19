@@ -167,3 +167,56 @@ def test_amibr_real():
     assert len(t.ids) == 3720 and len(np.unique(t.cluster)) == 202
     assert np.bincount(t.k[:, 0].astype(int)).tolist() == [2496, 392, 420, 412]
     assert all(__import__("os").path.exists(p) for p in t.paths)
+
+
+def _fake_ferplus(root):
+    rows = [("Training", "fer0000000.png", [6, 2, 0, 0, 0, 0, 0, 0, 2, 0]),     # kept, n = 8
+            ("Training", "fer0000001.png", [0, 0, 0, 0, 0, 0, 0, 0, 7, 3]),     # plurality unknown -> dropped
+            ("PublicTest", None, [10, 0, 0, 0, 0, 0, 0, 0, 0, 0]),               # no name -> dropped
+            ("PublicTest", "fer0000003.png", [1, 1, 1, 1, 1, 1, 1, 3, 0, 0]),   # kept, n = 10
+            ("PrivateTest", "fer0000004.png", [5, 5, 0, 0, 0, 0, 0, 0, 0, 0]),  # duplicated name -> both dropped
+            ("PrivateTest", "fer0000004.png", [0, 0, 0, 0, 0, 0, 0, 0, 0, 10]),
+            ("PrivateTest", "fer0000006.png", [0, 0, 9, 0, 0, 0, 0, 0, 0, 0])]  # kept, n = 9
+    cols = ["Usage", "Image name"] + list(D.FERPLUS_EMOTIONS) + ["unknown", "NF"]
+    pd.DataFrame([[u, n, *v] for u, n, v in rows], columns=cols).to_csv(root / "fer2013new.csv", index=False)
+
+
+def test_ferplus_parsing(tmp_path):
+    _fake_ferplus(tmp_path)
+    t = D.ferplus_labels(tmp_path)
+    assert t.ids.tolist() == ["fer0000000", "fer0000003", "fer0000006"]
+    assert t.split.tolist() == ["train", "val", "test"]
+    assert t.n[:, 0].tolist() == [8, 10, 9] and (t.n == t.n[:, :1]).all() and t.k.shape == (3, 8)
+    assert (t.counts.sum(1) == t.n[:, 0]).all() and t.paths[0].endswith("images/fer0000000.png")
+
+
+FERPLUS = D.DATA_ROOT / "ferplus" / "fer2013new.csv"
+
+
+@pytest.mark.skipif(not FERPLUS.exists(), reason="FER+ labels not present")
+def test_ferplus_real_labels():
+    t = D.ferplus_labels(FERPLUS.parent)
+    assert {s: int((t.split == s).sum()) for s in ("train", "val", "test")} == {"train": 28383, "val": 3553, "test": 3545}
+    assert t.n.min() == 4 and t.n.max() == 10
+
+
+def test_prepare_ferplus_keeps_only_unambiguous_originals(tmp_path, capsys):
+    import io
+    import zipfile
+    from PIL import Image
+    from b2j import prepare_ferplus
+    _fake_ferplus(tmp_path)
+
+    def png(v):
+        b = io.BytesIO()
+        Image.new("L", (112, 112), v).save(b, "PNG")
+        return b.getvalue()
+    with zipfile.ZipFile(tmp_path / "ferplus.zip", "w") as z:
+        z.writestr("train/neutral/fer0000000.png", png(1))
+        z.writestr("train/neutral/aug_fer0000000_1.png", png(2))     # augmented copy: never unpacked
+        z.writestr("validation/neutral/fer0000003.png", png(3))
+        z.writestr("test/contempt/fer0000003.png", png(4))           # same name, different file: ambiguous
+    prepare_ferplus.main(tmp_path / "ferplus.zip", tmp_path)          # fer0000006 is missing from the zip
+    assert sorted(p.name for p in (tmp_path / "images").iterdir()) == ["fer0000000.png"]
+    out = capsys.readouterr().out
+    assert "names with several different files: 1" in out and "test: 0 / 1" in out
