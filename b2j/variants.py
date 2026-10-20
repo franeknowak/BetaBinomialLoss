@@ -32,7 +32,11 @@ VARIANTS = {
     # round D candidates (journal_plan/iterations.md); not in the R1/R2 blocks
     "b2ms":       Variant(LossConfig("b2", param="ms")),
 }
+# D2 (2026-10-20, INVALID design: shrinks towards the across-image prior spread; kept to reproduce the record)
 VARIANTS.update({f"b2ms_shrink{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam), prior="moment")
+                 for lam in S_SHRINK})
+# D2b: shrink log S towards the batch mean (λ -> inf = B² with one learned spread per head)
+VARIANTS.update({f"b2ms_var{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam, s_shrink_target="batch"))
                  for lam in S_SHRINK})
 
 MAIN = ("hard_bce", "hard_bce_w", "soft_bce", "b2r", "b2r_w", "b2r_kl", "b2m", "b2r_linear", "dup")   # R0-R2 set

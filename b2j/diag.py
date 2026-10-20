@@ -109,7 +109,7 @@ def cifar_ceiling(block, root, full, n_panel=3, seed=999):
     return ref, {k: (float(np.mean(v)), float(np.std(v)), len(v)) for k, v in res.items()}
 
 
-def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "amibr")):
+def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "amibr", "ferplus")):
     guard("val")
     md = [f"# D0 diagnostics ({block}, validation)", ""]
     for ds in datasets:

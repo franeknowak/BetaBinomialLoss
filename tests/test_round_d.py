@@ -72,3 +72,20 @@ def test_round_d_variants_stay_out_of_the_pre_registered_blocks():
     import b2j.blocks as B
     assert {s.variant for s in smoke()} <= set(MAIN)
     assert "for v in VARIANTS" not in inspect.getsource(B)          # r1 itself needs tune/chosen.json
+
+
+def test_batch_shrink_penalises_only_the_variation_of_log_s():
+    k = torch.tensor([[1.0], [2.0], [0.0], [3.0]])
+    n = torch.full_like(k, 3.0)
+    _, loss = build("b2ms_var3", 4, k, n)
+    _, plain = build("b2ms", 4, k, n)
+    assert loss.prior is None                                   # no prior needed
+    same = torch.tensor([[[0.3, 1.7]], [[-0.2, 1.7]], [[1.0, 1.7]], [[0.0, 1.7]]])   # equal log S: no penalty
+    assert torch.allclose(loss.per_sample(same, k, n), plain.per_sample(same, k, n))
+    out = same.clone()
+    out[:, 0, 1] = torch.tensor([0.0, 1.0, 2.0, 3.0])          # log S varies: penalty = 3 * (log S - 1.5)^2
+    pen = loss.per_sample(out, k, n) - plain.per_sample(out, k, n)
+    assert torch.allclose(pen[:, 0], 3 * (out[:, 0, 1] - 1.5) ** 2, atol=1e-5)
+    out.requires_grad_(True)
+    g, = torch.autograd.grad((loss(out, k, n) - plain(out, k, n)), out)
+    assert abs(g[:, 0, 1].sum().item()) < 1e-6                 # the penalty does not move the mean level of log S

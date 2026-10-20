@@ -4,7 +4,7 @@ from b2j.runs import RunSpec
 from b2j.variants import MAIN, S_SHRINK, VARIANTS
 
 DATASETS = ("endoscapes", "cifar10h", "mhist")   # R0-R1 blocks, pinned
-ROUND_D_DATASETS = ("amibr",)                   # added in round D (2026-10-19)
+ROUND_D_DATASETS = ("amibr", "ferplus")        # added in round D (2026-10-19 / 2026-10-20)
 SMOKE_ENCODER_LR = 1e-5
 
 
@@ -59,20 +59,21 @@ def r1(root=None):
 
 
 def d_base(root=None):
-    """Round D: the R1 main block (every variant in MAIN, frozen, 5 seeds) on the datasets added in round D (45 runs on
-    AMi-Br). Needs their rows in tune/chosen.json (block `tune` then `pilot choose`)."""
+    """Round D: the R1 main block (every variant in MAIN, frozen, 5 seeds) on the datasets added in round D (45 runs per
+    dataset: AMi-Br, FER+). Needs their rows in tune/chosen.json (block `tune` then `pilot choose`)."""
     from b2j.pilot import hyper
     kw = {} if root is None else {"root": root}
     return [RunSpec(ds, v, seed=s, block="d_base", **hyper(ds, v, **kw)) for ds in ROUND_D_DATASETS for v in MAIN
             for s in SEEDS]
 
 
-D12 = ("soft_bce", "b2r", "b2ms") + tuple(f"b2ms_shrink{lam:g}" for lam in S_SHRINK)
+D12 = ("soft_bce", "b2r", "b2ms") + tuple(f"b2ms_var{lam:g}" for lam in S_SHRINK)   # D2b replaced the invalid
+#   b2ms_shrink* runs (2026-10-20; moved to results/journal/d12_invalid_shrink/ on the cluster)
 
 
 def d12(root=None):
-    """Round D, D1 + D2 (journal_plan/iterations.md): the mean-spread head without and with spread shrinkage at
-    every λ, plus soft BCE and B²-r as baselines in the same block; frozen, full panels, 5 seeds (120 runs)."""
+    """Round D, D1 + D2b (journal_plan/iterations.md): the mean-spread head without and with spread shrinkage
+    (towards the batch-mean log S) at every λ, plus soft BCE and B²-r as baselines in the same block; frozen, full panels, 5 seeds (150 runs)."""
     from b2j.pilot import hyper
     kw = {} if root is None else {"root": root}
     return [RunSpec(ds, v, seed=s, block="d12", **hyper(ds, v, **kw)) for ds in DATASETS + ROUND_D_DATASETS

@@ -142,7 +142,10 @@ class LossConfig:
     weighted: bool = False          # majority-vote per-sample weights w±
     kl_lambda: float = 0.0          # 0 = no KL
     param: str = "alpha"            # B² head output: 'alpha' (two softplus alphas) | 'ms' (logit m, log S; round D)
-    s_shrink: float = 0.0           # 'ms' only: lambda * (log S - log S_prior)^2, S_prior from the prior (round D, D2)
+    s_shrink: float = 0.0           # 'ms' only: lambda * (log S - target)^2 (round D, D2)
+    s_shrink_target: str = "prior"  # 'prior': log S of the moment-matched prior = spread ACROSS images (D2, invalid:
+                                    #   ignores x, ~0.5 on CIFAR-10H); 'batch': the batch mean of log S (D2b), i.e. a
+                                    #   penalty on the spread's variation between images; its level is learned
 
     def __post_init__(self):
         if self.kind not in ("hard_bce", "soft_bce", "b2", "dup"):
@@ -157,6 +160,8 @@ class LossConfig:
             raise ValueError("param 'ms' is a B²-r head option (not B²-M, not BCE)")
         if self.s_shrink and self.param != "ms":
             raise ValueError("s_shrink needs the mean-spread head")
+        if self.s_shrink_target not in ("prior", "batch"):
+            raise ValueError(f"unknown s_shrink_target {self.s_shrink_target}")
 
     @property
     def out_dim(self) -> int:
@@ -175,7 +180,7 @@ class PanelLoss(nn.Module):
         self.cfg = cfg
         if cfg.weighted and weights is None:
             raise ValueError("weighted loss needs class weights")
-        if (cfg.kl_lambda or cfg.s_shrink) and prior is None:
+        if (cfg.kl_lambda or (cfg.s_shrink and cfg.s_shrink_target == "prior")) and prior is None:
             raise ValueError("KL and spread shrinkage need a prior")
         self.register_buffer("weights", None if weights is None else torch.as_tensor(weights, dtype=torch.float32))
         self.register_buffer("prior", None if prior is None else torch.as_tensor(prior, dtype=torch.float32))
@@ -190,7 +195,10 @@ class PanelLoss(nn.Module):
                 a0, a1 = alphas(out.double(), cfg.eps, cfg.plus_one)
             loss = beta_binomial_nll(a0, a1, k.double(), n.double())
             if cfg.s_shrink:
-                log_s0 = torch.log(self.prior[:, 0] + self.prior[:, 1]).double()
+                if cfg.s_shrink_target == "batch":
+                    log_s0 = log_s.mean(0, keepdim=True)     # not detached: the penalty is λ × batch variance of log S
+                else:
+                    log_s0 = torch.log(self.prior[:, 0] + self.prior[:, 1]).double()
                 loss = loss + cfg.s_shrink * (log_s - log_s0) ** 2
         else:
             z = out[..., 0]

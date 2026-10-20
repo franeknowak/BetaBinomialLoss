@@ -154,7 +154,7 @@ def endpoints(b: Block, ft: Block | None = None, B=St.B_DEFAULT):
 
 
 def read(block, split="val", root=RESULTS, open_test=False, ft_block=None, B=St.B_DEFAULT,
-         datasets=("endoscapes", "cifar10h", "mhist", "amibr")):
+         datasets=("endoscapes", "cifar10h", "mhist", "amibr", "ferplus")):
     guard(split, open_test)
     rows = []
     for ds in datasets:

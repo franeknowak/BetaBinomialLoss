@@ -47,6 +47,13 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
   - *D2 INVALID (design error, not a finding):* the shrinkage target S_prior is the moment-matched prior's S = spread of the vote share **across images** (marginal, ignores x; CIFAR-10H ≈ 0.5), not a within-image spread (≈ 10–100). Shrinking towards it flattens the likelihood in m: CIFAR-10H theta_mse 0.0025 → 0.0057 / 0.0153 / 0.0175 and mAP 0.997 → 0.990 as λ grows; vote NLL worsens monotonically on CIFAR-10H and MHIST. So λ → ∞ is not "B² with one dataset-wide spread", and the dose–response does not answer the question. Fix proposed to the user (not run): shrink log S towards one learnable log S per head (λ → ∞ = B² with a single learned spread, the B² analogue of Global-S); rerun only the 3 shrink variants (60 runs).
   - *Reading so far:* D1 does not make the spread informative and is not consistently better than B²-r (2 of 4 datasets better, 2 worse).
 
+## D2b — shrink the spread towards its batch mean (planned 2026-10-20, before any run; user: "rerun to fix mistakes")
+- **Change:** penalty λ (log S_i − mean over the batch of log S)², i.e. λ × the batch variance of log S per head; the overall level of S is still learned from the votes (the penalty's gradient sums to zero). λ → ∞ = B² with one learned spread per head, the B² analogue of soft BCE + Global-S. λ ∈ {0.03, 0.3, 3}, all reported. Variants `b2ms_var{λ}`; the invalid `b2ms_shrink*` runs are moved to `results/journal/d12_invalid_shrink/` (kept, not analysed).
+- **Also added (same block):** FER+ (35,481 faces, 8 emotions, 4–10 crowd votes per face, 61% ambiguous) → tuning (18 runs), the R1-style baseline block `d_base` (45 runs), and the d12 block (30 runs). Lr / wd from FER+'s own tuning.
+- **Runs:** d12 now = soft BCE, B²-r, B²-ms, B²-ms var × 3 λ on 5 datasets × 5 seeds; already finished runs are skipped → 60 new D2b runs on the 4 old datasets + 30 FER+ runs.
+- **Expected:** if the per-image spread is noise, vote NLL improves (or stays) as λ grows and Spearman stays ≈ 0; if it carries information, NLL is best at a small or zero λ, with Spearman > 0. FER+ is where an informative spread is most plausible (crowd panels, variable n, much genuine ambiguity).
+- **Outcome:** (pending)
+
 
 ## Candidate iterations (to be fixed after D0)
 
