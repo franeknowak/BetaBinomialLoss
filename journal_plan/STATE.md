@@ -21,6 +21,7 @@ Next:
 2. FER+: judge coverage; if fine, GPU cache job (`python -m b2j.embed ferplus`), then add to `blocks.ROUND_D_DATASETS` + tune.
 3. Galaxy Zoo DECaLS: loader reading inside the 4 zips (Zenodo 4573248, 104 GB) — download job when the user OKs the disk use; no unpacking.
 4. Open strategic question for the user (iterations.md D0 conclusion): if D1/D2 fail, centre the paper on the few-raters regime.
+5. PARKED (user, 2026-10-20: "don't implement it; continue with the pre-existing plan"): user hypothesis "B² gives a better-calibrated m when votes per image are few (equal at ≈50 votes)". Possible test, NOT to be built unless the user asks: score the existing R1 subsampled runs against the FULL panel (theta_mse / ECE of m / full-panel vote NLL), B²-r vs soft BCE per n; would need a dated §5 amendment before R3 (beside S4b, not replacing it). Note: at n = 1 B² ≡ BCE, so the effect must vanish there. R1 validation F2 (scored on subsampled panels): advantage flat for n ≥ 3; S4b inconclusive.
 Earlier (R1, done): R1 analysis job 7558343 ok; validation outputs in `results/journal/r1/` on the Mac; end-of-R1 report given.
 
 ## Module h task list (2026-10-16, DONE; kept for history)
