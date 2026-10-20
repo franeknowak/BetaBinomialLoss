@@ -20,7 +20,8 @@ Next:
 1. DONE: d12 (120/120 ok) + analysis; outcome in iterations.md. D2 invalid (wrong shrink target); runs moved to `results/journal/d12_invalid_shrink/`. FER+ cache DONE (job 7561612).
    **User 2026-10-20: "Rerun to fix mistakes. Continue experimentation as long as we can find improvement."**
    Submitted 13:37 (cluster at 8d602e7): **7561886** `d_base.qsub.sh` (FER+ tuning 18 + choose + d_base FER+ 45 + analysis), **7561887** `d12` array (held; D2b `b2ms_var{λ}` 60 runs on 4 old datasets + FER+ 30), **7561888** `d12an` (held; tables incl. D3 ensemble rows, diag, figures). Watcher in background.
-   Next: pull `results/journal/{d_base,d12}/tables_val`, `d12/diag_d0_val.md`; fill D2b, D3 and FER+ baseline outcomes in iterations.md; decide the next iteration (write it first).
+   DONE 18:12: all ok (FER+ tune 90/90, d_base 90/90, d12 150/150). Pulled (scratchpad); D2b (dropped), D3 (kept: B² advantage survives ensembling) and FER+ baseline (B²-r: NLL −1.4%, mAP +0.010) outcomes in iterations.md.
+   **D0b (2026-10-20):** the D0 spread test had the wrong sign (informative S ⇒ NEGATIVE Spearman(ρ, split)); D0 conclusion (a) withdrawn. New `diag.spread_ablation` (own m, per-image S vs one S per head: ΔNLL, Δsplit AUROC). Next: commit, push, on the cluster `git pull` + `qsub jobs/d0_diag.qsub.sh d12` (copy the updated job script first), pull `d12/diag_d0_val.md`, fill D0b outcome, then write D4 (strengthen the spread if D0b positive; otherwise centre on calibration + ensembles).
 2. FER+: judge coverage; if fine, GPU cache job (`python -m b2j.embed ferplus`), then add to `blocks.ROUND_D_DATASETS` + tune.
 3. Galaxy Zoo DECaLS: loader reading inside the 4 zips (Zenodo 4573248, 104 GB) — download job when the user OKs the disk use; no unpacking.
 4. Open strategic question for the user (iterations.md D0 conclusion): if D1/D2 fail, centre the paper on the few-raters regime.

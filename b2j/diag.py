@@ -6,8 +6,13 @@
 1. Gain by ambiguity: per (image, head), NLL of soft BCE + Global-S minus NLL of B²-r (positive = B²-r better),
    seed s against seed s, binned by the observed minority share min(k, n - k) / n of the full panel.
 2. Spread beyond the mean: within deciles of m, the Spearman correlation between B²-r's intra-image correlation
-   rho = 1 / (S + 1) and the observed split indicator (any disagreement); averaged over deciles and seeds. Zero
-   means S only re-encodes m.
+   rho = 1 / (S + 1) and the observed split indicator (any disagreement); averaged over deciles and seeds.
+   Sign: at fixed m a smaller S (larger rho) puts more mass on unanimous panels, so an informative S gives a
+   NEGATIVE correlation (until 2026-10-20 read the other way round; iterations.md D0b). Confounded by m within
+   a decile, hence also:
+2b. Spread ablation: each B² model's own m with its per-image S replaced by one S per head (fitted on the same
+   validation votes, as the models' own spread step is). Vote NLL and split AUROC (score = 1 − P(unanimous))
+   with and without the per-image S; a better score with it = S carries information beyond m.
 3. Ceiling (CIFAR-10H only, ≈50 raters per image): a fresh panel of 3 validation votes per image, drawn from the
    full panel; the reference is the empirical-Bayes posterior predictive from the image's other ≈47 votes (per-class
    Beta prior fitted to the training panels; until 2026-10-19 a Jeffreys-smoothed Binomial, which every model beat).
@@ -26,6 +31,7 @@ from scipy.stats import betabinom, spearmanr
 from b2j import posthoc as P
 from b2j.analysis import guard, main_runs
 from b2j.data import load_table
+from b2j.metrics import auroc
 from b2j.runs import RESULTS, RunSpec
 from b2j.variants import VARIANTS
 
@@ -66,6 +72,23 @@ def spread_beyond_mean(runs, ev, variant="b2r"):
             out.append({"head": j, "spearman_within_m_deciles": float(np.mean(cs)) if cs else np.nan,
                         "log10S_p10": float(np.log10(np.quantile(S[:, j], 0.1))),
                         "log10S_p90": float(np.log10(np.quantile(S[:, j], 0.9)))})
+    return out
+
+
+def spread_ablation(runs, ev, variant="b2r"):
+    """Per seed: vote NLL per (image, head) and mean split AUROC over heads, per-image S vs one S per head."""
+    split = ((ev.k > 0) & (ev.k < ev.n)).astype(float)
+    out = []
+    for s, d in enumerate(runs[variant]):
+        m, S = _panel(variant, d)
+        Sc = np.broadcast_to(P.fit_scale(m, np.ones_like(m), ev.k, ev.n), m.shape)
+        r = {"seed": s}
+        for tag, SS in (("own", S), ("const", Sc)):
+            r[f"nll_{tag}"] = float(P.vote_nll(m, SS, ev.k, ev.n).mean())
+            pu = P.p_unanimous(P.vote_pmf(m, SS, ev.n), ev.n)
+            a = [auroc(1 - pu[ok, j], split[ok, j]) for j in range(m.shape[1]) for ok in [ev.n[:, j] >= 2]]
+            r[f"auroc_{tag}"] = float(np.mean([x for x in a if x is not None]))
+        out.append(r)
     return out
 
 
@@ -138,6 +161,16 @@ def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "am
                 r = [x for x in sb if x["head"] == j]
                 md.append(f"| {j} | {np.nanmean([x['spearman_within_m_deciles'] for x in r]):+.3f} | "
                           f"{np.mean([x['log10S_p10'] for x in r]):.2f} | {np.mean([x['log10S_p90'] for x in r]):.2f} |")
+        md += ["", "Spread ablation: own m, per-image S vs one S per head (validation; mean ± sd over seeds). "
+               "ΔNLL = NLL(one S) − NLL(per-image S) per (image, head), ΔAUROC = AUROC(per-image) − AUROC(one S); "
+               "positive = the per-image S carries information beyond m.", "",
+               "| variant | NLL per-image S | ΔNLL | split AUROC per-image S | ΔAUROC |", "|---|---|---|---|---|"]
+        for v in [v for v in runs if VARIANTS[v].loss.kind == "b2" and not VARIANTS[v].loss.plus_one]:
+            r = spread_ablation(runs, ev, v)
+            dn = [x["nll_const"] - x["nll_own"] for x in r]
+            da = [x["auroc_own"] - x["auroc_const"] for x in r]
+            md.append(f"| {v} | {np.mean([x['nll_own'] for x in r]):.4f} | {np.mean(dn):+.4f} ± {np.std(dn):.4f} | "
+                      f"{np.mean([x['auroc_own'] for x in r]):.4f} | {np.mean(da):+.4f} ± {np.std(da):.4f} |")
         if ds == "cifar10h":
             ref, res = cifar_ceiling(block, root, full)
             md += ["", f"Ceiling on a fresh 3-vote validation panel (NLL per vote). Reference (empirical-Bayes Beta prior "

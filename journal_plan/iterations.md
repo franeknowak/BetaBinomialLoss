@@ -52,6 +52,22 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
 - **Also added (same block):** FER+ (35,481 faces, 8 emotions, 4–10 crowd votes per face, 61% ambiguous) → tuning (18 runs), the R1-style baseline block `d_base` (45 runs), and the d12 block (30 runs). Lr / wd from FER+'s own tuning.
 - **Runs:** d12 now = soft BCE, B²-r, B²-ms, B²-ms var × 3 λ on 5 datasets × 5 seeds; already finished runs are skipped → 60 new D2b runs on the 4 old datasets + 30 FER+ runs.
 - **Expected:** if the per-image spread is noise, vote NLL improves (or stays) as λ grows and Spearman stays ≈ 0; if it carries information, NLL is best at a small or zero λ, with Spearman > 0. FER+ is where an informative spread is most plausible (crowd panels, variable n, much genuine ambiguity).
+- **Outcome (2026-10-20, job chain 7561886–88, `results/journal/d12/`; validation, vote NLL mean of 5 seeds):**
+
+  | | Endoscapes | CIFAR-10H | MHIST | AMi-Br | FER+ |
+  |---|---|---|---|---|---|
+  | soft BCE + Global-S | 0.6842 | 0.0120 | 1.528 | 0.9796 | 0.6856 |
+  | B²-r | **0.6792** | 0.0108 | 1.486 | **0.9793** | **0.6761** |
+  | B²-ms (λ = 0) | 0.6873 | **0.0106** | **1.464** | 0.9842 | 0.6871 |
+  | B²-ms var λ = 0.03 / 0.3 / 3 | 0.6838 / 0.6836 / 0.6832 | 0.0107 / 0.0112 / 0.0115 | 1.481 / 1.516 / 1.523 | 0.9824 / 0.9798 / 0.9796 | 0.6819 / 0.6825 / 0.6838 |
+
+  Shrinking the spread to its batch mean narrows S as intended (FER+ 10th–90th percentile of log10 S: 1.7 decades at λ = 0 → 0.05 at λ = 3), and moves B²-ms towards soft BCE + Global-S. It helps where B²-ms was worse than B²-r (Endoscapes, AMi-Br, FER+), hurts where B²-ms was best (CIFAR-10H, MHIST), and never beats the better of B²-r and B²-ms. **Dropped.** Every λ keeps discrimination (mAP) within noise of B²-ms.
+- **FER+ baseline (block d_base, validation, 5 seeds):** vote NLL soft BCE + Global-S 0.6856 → B²-r 0.6761 (−1.4%), B²-r + KL 0.6734, B²-M 0.752, hard BCE 0.914. First dataset where B²-r also improves discrimination: mAP 0.758 → 0.768 (sd 0.005 each), accuracy 0.919 → 0.931. θ-MSE and split AUROC unchanged (0.0123 → 0.0122; 0.855 → 0.855).
+
+## D0b — the D0 spread test had the wrong sign (found 2026-10-20 while reading D2b)
+- **Mistake:** at a fixed mean m, a smaller S (larger ρ = 1/(S+1)) moves probability to the unanimous panels (P(3-rater split) = 3m(1−m)·S/(S+1)). An informative per-image S therefore gives a **negative** Spearman(ρ, split) within m deciles. D0 read ≈ 0 / negative as "uninformative"; the observed values are mostly negative (CIFAR-10H B²-ms −0.01 to −0.12, MHIST −0.14 / −0.20, Endoscapes −0.03 to −0.10, FER+ −0.00 to −0.09), i.e. weakly in the informative direction. The test is also confounded by m varying within a decile. D0 conclusion (a) is withdrawn until D0b reports.
+- **Change (analysis only):** spread ablation per B² model: its own m with its per-image S replaced by one S per head fitted on the same validation votes (as the models' own spread step is). Vote NLL and split AUROC (score 1 − P(unanimous)) with and without the per-image S, on all d12 variants and 5 datasets.
+- **Expected:** if ΔNLL and ΔAUROC are ≈ 0, the per-image S adds nothing beyond m and the D0 reading stands; if positive, the spread is informative and the direction for D4 is to strengthen it (not shrink it).
 - **Outcome:** (pending)
 
 ## D3 — seed ensembles with spreads (planned 2026-10-20, before any result; analysis only, no training)
@@ -59,7 +75,17 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
 - **Change:** new rows (the pre-registered "ensemble" row is unchanged): `ensemble_gs` = 5 soft-BCE seeds, each with its own Global-S, mixed; `ensemble_<v>` = 5 seeds of a B² variant (b2r, b2ms, b2ms_var λ), each with its own c-scaled S, mixed. Same compute on both sides (5 trained heads each).
 - **Read-out (validation, d12 block):** vote NLL, P_maj calibration, split AP: ensemble_b2r vs ensemble_gs, and each ensemble vs its single models.
 - **Expected:** both ensembles beat their single models; if B²'s advantage is calibration rather than spread, the gap between the two ensembles should shrink relative to the single-model gap.
-- **Outcome:** (pending)
+- **Outcome (2026-10-20, d12 block, validation, vote NLL):**
+
+  | | Endoscapes | CIFAR-10H | MHIST | AMi-Br | FER+ |
+  |---|---|---|---|---|---|
+  | soft-BCE ensemble (pre-registered, S = ∞) | 0.7877 | 0.0164 | 1.586 | 1.266 | 0.7277 |
+  | soft-BCE ensemble + Global-S | 0.6834 | 0.0118 | 1.522 | 0.9793 | 0.6689 |
+  | B²-r ensemble | **0.6764** | 0.0106 | 1.481 | **0.9789** | **0.6630** |
+  | B²-ms ensemble | 0.6824 | **0.0104** | **1.458** | 0.9832 | 0.6693 |
+  | single soft BCE + Global-S → single B²-r | 0.6842 → 0.6792 | 0.0120 → 0.0108 | 1.528 → 1.486 | 0.9796 → 0.9793 | 0.6856 → 0.6761 |
+
+  Ensembling helps both losses, and the B² advantage survives it: the gap between the B²-r and soft BCE + Global-S ensembles (Endoscapes 0.0070, CIFAR-10H 0.0012, MHIST 0.041, AMi-Br 0.0004, FER+ 0.0059) is about the single-model gap (0.0050, 0.0012, 0.042, 0.0003, 0.0095), not smaller. On FER+ the B²-r ensemble also has the best mAP (0.776) and split AUROC (0.861). Expectation "gap shrinks" not met. Ensembles are the best panel predictors on every dataset → **kept** as a reported configuration (both sides, same compute); the pre-registered S = ∞ ensemble is clearly the weakest comparator and is reported as such.
 
 
 ## Candidate iterations (to be fixed after D0)
