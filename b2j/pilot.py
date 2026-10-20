@@ -17,7 +17,7 @@ from b2j.runs import RESULTS, RunSpec
 DATASETS = ("endoscapes", "cifar10h", "mhist", "amibr", "ferplus")   # amibr, ferplus added in round D
 PILOT_DATASETS = ("endoscapes", "cifar10h")          # the datasets where claims are decided
 FAMILIES = ("hard_bce", "soft_bce", "b2r")
-FAMILY = {"hard_bce": "hard_bce", "hard_bce_w": "hard_bce", "soft_bce": "soft_bce", "dup": "soft_bce",
+FAMILY = {"hard_bce": "hard_bce", "hard_bce_w": "hard_bce", "soft_bce": "soft_bce", "dup": "soft_bce", "soft_bce_n": "soft_bce",
           "b2r": "b2r", "b2r_w": "b2r", "b2r_kl": "b2r", "b2r_linear": "b2r", "b2m": "b2r",
           "b2ms": "b2r", **{f"b2ms_{t}{lam:g}": "b2r" for t in ("shrink", "var") for lam in (0.03, 0.3, 3.0)}}   # round D: B²-r's lr / wd
 GRID = [(lr, wd) for lr in (1e-4, 3e-4, 1e-3) for wd in (1e-4, 1e-2)]

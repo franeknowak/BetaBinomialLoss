@@ -2,6 +2,7 @@
 
   python -m b2j.diag r1        -> results/journal/r1/diag_d0_val.md
   python -m b2j.diag d12       -> results/journal/d12/diag_d0_val.md (sections 1-2 for every B² variant in the block)
+  python -m b2j.diag recovery r1 -> results/journal/r1/mean_recovery_val.md (D5: mean recovery from few votes)
 
 1. Gain by ambiguity: per (image, head), NLL of soft BCE + Global-S minus NLL of B²-r (positive = B²-r better),
    seed s against seed s, binned by the observed minority share min(k, n - k) / n of the full panel.
@@ -29,7 +30,8 @@ from scipy.optimize import minimize
 from scipy.stats import betabinom, spearmanr
 
 from b2j import posthoc as P
-from b2j.analysis import guard, main_runs
+from b2j import stats as St
+from b2j.analysis import boot_strata, guard, main_runs
 from b2j.data import load_table
 from b2j.metrics import auroc
 from b2j.runs import RESULTS, RunSpec
@@ -189,5 +191,69 @@ def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "am
     return out
 
 
+# ---------------------------------------------------------------- D5: recovery of the hidden mean from few votes
+def mean_recovery(block, dataset, root=RESULTS, B=2000):
+    """User hypothesis (2026-10-20): trained on few votes per image, B² recovers the full-panel vote share better than
+    soft BCE. Runs of `block` with n_sub votes per training (and validation) image; their m on the validation images
+    is scored against the FULL validation panel: squared error (m − k/n)², per (image, head).
+
+    The full-panel share is itself noisy; its expected share of the error, mean p(1 − p)/(n − 1), is the noise floor
+    (the same for every model), so excess = MSE − floor estimates E(m − θ)². Returns {(checkpoint, n): row}."""
+    guard("val")
+    full = load_table(dataset)
+    ev = full.take("val")
+    share = ev.k / ev.n
+    floor = float((share * (1 - share) / np.maximum(ev.n - 1, 1)).mean())
+    se = {}                                     # (checkpoint, variant, n) -> per-seed [N, K] squared error
+    for f in sorted((Path(root) / block / dataset).glob("*/spec.json")):
+        s = json.loads(f.read_text())
+        if (s["variant"] not in ("soft_bce", "b2r") or s["regime"] != "frozen" or s.get("train_frac", 1.0) != 1.0
+                or s["val_full_panel"] or not (f.parent / "summary.json").exists()):
+            continue
+        n = s["n_sub"] or "all"
+        for ck in ("A", "B"):
+            z = np.load(f.parent / f"val_{ck}.npz")
+            assert (z["ids"] == ev.ids).all()
+            m = P.mean_spread(s["variant"], z["out"])[0]
+            se.setdefault((ck, s["variant"], n), []).append((m - share) ** 2)
+    out = {}
+    for ck, v, n in sorted(se, key=lambda t: (t[0], str(t[2]))):
+        if v != "b2r" or (ck, "soft_bce", n) not in se:
+            continue
+        g, b = se[(ck, "soft_bce", n)], se[(ck, "b2r", n)]
+        r = St.two_level_bootstrap(lambda a, rows: a[rows].mean(), {"gs": g, "b2r": b}, lambda x: x["gs"] - x["b2r"],
+                                   ev.cluster, boot_strata(dataset, ev), B=B)
+        mg, mb = float(np.mean([x.mean() for x in g])), float(np.mean([x.mean() for x in b]))
+        out[(ck, n)] = {"mse_soft_bce": mg, "mse_b2r": mb, "diff": r.estimate, "lo": r.lo, "hi": r.hi, "floor": floor,
+                        "seeds": (len(g), len(b))}
+    return out
+
+
+def recovery_report(block="r1", root=RESULTS, datasets=("cifar10h", "mhist")):
+    md = [f"# D5 — recovery of the full-panel vote share from few votes ({block}, validation)", "",
+          "m of runs trained (and checkpointed) on n votes per image, scored against the full validation panel. "
+          "MSE = mean (m − k/n)² per (image, head); floor = the full panel's own sampling noise (same for every model); "
+          "excess = MSE − floor ≈ E(m − θ)². Δ = MSE(soft BCE) − MSE(B²-r), positive = B²-r closer; 95% CI from the "
+          "two-level bootstrap (images, seeds). Checkpoint A = best validation discrimination, B = best validation "
+          "vote NLL.", ""]
+    for ds in datasets:
+        if not (Path(root) / block / ds).exists():
+            continue
+        res = mean_recovery(block, ds, root)
+        md += [f"## {ds}", "", "| checkpoint | n | MSE soft BCE | MSE B²-r | Δ [95% CI] | Δ / excess soft BCE | seeds |",
+               "|---|---|---|---|---|---|---|"]
+        for (ck, n), r in res.items():
+            exc = r["mse_soft_bce"] - r["floor"]
+            md.append(f"| {ck} | {n} | {r['mse_soft_bce']:.5f} | {r['mse_b2r']:.5f} | {r['diff']:+.5f} "
+                      f"[{r['lo']:+.5f}, {r['hi']:+.5f}] | {r['diff'] / exc:+.1%} | {r['seeds'][0]}/{r['seeds'][1]} |")
+        md += ["", f"Noise floor of the full panel: {next(iter(res.values()))['floor']:.5f}.", ""]
+    out = Path(root) / block / "mean_recovery_val.md"
+    out.write_text("\n".join(md))
+    return out
+
+
 if __name__ == "__main__":
-    print(report(sys.argv[1] if len(sys.argv) > 1 else "r1").read_text())
+    if len(sys.argv) > 1 and sys.argv[1] == "recovery":
+        print(recovery_report(sys.argv[2] if len(sys.argv) > 2 else "r1").read_text())
+    else:
+        print(report(sys.argv[1] if len(sys.argv) > 1 else "r1").read_text())

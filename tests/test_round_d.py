@@ -89,3 +89,28 @@ def test_batch_shrink_penalises_only_the_variation_of_log_s():
     out.requires_grad_(True)
     g, = torch.autograd.grad((loss(out, k, n) - plain(out, k, n)), out)
     assert abs(g[:, 0, 1].sum().item()) < 1e-6                 # the penalty does not move the mean level of log S
+
+
+def test_vote_count_weighted_soft_bce_is_the_rescaled_binomial_nll():
+    from b2j.losses import LossConfig, PanelLoss
+    import torch
+    torch.manual_seed(0)
+    out = torch.randn(6, 2, 1)
+    n = torch.tensor([4., 10., 6., 8., 10., 5.])[:, None].repeat(1, 2)
+    k = torch.minimum(torch.randint(0, 11, (6, 2)).float(), n)
+    plain = PanelLoss(LossConfig("soft_bce")).per_sample(out, k, n)
+    nw = PanelLoss(LossConfig("soft_bce", n_weight=True)).per_sample(out, k, n)
+    assert torch.allclose(nw, plain * n / n.mean(0))
+    p = torch.sigmoid(out[..., 0])                 # Binomial NLL without the binomial coefficient = n × soft BCE
+    binom = -(k * torch.log(p) + (n - k) * torch.log(1 - p))
+    assert torch.allclose(nw, binom / n.mean(0), atol=1e-5)
+    same_n = torch.full_like(n, 7.0)
+    assert torch.allclose(PanelLoss(LossConfig("soft_bce", n_weight=True)).per_sample(out, k.clamp(max=7), same_n),
+                          PanelLoss(LossConfig("soft_bce")).per_sample(out, k.clamp(max=7), same_n))
+
+
+def test_n_weight_is_soft_bce_only():
+    import pytest
+    from b2j.losses import LossConfig
+    with pytest.raises(ValueError):
+        LossConfig("b2", n_weight=True)

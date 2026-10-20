@@ -30,6 +30,7 @@ LABEL = {"hard_bce": "hard BCE", "hard_bce_w": "hard BCE-w", "soft_bce": "soft B
          "b2r_w": "B²-r-w", "b2r_kl": "B²-r + KL", "b2m": "B²-M", "b2r_linear": "B²-r linear", "dup": "DUP",
          "b2ms": "B²-ms", "b2ms_shrink0.03": "B²-ms λ 0.03", "b2ms_shrink0.3": "B²-ms λ 0.3", "b2ms_shrink3": "B²-ms λ 3",
          "b2ms_var0.03": "B²-ms var λ 0.03", "b2ms_var0.3": "B²-ms var λ 0.3", "b2ms_var3": "B²-ms var λ 3",
+         "soft_bce_n": "soft BCE, vote-count weighted",
          "soft_bce:plugin": "soft BCE plug-in", "hard_bce:plugin": "hard BCE plug-in", "ensemble": "soft-BCE ensemble",
          "ensemble_gs": "soft-BCE ensemble + Global-S"}
 ENSEMBLE_B2 = ("b2r", "b2ms", "b2ms_var0.03", "b2ms_var0.3", "b2ms_var3")   # round D, D3: seed ensembles of B² variants

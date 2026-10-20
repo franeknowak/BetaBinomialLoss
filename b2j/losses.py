@@ -146,6 +146,8 @@ class LossConfig:
     s_shrink_target: str = "prior"  # 'prior': log S of the moment-matched prior = spread ACROSS images (D2, invalid:
                                     #   ignores x, ~0.5 on CIFAR-10H); 'batch': the batch mean of log S (D2b), i.e. a
                                     #   penalty on the spread's variation between images; its level is learned
+    n_weight: bool = False          # soft BCE only (round D, D5): per-sample weight n / batch mean of n, i.e. the
+                                    #   Binomial NLL (= n × soft BCE + const) rescaled to the soft-BCE loss level
 
     def __post_init__(self):
         if self.kind not in ("hard_bce", "soft_bce", "b2", "dup"):
@@ -160,6 +162,8 @@ class LossConfig:
             raise ValueError("param 'ms' is a B²-r head option (not B²-M, not BCE)")
         if self.s_shrink and self.param != "ms":
             raise ValueError("s_shrink needs the mean-spread head")
+        if self.n_weight and self.kind != "soft_bce":
+            raise ValueError("n_weight is a soft-BCE option")
         if self.s_shrink_target not in ("prior", "batch"):
             raise ValueError(f"unknown s_shrink_target {self.s_shrink_target}")
 
@@ -206,6 +210,8 @@ class PanelLoss(nn.Module):
                       "soft_bce": lambda: k / n,
                       "dup": lambda: split_target(k, n)}[cfg.kind]()
             loss = F.binary_cross_entropy_with_logits(z, target, reduction="none")
+        if cfg.n_weight:
+            loss = loss * (n / n.mean(0, keepdim=True))
         if cfg.weighted:
             y = majority(k, n)
             loss = loss * (y * self.weights[:, 1] + (1 - y) * self.weights[:, 0])

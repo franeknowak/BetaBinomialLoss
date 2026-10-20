@@ -80,4 +80,16 @@ def d12(root=None):
             for v in D12 for s in SEEDS]
 
 
-BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12}
+D5 = ("soft_bce", "soft_bce_n", "b2r")
+D5_DATASETS = ("ferplus", "cifar10h")   # the datasets whose images have different numbers of votes
+
+
+def d5(root=None):
+    """Round D, D5 (journal_plan/iterations.md): soft BCE weighted by the number of votes (Binomial NLL) beside soft BCE
+    and B²-r, on the datasets with a variable number of votes per image; frozen, full panels, 5 seeds (30 runs)."""
+    from b2j.pilot import hyper
+    kw = {} if root is None else {"root": root}
+    return [RunSpec(ds, v, seed=s, block="d5", **hyper(ds, v, **kw)) for ds in D5_DATASETS for v in D5 for s in SEEDS]
+
+
+BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12, "d5": d5}

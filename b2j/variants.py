@@ -32,6 +32,8 @@ VARIANTS = {
     # round D candidates (journal_plan/iterations.md); not in the R1/R2 blocks
     "b2ms":       Variant(LossConfig("b2", param="ms")),
 }
+# D5: soft BCE weighted by the image's number of votes (= Binomial NLL): isolates B²'s weighting of images by n
+VARIANTS["soft_bce_n"] = Variant(LossConfig("soft_bce", n_weight=True))
 # D2 (2026-10-20, INVALID design: shrinks towards the across-image prior spread; kept to reproduce the record)
 VARIANTS.update({f"b2ms_shrink{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam), prior="moment")
                  for lam in S_SHRINK})

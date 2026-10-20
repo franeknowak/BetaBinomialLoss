@@ -43,7 +43,7 @@ def test_spread_rules_and_eps():
     assert {v: P.spread_rule(v) for v in VARIANTS} == {
         "hard_bce": "global", "hard_bce_w": "global", "soft_bce": "global", "b2r": "c", "b2r_w": "c",
         "b2r_kl": "c", "b2m": "none", "b2r_linear": "c", "dup": "dup", "b2ms": "c", "b2ms_shrink0.03": "c", "b2ms_shrink0.3": "c", "b2ms_shrink3": "c",
-        "b2ms_var0.03": "c", "b2ms_var0.3": "c", "b2ms_var3": "c"}
+        "b2ms_var0.03": "c", "b2ms_var0.3": "c", "b2ms_var3": "c", "soft_bce_n": "global"}
     out = np.full((1, 1, 2), -50.0)
     assert P.mean_spread("b2r", out)[1][0, 0] == pytest.approx(2e-3)
     assert P.mean_spread("b2r", out, eps=0.1)[1][0, 0] == pytest.approx(0.2)

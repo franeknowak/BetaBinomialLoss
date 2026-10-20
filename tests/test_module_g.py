@@ -66,6 +66,17 @@ def test_d12_block(tmp_path):
     assert all((s.lr, s.wd) == ((1e-4, 1e-4) if s.variant == "soft_bce" else (3e-4, 1e-2)) for s in specs)
 
 
+def test_d5_block(tmp_path):
+    from b2j.blocks import d5
+    (tmp_path / "tune").mkdir()
+    G.chosen_path(tmp_path).write_text(json.dumps({ds: {"hard_bce": {"lr": 1e-3, "wd": 1e-4}, "soft_bce": {"lr": 1e-4, "wd": 1e-4},
+                                                        "b2r": {"lr": 3e-4, "wd": 1e-2}} for ds in G.DATASETS}))
+    specs = d5(tmp_path)
+    assert len(specs) == 2 * 3 * 5 == len({(s.dataset, s.name) for s in specs})
+    assert {s.dataset for s in specs} == {"ferplus", "cifar10h"}
+    assert all((s.lr, s.wd) == ((3e-4, 1e-2) if s.variant == "b2r" else (1e-4, 1e-4)) for s in specs)
+
+
 def test_no_margins_command():
     assert not hasattr(G, "margins")
     assert len(G.pilot_specs.__code__.co_varnames) >= 1        # the pilot block itself stays (validation preview)
