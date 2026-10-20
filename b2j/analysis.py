@@ -30,7 +30,10 @@ LABEL = {"hard_bce": "hard BCE", "hard_bce_w": "hard BCE-w", "soft_bce": "soft B
          "b2r_w": "B²-r-w", "b2r_kl": "B²-r + KL", "b2m": "B²-M", "b2r_linear": "B²-r linear", "dup": "DUP",
          "b2ms": "B²-ms", "b2ms_shrink0.03": "B²-ms λ 0.03", "b2ms_shrink0.3": "B²-ms λ 0.3", "b2ms_shrink3": "B²-ms λ 3",
          "b2ms_var0.03": "B²-ms var λ 0.03", "b2ms_var0.3": "B²-ms var λ 0.3", "b2ms_var3": "B²-ms var λ 3",
-         "soft_bce:plugin": "soft BCE plug-in", "hard_bce:plugin": "hard BCE plug-in", "ensemble": "soft-BCE ensemble"}
+         "soft_bce:plugin": "soft BCE plug-in", "hard_bce:plugin": "hard BCE plug-in", "ensemble": "soft-BCE ensemble",
+         "ensemble_gs": "soft-BCE ensemble + Global-S"}
+ENSEMBLE_B2 = ("b2r", "b2ms", "b2ms_var0.03", "b2ms_var0.3", "b2ms_var3")   # round D, D3: seed ensembles of B² variants
+LABEL.update({f"ensemble_{v}": f"{LABEL[v]} ensemble" for v in ENSEMBLE_B2})
 PLUGIN_ROWS = ("soft_bce", "hard_bce")
 RECALL_GRID = np.round(np.linspace(0.5, 1.0, 51), 4)     # F5
 
@@ -84,13 +87,20 @@ def run_rows(variant, d, split, ev, val):
     return rows
 
 
-def ensemble_row(dirs, split, ev, val):
-    """Soft-BCE ensemble over seeds: mean m (threshold from the validation mean m); mixture of Binomial pmfs."""
+def ensemble_row(dirs, split, ev, val, variant="soft_bce", spread=False):
+    """Seed ensemble: mean m (threshold from the validation mean m); mixture of the members' vote pmfs.
+
+    spread=False (the pre-registered soft-BCE ensemble): Binomial members (S = inf). spread=True (round D, D3): each
+    member keeps its own post-hoc spread (Global-S for soft BCE, c-scaled S for B²), i.e. a mixture of Beta-Binomials.
+    """
     yv = M.majority(val.k, val.n)
-    mA = np.mean([P.mean_spread("soft_bce", np.load(d / f"{split}_A.npz")["out"])[0] for d in dirs], 0)
-    vmA = np.mean([P.mean_spread("soft_bce", np.load(d / "val_A.npz")["out"])[0] for d in dirs], 0)
-    members = [(P.mean_spread("soft_bce", np.load(d / f"{split}_B.npz")["out"])[0], None) for d in dirs]
-    members = [(m, np.full_like(m, np.inf)) for m, _ in members]
+    mA = np.mean([P.mean_spread(variant, np.load(d / f"{split}_A.npz")["out"])[0] for d in dirs], 0)
+    vmA = np.mean([P.mean_spread(variant, np.load(d / "val_A.npz")["out"])[0] for d in dirs], 0)
+    if spread:
+        members = [P.panel(variant, z["out"], z["scale"]) for z in (np.load(d / f"{split}_B.npz") for d in dirs)]
+    else:
+        members = [(P.mean_spread(variant, np.load(d / f"{split}_B.npz")["out"])[0], None) for d in dirs]
+        members = [(m, np.full_like(m, np.inf)) for m, _ in members]
     return _pred(mA, P.threshold_max_bacc(vmA, yv), np.mean([m for m, _ in members], 0),
                  P.mixture_pmf(members, ev.n), P.mixture_p_split3(members))
 
@@ -137,6 +147,12 @@ def collect(block, dataset, split="val", root=RESULTS, open_test=False):
                 recs.append({"row": name, "seed": seed, **row_metrics(p, ev, per_vote)})
     if len(runs.get("soft_bce", [])) > 1:
         recs.append({"row": "ensemble", "seed": 0, **row_metrics(ensemble_row(runs["soft_bce"], split, ev, val), ev, per_vote)})
+        recs.append({"row": "ensemble_gs", "seed": 0,
+                     **row_metrics(ensemble_row(runs["soft_bce"], split, ev, val, spread=True), ev, per_vote)})
+    for v in ENSEMBLE_B2:
+        if len(runs.get(v, [])) > 1:
+            recs.append({"row": f"ensemble_{v}", "seed": 0,
+                         **row_metrics(ensemble_row(runs[v], split, ev, val, v, spread=True), ev, per_vote)})
     return pd.DataFrame(recs)
 
 

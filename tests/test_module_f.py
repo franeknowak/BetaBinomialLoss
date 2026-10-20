@@ -169,6 +169,12 @@ def test_fig2_and_fig5_on_fake_block(tmp_path, monkeypatch):
     assert all(lo <= hi for lo, hi in zip(d["lo"], d["hi"]))
     df = A.collect("fake", "mhist", "val", root=tmp_path)
     assert not df["row"].str.contains(r"S\*").any() and "soft_bce:plugin" in set(df["row"])
+    assert {"ensemble", "ensemble_gs", "ensemble_b2r"} <= set(df["row"])                    # D3 rows
+    d = sorted((tmp_path / "fake" / "mhist").glob("b2r__frozen__lr*seed0"))[0]
+    ev = table.take("val")
+    one = A.run_rows("b2r", d, "val", ev, ev)["b2r"]
+    two = A.ensemble_row([d, d], "val", ev, ev, "b2r", spread=True)               # identical members = the member
+    assert np.allclose(one["pmf"], two["pmf"]) and np.allclose(one["m"], two["m"])
 
 
 def test_train_fraction_figure_on_fake_block(tmp_path, monkeypatch):

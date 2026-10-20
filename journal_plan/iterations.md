@@ -54,6 +54,13 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
 - **Expected:** if the per-image spread is noise, vote NLL improves (or stays) as λ grows and Spearman stays ≈ 0; if it carries information, NLL is best at a small or zero λ, with Spearman > 0. FER+ is where an informative spread is most plausible (crowd panels, variable n, much genuine ambiguity).
 - **Outcome:** (pending)
 
+## D3 — seed ensembles with spreads (planned 2026-10-20, before any result; analysis only, no training)
+- **Diagnosis:** the only ensemble row is the pre-registered soft-BCE ensemble of Binomials (S = ∞), a weak comparator (AMi-Br vote NLL 1.27 vs 0.98 for a single soft BCE + Global-S). D0 says most headroom is in m, and averaging seeds is the standard way to improve m.
+- **Change:** new rows (the pre-registered "ensemble" row is unchanged): `ensemble_gs` = 5 soft-BCE seeds, each with its own Global-S, mixed; `ensemble_<v>` = 5 seeds of a B² variant (b2r, b2ms, b2ms_var λ), each with its own c-scaled S, mixed. Same compute on both sides (5 trained heads each).
+- **Read-out (validation, d12 block):** vote NLL, P_maj calibration, split AP: ensemble_b2r vs ensemble_gs, and each ensemble vs its single models.
+- **Expected:** both ensembles beat their single models; if B²'s advantage is calibration rather than spread, the gap between the two ensembles should shrink relative to the single-model gap.
+- **Outcome:** (pending)
+
 
 ## Candidate iterations (to be fixed after D0)
 
