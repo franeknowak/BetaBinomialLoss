@@ -68,7 +68,17 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
 - **Mistake:** at a fixed mean m, a smaller S (larger ρ = 1/(S+1)) moves probability to the unanimous panels (P(3-rater split) = 3m(1−m)·S/(S+1)). An informative per-image S therefore gives a **negative** Spearman(ρ, split) within m deciles. D0 read ≈ 0 / negative as "uninformative"; the observed values are mostly negative (CIFAR-10H B²-ms −0.01 to −0.12, MHIST −0.14 / −0.20, Endoscapes −0.03 to −0.10, FER+ −0.00 to −0.09), i.e. weakly in the informative direction. The test is also confounded by m varying within a decile. D0 conclusion (a) is withdrawn until D0b reports.
 - **Change (analysis only):** spread ablation per B² model: its own m with its per-image S replaced by one S per head fitted on the same validation votes (as the models' own spread step is). Vote NLL and split AUROC (score 1 − P(unanimous)) with and without the per-image S, on all d12 variants and 5 datasets.
 - **Expected:** if ΔNLL and ΔAUROC are ≈ 0, the per-image S adds nothing beyond m and the D0 reading stands; if positive, the spread is informative and the direction for D4 is to strengthen it (not shrink it).
-- **Outcome:** (pending)
+- **Outcome (2026-10-20, job 7569075, `results/journal/d12/diag_d0_val.md`; validation, mean ± sd over 5 seeds; ΔNLL per (image, head), positive = per-image S helps):**
+
+  | | votes per image | B²-r ΔNLL (relative) | B²-r ΔAUROC | B²-ms ΔNLL (relative) | B²-ms ΔAUROC |
+  |---|---|---|---|---|---|
+  | CIFAR-10H | ≈ 50 | +0.024 ± 0.001 (4.3%) | +0.002 | +0.059 ± 0.003 (10.8%) | +0.012 |
+  | MHIST | 7 | +0.046 ± 0.003 (3.1%) | +0.021 | +0.068 ± 0.001 (4.7%) | +0.044 |
+  | FER+ | 4–10 | +0.006 ± 0.001 (0.9%) | −0.000 | +0.003 ± 0.002 | +0.000 |
+  | Endoscapes | 3 | +0.001 ± 0.000 | +0.000 | −0.003 ± 0.002 | +0.002 |
+  | AMi-Br | 3 | −0.001 ± 0.001 | +0.006 | −0.006 ± 0.001 | −0.018 |
+
+  Shrinkage (λ) removes the information monotonically, as it should. **Reading:** the per-image spread *is* informative beyond m where panels are larger (CIFAR-10H, MHIST; B²-ms more than B²-r), and is noise or slightly harmful with 3 raters per image (Endoscapes, AMi-Br): with 3 votes, the overdispersion of one image is barely identifiable from training data. FER+ (crowd, ≤ 10 votes) sits in between. D0 conclusion (a) is replaced by this; (b) and (c) stand. This matches the R1 pattern (MHIST triage gain; Endoscapes flat) and gives a mechanistic account of when B²'s spread is useful.
 
 ## D3 — seed ensembles with spreads (planned 2026-10-20, before any result; analysis only, no training)
 - **Diagnosis:** the only ensemble row is the pre-registered soft-BCE ensemble of Binomials (S = ∞), a weak comparator (AMi-Br vote NLL 1.27 vs 0.98 for a single soft BCE + Global-S). D0 says most headroom is in m, and averaging seeds is the standard way to improve m.
