@@ -17,7 +17,7 @@ Done 2026-10-19/20: AMi-Br downloaded + checked + cached; block `d_base` (job 75
 FER+ indexing DONE (job 7561603): 100% of kept faces present in every split, 0 name conflicts, 42,583 `augmented_*.png` ignored, 112 px L; `zip_index.csv` 35,481 faces. Kaggle folders: validation = PublicTest (3579), test ≈ PrivateTest — irrelevant, we use `Usage`.
 Running (submitted 2026-10-20 12:21): **7561609** `d12` (array 1–4), **7561610** `d12an` (held), **7561612** FER+ cache (`build_cache.qsub.sh ferplus`). **Do not merge code that changes the d12 run list on the cluster until all 4 d12 tasks have started** (each task builds its list at start; add FER+ as a new tuple/block, not to ROUND_D_DATASETS, while d12 runs).
 Next:
-1. Submit `jobs/d12.qsub.sh` (array 1–4) and `jobs/d12_analysis.qsub.sh` held on it (both copied to the cluster). Pull `results/journal/d12/{tables_val,diag_d0_val.md}`; fill the D1+D2 outcome in iterations.md.
+1. DONE: d12 (120/120 ok) + analysis; outcome in iterations.md. **D2 invalid** (shrink target = marginal across-image S, wrong); fix proposed (learnable per-head log S target), awaiting the user's OK before rerunning the 60 shrink runs. FER+ cache DONE (job 7561612, `cache/ferplus_frozen.npz`, 110 MB).
 2. FER+: judge coverage; if fine, GPU cache job (`python -m b2j.embed ferplus`), then add to `blocks.ROUND_D_DATASETS` + tune.
 3. Galaxy Zoo DECaLS: loader reading inside the 4 zips (Zenodo 4573248, 104 GB) — download job when the user OKs the disk use; no unpacking.
 4. Open strategic question for the user (iterations.md D0 conclusion): if D1/D2 fail, centre the paper on the few-raters regime.
