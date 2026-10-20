@@ -28,6 +28,7 @@ from b2j.runs import RESULTS
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]  # fixed order
 LABEL = {"hard_bce": "hard BCE", "hard_bce_w": "hard BCE-w", "soft_bce": "soft BCE (Global-S)", "b2r": "B²-r",
          "b2r_w": "B²-r-w", "b2r_kl": "B²-r + KL", "b2m": "B²-M", "b2r_linear": "B²-r linear", "dup": "DUP",
+         "b2ms": "B²-ms", "b2ms_shrink0.03": "B²-ms λ 0.03", "b2ms_shrink0.3": "B²-ms λ 0.3", "b2ms_shrink3": "B²-ms λ 3",
          "soft_bce:plugin": "soft BCE plug-in", "hard_bce:plugin": "hard BCE plug-in", "ensemble": "soft-BCE ensemble"}
 PLUGIN_ROWS = ("soft_bce", "hard_bce")
 RECALL_GRID = np.round(np.linspace(0.5, 1.0, 51), 4)     # F5

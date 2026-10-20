@@ -1,6 +1,7 @@
 """Round D, D0: diagnostics of where B²-r's panel advantage comes from (validation only; journal_plan/iterations.md).
 
   python -m b2j.diag r1        -> results/journal/r1/diag_d0_val.md
+  python -m b2j.diag d12       -> results/journal/d12/diag_d0_val.md (sections 1-2 for every B² variant in the block)
 
 1. Gain by ambiguity: per (image, head), NLL of soft BCE + Global-S minus NLL of B²-r (positive = B²-r better),
    seed s against seed s, binned by the observed minority share min(k, n - k) / n of the full panel.
@@ -26,6 +27,7 @@ from b2j import posthoc as P
 from b2j.analysis import guard, main_runs
 from b2j.data import load_table
 from b2j.runs import RESULTS, RunSpec
+from b2j.variants import VARIANTS
 
 BINS = [(0.0, 0.0), (1e-9, 0.15), (0.15, 0.30), (0.30, 0.50)]
 BIN_NAMES = ["unanimous", "minority ≤ 15%", "15–30%", "30–50%"]
@@ -36,12 +38,12 @@ def _panel(variant, d, split="val"):
     return P.panel(variant, z["out"], z["scale"])
 
 
-def gain_by_ambiguity(runs, ev):
+def gain_by_ambiguity(runs, ev, variant="b2r"):
     minority = np.minimum(ev.k, ev.n - ev.k) / ev.n
     rows = []
-    for s, (dg, db) in enumerate(zip(runs["soft_bce"], runs["b2r"])):
+    for s, (dg, db) in enumerate(zip(runs["soft_bce"], runs[variant])):
         mg, Sg = _panel("soft_bce", dg)
-        mb, Sb = _panel("b2r", db)
+        mb, Sb = _panel(variant, db)
         g = P.vote_nll(mg, Sg, ev.k, ev.n) - P.vote_nll(mb, Sb, ev.k, ev.n)
         for name, (lo, hi) in zip(BIN_NAMES, BINS):
             sel = (minority >= lo) & (minority <= hi) if hi == 0 else (minority > lo) & (minority <= hi)
@@ -50,11 +52,11 @@ def gain_by_ambiguity(runs, ev):
     return rows
 
 
-def spread_beyond_mean(runs, ev):
+def spread_beyond_mean(runs, ev, variant="b2r"):
     split = ((ev.k > 0) & (ev.k < ev.n)).astype(float)
     out = []
-    for d in runs["b2r"]:
-        m, S = _panel("b2r", d)
+    for d in runs[variant]:
+        m, S = _panel(variant, d)
         rho = 1.0 / (S + 1.0)
         for j in range(m.shape[1]):
             edges = np.quantile(m[:, j], np.linspace(0, 1, 11))
@@ -94,7 +96,8 @@ def cifar_ceiling(block, root, full, n_panel=3, seed=999):
     for f in sorted((Path(root) / block / "cifar10h").glob("*/spec.json")):
         s = json.loads(f.read_text())
         spec = RunSpec.from_json(s)
-        if (spec is None or spec.variant not in ("soft_bce", "b2r") or spec.regime != "frozen" or spec.train_frac != 1.0
+        if (spec is None or not (spec.variant == "soft_bce" or (VARIANTS[spec.variant].loss.kind == "b2"
+                                                               and not VARIANTS[spec.variant].loss.plus_one)) or spec.regime != "frozen" or spec.train_frac != 1.0
                 or spec.val_full_panel or not (f.parent / "summary.json").exists()):
             continue
         m, S = _panel(spec.variant, f.parent)
@@ -117,22 +120,24 @@ def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "am
         runs = main_runs(block, ds, root)
         if "b2r" not in runs or "soft_bce" not in runs:
             continue
-        md += [f"## {ds}", "", "Gain = NLL(soft BCE + Global-S) − NLL(B²-r) per (image, head); positive = B²-r better. "
-               "Mean over seeds.", "", "| observed minority share | share of (image, head) | mean gain | share of total gain |",
-               "|---|---|---|---|"]
-        rows = gain_by_ambiguity(runs, ev)
-        for name in BIN_NAMES:
-            r = [x for x in rows if x["bin"] == name]
-            md.append(f"| {name} | {np.mean([x['share'] for x in r]):.3f} | {np.nanmean([x['gain_mean'] for x in r]):+.4f} | "
-                      f"{np.mean([x['gain_sum'] / x['total'] for x in r]):+.2f} |")
-        sb = spread_beyond_mean(runs, ev)
-        md += ["", "Spread beyond the mean (B²-r): Spearman(ρ = 1/(S+1), observed split) within deciles of m, "
-               "and the spread of S across images (10th–90th percentile of log10 S).", "",
-               "| head | Spearman within m deciles | log10 S p10 | log10 S p90 |", "|---|---|---|---|"]
-        for j in sorted({x["head"] for x in sb}):
-            r = [x for x in sb if x["head"] == j]
-            md.append(f"| {j} | {np.nanmean([x['spearman_within_m_deciles'] for x in r]):+.3f} | "
-                      f"{np.mean([x['log10S_p10'] for x in r]):.2f} | {np.mean([x['log10S_p90'] for x in r]):.2f} |")
+        md.append(f"## {ds}")
+        for v in [v for v in runs if VARIANTS[v].loss.kind == "b2" and not VARIANTS[v].loss.plus_one]:
+            md += ["", f"### {v}", "", f"Gain = NLL(soft BCE + Global-S) − NLL({v}) per (image, head); positive = {v} "
+                   "better. Mean over seeds.", "",
+                   "| observed minority share | share of (image, head) | mean gain | share of total gain |", "|---|---|---|---|"]
+            rows = gain_by_ambiguity(runs, ev, v)
+            for name in BIN_NAMES:
+                r = [x for x in rows if x["bin"] == name]
+                md.append(f"| {name} | {np.mean([x['share'] for x in r]):.3f} | "
+                          f"{np.nanmean([x['gain_mean'] for x in r]):+.4f} | {np.mean([x['gain_sum'] / x['total'] for x in r]):+.2f} |")
+            sb = spread_beyond_mean(runs, ev, v)
+            md += ["", f"Spread beyond the mean ({v}): Spearman(ρ = 1/(S+1), observed split) within deciles of m, "
+                   "and the spread of S across images (10th–90th percentile of log10 S).", "",
+                   "| head | Spearman within m deciles | log10 S p10 | log10 S p90 |", "|---|---|---|---|"]
+            for j in sorted({x["head"] for x in sb}):
+                r = [x for x in sb if x["head"] == j]
+                md.append(f"| {j} | {np.nanmean([x['spearman_within_m_deciles'] for x in r]):+.3f} | "
+                          f"{np.mean([x['log10S_p10'] for x in r]):.2f} | {np.mean([x['log10S_p90'] for x in r]):.2f} |")
         if ds == "cifar10h":
             ref, res = cifar_ceiling(block, root, full)
             md += ["", f"Ceiling on a fresh 3-vote validation panel (NLL per vote). Reference (empirical-Bayes Beta prior "
@@ -140,10 +145,11 @@ def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "am
             for (v, n), (mu, sd, c) in sorted(res.items(), key=lambda kv: (str(kv[0][1]), kv[0][0])):
                 md.append(f"| {v} | {n} | {mu:.4f} | {sd:.4f} | {c} |")
             for n in sorted({n for _, n in res}, key=str):
-                if ("soft_bce", n) in res and ("b2r", n) in res:
-                    gs, b2 = res[("soft_bce", n)][0], res[("b2r", n)][0]
-                    md.append(f"\nn = {n}: B²-r closes {(gs - b2) / (gs - ref):.0%} of the Global-S → reference gap "
-                              f"({gs - ref:.4f} per vote).")
+                for v in sorted({v for v, m in res if m == n and v not in ("soft_bce", "soft_bce plug-in")}):
+                    if ("soft_bce", n) in res:
+                        gs, b2 = res[("soft_bce", n)][0], res[(v, n)][0]
+                        md.append(f"\nn = {n}: {v} closes {(gs - b2) / (gs - ref):.0%} of the Global-S → reference gap "
+                                  f"({gs - ref:.4f} per vote).")
         md.append("")
     out = Path(root) / block / "diag_d0_val.md"
     out.write_text("\n".join(md))

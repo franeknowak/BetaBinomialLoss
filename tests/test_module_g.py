@@ -55,6 +55,17 @@ def test_d_base_block(tmp_path):
     assert "amibr" not in {s.dataset for s in r1(tmp_path)}              # R1 stays pinned
 
 
+def test_d12_block(tmp_path):
+    from b2j.blocks import d12
+    (tmp_path / "tune").mkdir()
+    G.chosen_path(tmp_path).write_text(json.dumps({ds: {"hard_bce": {"lr": 1e-3, "wd": 1e-4}, "soft_bce": {"lr": 1e-4, "wd": 1e-4},
+                                                        "b2r": {"lr": 3e-4, "wd": 1e-2}} for ds in G.DATASETS}))
+    specs = d12(tmp_path)
+    assert len(specs) == 4 * 6 * 5 == len({(s.dataset, s.name) for s in specs})
+    assert {s.variant for s in specs} == {"soft_bce", "b2r", "b2ms", "b2ms_shrink0.03", "b2ms_shrink0.3", "b2ms_shrink3"}
+    assert all((s.lr, s.wd) == ((1e-4, 1e-4) if s.variant == "soft_bce" else (3e-4, 1e-2)) for s in specs)
+
+
 def test_no_margins_command():
     assert not hasattr(G, "margins")
     assert len(G.pilot_specs.__code__.co_varnames) >= 1        # the pilot block itself stays (validation preview)

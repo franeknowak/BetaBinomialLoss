@@ -36,14 +36,14 @@ def test_ms_loss_is_beta_binomial_and_has_finite_grads():
 def test_shrink_pulls_log_s_to_the_prior():
     k = torch.tensor([[0.0], [3.0], [1.0], [2.0]] * 50)
     n = torch.full_like(k, 3.0)
-    _, loss = build("b2ms_shrink", 4, k, n)
+    _, loss = build("b2ms_shrink0.3", 4, k, n)
     log_s0 = torch.log(loss.prior[:, 0] + loss.prior[:, 1]).item()
     base = torch.zeros(1, 1, 2)
     at = lambda ls: loss.per_sample(base + torch.tensor([0.0, ls]), torch.tensor([[1.0]]), torch.tensor([[3.0]])).item()
     _, plain = build("b2ms", 4, k, n)
     pen = lambda ls: at(ls) - plain.per_sample(base + torch.tensor([0.0, ls]), torch.tensor([[1.0]]), torch.tensor([[3.0]])).item()
     assert pen(log_s0) == pytest.approx(0.0, abs=1e-6)
-    assert pen(log_s0 + 2) == pytest.approx(L.LossConfig("b2", param="ms", s_shrink=0.1).s_shrink * 4, rel=1e-4)
+    assert pen(log_s0 + 2) == pytest.approx(0.3 * 4, rel=1e-4)
 
 
 def test_ms_head_learns_a_spread_that_depends_on_x():

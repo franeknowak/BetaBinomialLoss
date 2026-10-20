@@ -17,7 +17,7 @@ def _fake(tmp_path, monkeypatch, ds="cifar10h", N=60, K=10):
     monkeypatch.setattr(diag, "load_table", lambda name: t)
     import b2j.analysis as A
     monkeypatch.setattr(A, "load_table", lambda name: t)
-    for v in ("soft_bce", "b2r"):
+    for v in ("soft_bce", "b2r", "b2ms_shrink0.3"):
         for n_sub in (None, 3):
             for s in range(2):
                 spec = RunSpec(ds, v, seed=s, n_sub=n_sub, block="blk")
@@ -25,7 +25,7 @@ def _fake(tmp_path, monkeypatch, ds="cifar10h", N=60, K=10):
                 d.mkdir(parents=True)
                 (d / "spec.json").write_text(json.dumps(asdict(spec)))
                 (d / "summary.json").write_text("{}")
-                out = rng.normal(size=(N // 2, K, 2 if v == "b2r" else 1))
+                out = rng.normal(size=(N // 2, K, 1 if v == "soft_bce" else 2))
                 np.savez(d / "val_B.npz", ids=t.take("val").ids, out=out, scale=np.full(K, 2.0))
     return t
 
@@ -41,4 +41,5 @@ def test_report_runs_and_bins_cover_everything(tmp_path, monkeypatch):
     ref, res = diag.cifar_ceiling("blk", tmp_path, t)
     assert np.isfinite(ref) and set(res) >= {("soft_bce", 3), ("b2r", "all"), ("soft_bce plug-in", 3)}
     text = diag.report("blk", tmp_path, datasets=("cifar10h",)).read_text()
-    assert "Ceiling" in text and "unanimous" in text
+    assert "Ceiling" in text and "unanimous" in text and "### b2ms_shrink0.3" in text
+    assert "b2ms_shrink0.3 closes" in text

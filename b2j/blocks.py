@@ -1,7 +1,7 @@
 """Module f: the run lists of each round block (plan §4.4). R1/R2 blocks use the head lr / wd per loss family
 chosen by module g (results/journal/tune/chosen.json). No margins (05_plan amendment 2026-10-16 #1)."""
 from b2j.runs import RunSpec
-from b2j.variants import MAIN, VARIANTS
+from b2j.variants import MAIN, S_SHRINK, VARIANTS
 
 DATASETS = ("endoscapes", "cifar10h", "mhist")   # R0-R1 blocks, pinned
 ROUND_D_DATASETS = ("amibr",)                   # added in round D (2026-10-19)
@@ -67,4 +67,16 @@ def d_base(root=None):
             for s in SEEDS]
 
 
-BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base}
+D12 = ("soft_bce", "b2r", "b2ms") + tuple(f"b2ms_shrink{lam:g}" for lam in S_SHRINK)
+
+
+def d12(root=None):
+    """Round D, D1 + D2 (journal_plan/iterations.md): the mean-spread head without and with spread shrinkage at
+    every λ, plus soft BCE and B²-r as baselines in the same block; frozen, full panels, 5 seeds (120 runs)."""
+    from b2j.pilot import hyper
+    kw = {} if root is None else {"root": root}
+    return [RunSpec(ds, v, seed=s, block="d12", **hyper(ds, v, **kw)) for ds in DATASETS + ROUND_D_DATASETS
+            for v in D12 for s in SEEDS]
+
+
+BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12}
