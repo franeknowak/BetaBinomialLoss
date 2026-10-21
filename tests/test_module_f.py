@@ -202,3 +202,16 @@ def test_verdicts_on_fake_block(tmp_path, monkeypatch):
     assert (tmp_path / "fake" / "verdicts_val.md").exists()
     with pytest.raises(PermissionError):
         V.read("fake", "test", root=tmp_path, datasets=("mhist",))
+
+
+def test_preflight_votes_give_finite_loss_for_every_variant():
+    # the GPU preflight's fake votes on the CPU: every variant must build and give a finite loss (job 7575102)
+    import torch
+    from b2j.launch import PREFLIGHT_K
+    from b2j.variants import VARIANTS, build
+    k, n = PREFLIGHT_K, torch.full_like(PREFLIGHT_K, 3.0)
+    for name in VARIANTS:
+        head, loss = build(name, 8, k, n)
+        value = loss(head(torch.randn(len(k), 8)), k, n)
+        value.backward()
+        assert torch.isfinite(value), name

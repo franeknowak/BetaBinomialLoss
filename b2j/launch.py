@@ -11,6 +11,11 @@ from b2j.blocks import BLOCKS
 from b2j.runs import execute
 
 
+# Σ_c k_c = n = 3 (valid for the single-label variants too), and every label has majority-positive and
+# majority-negative images (else B²-M's class weights are infinite: job 7575102)
+PREFLIGHT_K = torch.tensor([[0.0, 1, 2], [2, 1, 0], [1, 2, 0], [0, 0, 3]] * 2)
+
+
 def gpu_preflight():
     """Forward + backward of every variant's loss on the GPU once, so a broken card fails the job at once.
 
@@ -20,8 +25,7 @@ def gpu_preflight():
     if not torch.cuda.is_available():
         return
     from b2j.variants import VARIANTS, build
-    k = torch.tensor([[0.0, 1, 2], [2, 1, 0]] * 4).cuda()     # Σ_c k_c = n: valid for the single-label variants too
-    n = torch.full_like(k, 3.0)
+    k, n = PREFLIGHT_K.cuda(), PREFLIGHT_K.new_full(PREFLIGHT_K.shape, 3.0).cuda()
     for name in VARIANTS:
         head, loss = build(name, 8, k.cpu(), n.cpu())
         head, loss = head.cuda(), loss.cuda()
