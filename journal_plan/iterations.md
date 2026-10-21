@@ -119,7 +119,16 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
   - Expected (theory, checkpoint above): fixed n per image → at most a small B²-r advantage, none at n = 1 (B² ≡ BCE there); a clear advantage at n = 3 would mean the weighting account is incomplete.
 - **D5b (new variant `soft_bce_n`).** Soft BCE with per-sample weight n / (batch mean of n) = the Binomial NLL rescaled to the soft-BCE level (ρ → 0 end of the quasi-likelihood weights; plain soft BCE is the ρ → 1 end). Block `d5`: soft BCE, `soft_bce_n`, B²-r on FER+ and CIFAR-10H (the variable-n datasets) × 5 seeds (30 runs; soft BCE's lr / wd for `soft_bce_n`).
   - Expected: if B²-r's FER+ gain (mAP 0.758 → 0.768, vote NLL 0.686 → 0.676) is the weighting, `soft_bce_n` recovers most of it; if B²-r still wins clearly, its learned (per-image) weights add to it. CIFAR-10H (n 47–63) should show little difference (weights ≈ equal).
-- **Outcome:** (pending)
+- **Outcome D5a (2026-10-20, job 7572187, `results/journal/r1/mean_recovery_val.md`; validation):** the user hypothesis is **not supported**. CIFAR-10H, squared error of m against the ≈ 50-vote share, soft BCE − B²-r: n = 1, 3, 5, 10, all → every 95% CI includes 0, point estimates within ±3% of the excess error (checkpoints A and B). MHIST (against 7 votes; noise floor 0.020 of MSE ≈ 0.04): all CIs include 0, point estimates *favour soft BCE* (−2% to −14% of the excess error). Consistent with the theory in the checkpoint (fixed n per image → no weighting gain on m).
+- **Outcome D5b (job 7572186, block `d5`, 5 seeds):** the vote-count weighting does **not** explain B²-r's FER+ gain.
+
+  | FER+ | mAP | accuracy | vote NLL | θ-MSE | split AP |
+  |---|---|---|---|---|---|
+  | soft BCE | 0.758 ± 0.005 | 0.919 | 0.6856 | 0.0123 | 0.425 |
+  | soft BCE, vote-count weighted | 0.755 ± 0.005 | 0.920 | 0.6851 | 0.0122 | 0.426 |
+  | B²-r | **0.768 ± 0.005** | **0.931** | **0.6761** | 0.0122 | 0.430 |
+
+  CIFAR-10H: weighted = unweighted (as expected, n ≈ constant). So B²-r's FER+ advantage is not the n-weighting (ρ → 0 end); it improves ranking of the majority label (mAP) without bringing m closer to the vote share (θ-MSE equal). Remaining candidate mechanisms: per-image adaptive weights from the learned ρ (Williams weights with image-specific ρ), or the bounded influence of extreme votes under the Beta-Binomial; not separated yet. Balanced accuracy is equal (0.931 vs 0.930), so part of the accuracy gap is the threshold.
 
 ## Candidate iterations (to be fixed after D0)
 
