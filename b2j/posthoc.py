@@ -28,7 +28,7 @@ def spread_rule(name: str) -> str:
     cfg = VARIANTS[name].loss
     if cfg.kind == "b2":
         return "none" if cfg.plus_one else "c"
-    return {"soft_bce": "global", "hard_bce": "global", "dup": "dup"}[cfg.kind]
+    return {"soft_bce": "global", "hard_bce": "global", "dup": "dup", "dm": "c", "soft_ce": "global"}[cfg.kind]
 
 
 def mean_spread(name: str, out: np.ndarray, eps: float | None = None):
@@ -38,6 +38,11 @@ def mean_spread(name: str, out: np.ndarray, eps: float | None = None):
     """
     cfg = VARIANTS[name].loss
     out = np.asarray(out, dtype=np.float64)
+    if cfg.kind in ("dm", "soft_ce"):           # softmax mean vector; DM: one concentration per image, repeated per class
+        from scipy.special import softmax
+        from b2j.losses import LOG_S_BOUNDS, LOGIT_M_BOUND
+        m = softmax(np.clip(out[..., 0], -LOGIT_M_BOUND, LOGIT_M_BOUND), -1)
+        return m, (np.exp(np.clip(out[..., 1], *LOG_S_BOUNDS)) if cfg.kind == "dm" else np.full_like(m, np.inf))
     if cfg.kind == "b2" and cfg.param == "ms":
         from b2j.losses import LOG_S_BOUNDS, LOGIT_M_BOUND
         return (expit(np.clip(out[..., 0], -LOGIT_M_BOUND, LOGIT_M_BOUND)),

@@ -7,7 +7,7 @@ import torch
 from scipy import stats
 
 from b2j import losses as L
-from b2j.variants import VARIANTS, build
+from b2j.variants import SINGLE_LABEL, VARIANTS, build
 from b2j.heads import MultiHead
 
 torch.manual_seed(0)
@@ -138,6 +138,8 @@ def test_multihead_shapes():
 @pytest.mark.parametrize("variant", list(VARIANTS))
 def test_every_variant_trains_one_step(variant):
     k, n = _votes(N=32, K=3, n=3)
+    if variant in SINGLE_LABEL:
+        k = torch.distributions.Multinomial(3, torch.ones(3)).sample((32,))
     head, loss = build(variant, 768, k, n)
     opt = torch.optim.SGD(head.parameters(), lr=1e-2)
     value = loss(head(torch.randn(32, 768)), k, n)

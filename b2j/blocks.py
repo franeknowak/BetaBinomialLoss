@@ -92,4 +92,16 @@ def d5(root=None):
     return [RunSpec(ds, v, seed=s, block="d5", **hyper(ds, v, **kw)) for ds in D5_DATASETS for v in D5 for s in SEEDS]
 
 
-BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12, "d5": d5}
+D6 = ("soft_bce", "b2r", "b2r_joint", "soft_ce", "dm")
+D6_DATASETS = ("cifar10h", "ferplus")   # single-label: each rater picks one class
+
+
+def d6(root=None):
+    """Round D, D6 (journal_plan/iterations.md): Dirichlet-Multinomial (one concentration per image) against soft-label
+    softmax CE, B²-r on a shared head, soft BCE and B²-r, on the single-label datasets; frozen, 5 seeds (50 runs)."""
+    from b2j.pilot import hyper
+    kw = {} if root is None else {"root": root}
+    return [RunSpec(ds, v, seed=s, block="d6", **hyper(ds, v, **kw)) for ds in D6_DATASETS for v in D6 for s in SEEDS]
+
+
+BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12, "d5": d5, "d6": d6}

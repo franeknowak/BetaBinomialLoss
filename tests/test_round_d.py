@@ -114,3 +114,48 @@ def test_n_weight_is_soft_bce_only():
     from b2j.losses import LossConfig
     with pytest.raises(ValueError):
         LossConfig("b2", n_weight=True)
+
+
+def test_dirichlet_multinomial_nll_matches_scipy_and_reduces_to_beta_binomial():
+    import torch
+    from scipy.stats import dirichlet_multinomial, betabinom
+    from b2j.losses import beta_binomial_nll, dm_nll
+    alpha = torch.tensor([[0.3, 2.0, 5.0], [40.0, 1e-3, 7.0], [1e4, 2e4, 3e4]]).double()
+    k = torch.tensor([[0., 3, 7], [5, 0, 5], [10, 20, 33]]).double()
+    want = [-dirichlet_multinomial.logpmf(k[i].numpy(), alpha[i].numpy(), int(k[i].sum())) for i in range(3)]
+    assert torch.allclose(dm_nll(alpha.log(), k), torch.tensor(want).double(), rtol=1e-8, atol=1e-8)
+    a2 = torch.tensor([[0.7, 1.3], [5.0, 0.2]]).double()        # K = 2: the Beta-Binomial (votes for class 1 of n)
+    k2 = torch.tensor([[2., 5], [6, 1]]).double()
+    bb = beta_binomial_nll(a2[:, 0], a2[:, 1], k2[:, 1], k2.sum(1))
+    assert torch.allclose(dm_nll(a2.log(), k2), bb)
+    assert np.allclose(bb.numpy(), [-betabinom.logpmf(5, 7, 1.3, 0.7), -betabinom.logpmf(1, 7, 0.2, 5.0)])
+
+
+def test_dm_head_shares_one_concentration_and_marginals_are_beta_binomial():
+    import torch
+    from b2j import posthoc as P
+    from b2j.variants import build
+    k = torch.distributions.Multinomial(10, torch.ones(4)).sample((16,))
+    n = k.sum(1, keepdim=True).expand(-1, 4).contiguous()
+    head, loss = build("dm", 8, k, n)
+    out = head(torch.randn(16, 8)).detach()
+    assert out.shape == (16, 4, 2) and torch.equal(out[..., 1], out[:, :1, 1].expand(-1, 4))
+    m, S = P.mean_spread("dm", out.numpy())
+    assert np.allclose(m.sum(1), 1) and np.allclose(S, S[:, :1])
+    value = loss(out.requires_grad_(), k, n)                     # = batch mean of the per-image DM NLL
+    from b2j.losses import dm_nll
+    lm = torch.log_softmax(out[..., 0].double(), -1)
+    assert torch.allclose(value.double(), dm_nll(lm + out[:, 0, 1].double()[:, None], k.double()).mean(), atol=1e-5)
+    with pytest.raises(ValueError):                              # multi-label votes are refused
+        build("dm", 8, torch.ones(4, 3), torch.full((4, 3), 2.0))
+
+
+def test_soft_ce_and_joint_b2r_shapes():
+    import torch
+    from b2j.variants import build
+    k = torch.distributions.Multinomial(5, torch.ones(3)).sample((8,))
+    n = k.sum(1, keepdim=True).expand(-1, 3).contiguous()
+    h, l = build("soft_ce", 8, k, n)
+    assert h(torch.randn(8, 8)).shape == (8, 3, 1) and torch.isfinite(l(h(torch.randn(8, 8)), k, n))
+    h, l = build("b2r_joint", 8, k, n)
+    assert h(torch.randn(8, 8)).shape == (8, 3, 2) and sum(p.numel() for p in h.parameters()) == 8 * 256 + 256 + 256 * 6 + 6

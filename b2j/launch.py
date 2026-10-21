@@ -20,7 +20,7 @@ def gpu_preflight():
     if not torch.cuda.is_available():
         return
     from b2j.variants import VARIANTS, build
-    k = torch.tensor([[0.0, 1, 3], [2, 3, 1]] * 4).cuda()
+    k = torch.tensor([[0.0, 1, 2], [2, 1, 0]] * 4).cuda()     # Σ_c k_c = n: valid for the single-label variants too
     n = torch.full_like(k, 3.0)
     for name in VARIANTS:
         head, loss = build(name, 8, k.cpu(), n.cpu())

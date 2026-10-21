@@ -116,6 +116,24 @@ def beta_binomial_nll(a0, a1, k, n):
     return -(log_comb + ll)
 
 
+def dm_nll(log_alpha, k):
+    """Full Dirichlet-Multinomial NLL of the vote vector k [B, K] (n = Σ_c k_c) under Dirichlet(α), α = exp(log_alpha).
+
+    Finite products as in beta_binomial_nll: Π_c Π_{j<k_c}(α_c + j) / Π_{j<n}(S + j), S = Σ_c α_c; the multinomial
+    coefficient is computed on the CPU. Returns [B]. With K = 2 it equals the Beta-Binomial NLL.
+    """
+    n = k.sum(-1)
+    log_coef = _on_cpu(lambda n_, k_: torch.lgamma(n_ + 1) - torch.lgamma(k_ + 1).sum(-1), n, k)
+    a = torch.exp(log_alpha)
+    s = a.sum(-1)
+    ll = torch.zeros_like(s)
+    for j in range(int(k.max().item())):
+        ll = ll + torch.where(j < k, torch.log(a + j), 0.0).sum(-1)
+    for j in range(int(n.max().item())):
+        ll = ll - torch.where(j < n, torch.log(s + j), 0.0)
+    return -(log_coef + ll)
+
+
 def beta_kl(a0, a1, p0, p1):
     """KL( Beta(a1, a0) || Beta(p1, p0) ), analytic; evaluated on the CPU (lgamma/digamma, see _on_cpu)."""
     def kl(a0, a1, p0, p1):
@@ -136,7 +154,7 @@ def stuck_share(logits: torch.Tensor, k: torch.Tensor) -> torch.Tensor:
 # ---------------------------------------------------------------- the loss
 @dataclass
 class LossConfig:
-    kind: str                       # 'hard_bce' | 'soft_bce' | 'b2' | 'dup'
+    kind: str                       # 'hard_bce' | 'soft_bce' | 'b2' | 'dup' | 'dm' | 'soft_ce' (single-label data, D6)
     eps: float = 1e-3               # B² positivity; fallback 0.1 (R0 smoke test rule)
     plus_one: bool = False          # legacy B²-M only
     weighted: bool = False          # majority-vote per-sample weights w±
@@ -150,7 +168,7 @@ class LossConfig:
                                     #   Binomial NLL (= n × soft BCE + const) rescaled to the soft-BCE loss level
 
     def __post_init__(self):
-        if self.kind not in ("hard_bce", "soft_bce", "b2", "dup"):
+        if self.kind not in ("hard_bce", "soft_bce", "b2", "dup", "dm", "soft_ce"):
             raise ValueError(f"unknown loss kind {self.kind}")
         if self.kl_lambda and self.kind != "b2":
             raise ValueError("KL only applies to B² heads")
@@ -169,7 +187,7 @@ class LossConfig:
 
     @property
     def out_dim(self) -> int:
-        return 2 if self.kind == "b2" else 1
+        return 2 if self.kind in ("b2", "dm") else 1
 
 
 class PanelLoss(nn.Module):
@@ -191,6 +209,17 @@ class PanelLoss(nn.Module):
 
     def per_sample(self, out: torch.Tensor, k: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
         cfg = self.cfg
+        if cfg.kind in ("dm", "soft_ce"):
+            # single-label data: one joint prediction per image; its loss is spread evenly over the K columns so that
+            # forward() (batch mean, sum over heads) gives the batch-mean per-image loss
+            lm = out[..., 0].double().clamp(-LOGIT_M_BOUND, LOGIT_M_BOUND)
+            log_m = F.log_softmax(lm, -1)
+            if cfg.kind == "dm":
+                log_s = out[:, 0, 1].double().clamp(*LOG_S_BOUNDS)
+                loss = dm_nll(log_m + log_s[:, None], k.double())
+            else:
+                loss = -(k.double() / n.double() * log_m).sum(-1)
+            return (loss[:, None] / k.shape[1]).expand(-1, k.shape[1]).to(out.dtype)
         if cfg.kind == "b2":
             # float64: at large S the log terms differ by tiny amounts that float32 loses
             if cfg.param == "ms":

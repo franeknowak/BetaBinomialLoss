@@ -4,7 +4,7 @@ Post-hoc comparisons (Binomial plug-in, Global-S, soft-BCE ensemble) are not tra
 """
 from dataclasses import dataclass, replace
 
-from b2j.heads import MultiHead
+from b2j.heads import JointHead, MultiHead
 from b2j.losses import LossConfig, PanelLoss, class_weights, miccai_prior, moment_matched_prior
 
 KL_LAMBDA = 0.05
@@ -14,7 +14,7 @@ S_SHRINK = (0.03, 0.3, 3.0)         # round D, D2: every value is reported (dose
 @dataclass(frozen=True)
 class Variant:
     loss: LossConfig
-    head_type: str = "mlp"
+    head_type: str = "mlp"          # 'mlp' | 'linear' (one head per label) | 'joint' (one shared MLP, round D, D6)
     prior: str | None = None        # 'moment' (corrected KL) | 'miccai' (legacy B²-M)
     min_n: int = 1                  # DUP is only defined for n_train >= 3
 
@@ -34,6 +34,12 @@ VARIANTS = {
 }
 # D5: soft BCE weighted by the image's number of votes (= Binomial NLL): isolates B²'s weighting of images by n
 VARIANTS["soft_bce_n"] = Variant(LossConfig("soft_bce", n_weight=True))
+# D6: single-label data (CIFAR-10H, FER+): Dirichlet-Multinomial with one concentration per image, its soft-label
+# softmax comparator, and B²-r on the same shared MLP (merged heads)
+VARIANTS["dm"] = Variant(LossConfig("dm"), head_type="joint")
+VARIANTS["soft_ce"] = Variant(LossConfig("soft_ce"), head_type="joint")
+VARIANTS["b2r_joint"] = Variant(LossConfig("b2"), head_type="joint")
+SINGLE_LABEL = ("dm", "soft_ce")    # need mutually exclusive votes: Σ_c k_c = n for every image
 # D2 (2026-10-20, INVALID design: shrinks towards the across-image prior spread; kept to reproduce the record)
 VARIANTS.update({f"b2ms_shrink{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam), prior="moment")
                  for lam in S_SHRINK})
@@ -58,5 +64,10 @@ def build(name: str, in_dim: int, k_train, n_train, eps: float | None = None, dr
     weights = class_weights(k_train, n_train) if cfg.weighted else None
     prior = {None: None, "moment": moment_matched_prior, "miccai": miccai_prior}[variant.prior]
     prior = prior(k_train, n_train) if prior else None
-    head = MultiHead(in_dim, k_train.shape[1], cfg.out_dim, variant.head_type, dropout=dropout)
+    if cfg.kind in ("dm", "soft_ce") and not bool((k_train.sum(1) == n_train[:, 0]).all() and (n_train == n_train[:, :1]).all()):
+        raise ValueError(f"variant {name} needs single-label votes (Σ_c k_c = n per image)")
+    if variant.head_type == "joint":
+        head = JointHead(in_dim, k_train.shape[1], cfg.out_dim, shared_spread=cfg.kind == "dm", dropout=dropout)
+    else:
+        head = MultiHead(in_dim, k_train.shape[1], cfg.out_dim, variant.head_type, dropout=dropout)
     return head, PanelLoss(cfg, weights=weights, prior=prior)

@@ -14,6 +14,29 @@ def _head(in_dim, out_dim, head_type, hidden, dropout):
     raise ValueError(f"unknown head type {head_type}")
 
 
+class JointHead(nn.Module):
+    """One MLP for all K labels (round D, D6) -> [B, K, out_dim].
+
+    shared_spread=False: D -> 256 -> K·out_dim (e.g. B²-r's per-label alphas from a shared trunk).
+    shared_spread=True (Dirichlet-Multinomial): D -> 256 -> K + 1 = K class logits and one log concentration per
+    image, returned as [B, K, 2] with the log concentration repeated in [..., 1].
+    """
+
+    def __init__(self, in_dim: int, num_heads: int, out_dim: int, shared_spread: bool = False,
+                 hidden: int = 256, dropout: float = 0.1):
+        super().__init__()
+        if shared_spread and out_dim != 2:
+            raise ValueError("a shared spread needs out_dim 2")
+        self.K, self.out_dim, self.shared = num_heads, out_dim, shared_spread
+        self.net = _head(in_dim, num_heads + 1 if shared_spread else num_heads * out_dim, "mlp", hidden, dropout)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        o = self.net(z)
+        if self.shared:
+            return torch.stack([o[:, :self.K], o[:, self.K:].expand(-1, self.K)], -1)
+        return o.view(len(z), self.K, self.out_dim)
+
+
 class MultiHead(nn.Module):
     def __init__(self, in_dim: int, num_heads: int, out_dim: int,
                  head_type: str = "mlp", hidden: int = 256, dropout: float = 0.1):

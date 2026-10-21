@@ -14,7 +14,7 @@ from b2j import embed as E
 from b2j import posthoc as P
 from b2j import train as T
 from b2j.data import ImageSet, LabelTable
-from b2j.variants import VARIANTS
+from b2j.variants import SINGLE_LABEL, VARIANTS
 
 
 # ---------------------------------------------------------------- post-hoc
@@ -43,7 +43,8 @@ def test_spread_rules_and_eps():
     assert {v: P.spread_rule(v) for v in VARIANTS} == {
         "hard_bce": "global", "hard_bce_w": "global", "soft_bce": "global", "b2r": "c", "b2r_w": "c",
         "b2r_kl": "c", "b2m": "none", "b2r_linear": "c", "dup": "dup", "b2ms": "c", "b2ms_shrink0.03": "c", "b2ms_shrink0.3": "c", "b2ms_shrink3": "c",
-        "b2ms_var0.03": "c", "b2ms_var0.3": "c", "b2ms_var3": "c", "soft_bce_n": "global"}
+        "b2ms_var0.03": "c", "b2ms_var0.3": "c", "b2ms_var3": "c", "soft_bce_n": "global",
+            "dm": "c", "soft_ce": "global", "b2r_joint": "c"}
     out = np.full((1, 1, 2), -50.0)
     assert P.mean_spread("b2r", out)[1][0, 0] == pytest.approx(2e-3)
     assert P.mean_spread("b2r", out, eps=0.1)[1][0, 0] == pytest.approx(0.2)
@@ -53,11 +54,15 @@ def test_spread_rules_and_eps():
 
 
 # ---------------------------------------------------------------- trainer on synthetic embeddings
-def synthetic(N=600, D=16, K=2, n=3, seed=0):
+def synthetic(N=600, D=16, K=2, n=3, seed=0, single_label=False):
     rng = np.random.default_rng(seed)
     X = rng.normal(size=(N, D)).astype(np.float32)
     w = rng.normal(size=(D, K))
     m = 1 / (1 + np.exp(-(X @ w)))
+    if single_label:                                # each rater picks one of K classes (CIFAR-10H, FER+)
+        p = np.exp(X @ w) / np.exp(X @ w).sum(1, keepdims=True)
+        k = np.array([rng.multinomial(n, rng.dirichlet(pi * 3 + 1e-3)) for pi in p], dtype=np.float64)
+        return X, k, np.full_like(k, float(n))
     k = rng.binomial(n, rng.beta(m * 3, (1 - m) * 3)).astype(np.float64)
     return X, k, np.full_like(k, float(n))
 
@@ -72,7 +77,7 @@ def splits(N=600, **kw):
 
 @pytest.mark.parametrize("variant", list(VARIANTS))
 def test_every_variant_trains_and_writes(variant, tmp_path, capsys):
-    tr, va, te = splits()
+    tr, va, te = splits(single_label=variant in SINGLE_LABEL)
     s = T.run(T.TrainConfig(variant, epochs=4, lr=1e-2), tr, va, te, tmp_path, device="cpu")
     for c in "AB":
         for part, sp in (("val", va), ("test", te)):
