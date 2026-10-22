@@ -135,7 +135,19 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
 - **Change:** variant `dm`: one shared MLP (D → 256 → K + 1): K class logits (softmax mean vector) + one log concentration S per image; loss = exact Dirichlet-Multinomial NLL of the image's vote vector (finite products, as B²). Comparator `soft_ce`: same shared MLP, K logits, soft-label softmax cross-entropy (target k/n) + Global-S. Architecture control `b2r_joint`: B²-r one-vs-rest likelihood on the same shared MLP (2K outputs) — answers the user's "merge the heads" question separately from the likelihood. Evaluation unchanged: a DM's marginal for class c is exactly Beta-Binomial(n, m_c S, (1 − m_c) S), so every per-class metric applies; the spread step (one scale per class) as for B².
 - **Runs:** block `d6`: soft BCE, B²-r, `b2r_joint`, `soft_ce`, `dm` on CIFAR-10H and FER+ × 5 seeds (50 runs). Lr / wd: `soft_ce` from soft BCE, `dm` and `b2r_joint` from B²-r (no new tuning: a quick test).
 - **Expected:** DM ≥ B²-r on vote NLL and split AP on both datasets if pooling all votes into one concentration helps; `b2r_joint` ≈ B²-r if merging heads is irrelevant (my prediction). `soft_ce` vs soft BCE shows what the softmax constraint alone does. **Decision rule:** continue only if DM beats B²-r on vote NLL or split AP on both datasets; else supplement as tried and dropped.
-- **Outcome:** (pending)
+- **Outcome (2026-10-22; jobs 7575109 + 7575110, 50/50 runs ok; validation, mean ± sd over 5 seeds; `results/journal/d6/tables_val/`):**
+
+  | | CIFAR-10H vote NLL | CIFAR-10H split AP | FER+ vote NLL | FER+ split AP | FER+ mAP |
+  |---|---|---|---|---|---|
+  | soft BCE (Global-S) | 0.0120 | 0.196 | 0.6856 | 0.425 | 0.758 |
+  | B²-r | 0.0108 | 0.200 | 0.6761 | 0.430 | **0.768** |
+  | Dirichlet-Multinomial | 0.0108 | 0.198 | 0.6754 ± 0.0017 | 0.433 ± 0.004 | 0.734 |
+  | soft-label softmax CE (Global-S) | 0.0118 | 0.193 | 0.6718 | 0.435 | 0.756 |
+  | B²-r, shared head | 0.0109 | 0.201 | **0.6672** | 0.435 | 0.744 |
+
+  - **Decision rule: FAILED → DM dropped (supplement: tried and dropped).** On CIFAR-10H, DM ties B²-r on vote NLL and is lower on split AP. On FER+ the differences (−0.0007 NLL, +0.004 split AP) are within one seed sd. DM's FER+ mAP is the lowest of all (0.734).
+  - **Unexpected (FER+):** merely switching soft BCE to a shared softmax head with soft-label CE (+ Global-S) lowers vote NLL by 2.0%, more than B²-r's 1.4% over soft BCE. On the same shared head, B²-r beats soft CE by only 0.7% (0.6672 vs 0.6718), and DM is worse than soft CE (0.6754). So on FER+ most of B²'s panel advantage over per-label soft BCE is also available from a better model of the mean. B²-r's mAP gain (0.768, highest single model) is not reproduced by any shared-head variant: the shared head costs 0.01–0.03 mAP. My prediction "shared head ≈ B²-r" held on CIFAR-10H, not on FER+.
+  - Caveat: `dm`, `soft_ce`, `b2r_joint` used borrowed lr/wd (no tuning). Validation only.
 
 ## D7 — synthetic study: when does B² beat soft BCE, on the mean and on the spread? (planned 2026-10-21, before any run)
 - **Aim:** a world with known truth, to map the regimes the checkpoint theory describes, and to test the user's few-votes hypothesis where the hidden mean is known exactly.
@@ -150,7 +162,13 @@ Training-subset curves (tune2): B²-r validation NLL bottoms out early (CIFAR-10
   - S4 misspecification at n = 3: Beta, logit-normal, biased fixed raters.
   Models: soft BCE, B²-r (+ `soft_bce_n` in S3). ≈ 300 CPU runs (array job).
 - **Predictions (from the checkpoint theory):** no mean gain at fixed n with γ = 0; a mean gain only with variable n or (γ > 0, many images, moderate n); the spread learnable (Spearman > 0) only at moderate-to-large n with many images; with biased raters the learned spread tracks rater bias, not images. If B² improves the mean at n = 3 and fixed n with γ = 0, the theory is wrong.
-- **Outcome:** (pending)
+- **Outcome (2026-10-22; job 7575104, 445/445 runs ok, + report 7575105; `results/journal/synth/synth_report.md`; scored against the known truth, 5 seeds):**
+  - **Mean (MSE to μ):** no reliable B² gain in any world. Per-setting Δ is ≤ about 1 sd and seeds split 3/5 or 4/5 in most rows. At checkpoint B every fixed-n γ = 0 row has a positive Δ (B²-r 0.3–0.5 × 10⁻³ closer, ≈ 5% of MSE). But B²-r with 20–50 votes also beats the 200-vote soft-BCE reference (share recovered > 100%), so this looks like a training-dynamics difference between the losses, not information from the votes. Prediction "no mean gain at fixed n, γ = 0": held in size, with that small systematic sign. Prediction "mean gain with variable n": not supported (S3: soft BCE vote-weighted ≈ soft BCE; B² Δ inconsistent). The user's few-votes hypothesis is not supported here either (as D5a on real data).
+  - **Spread:** learnable from few votes when it really varies. Spearman(S, true clarity) is 0.66 at n = 3, rising to 0.82 at n = 50 (6,000 images); 0.47 with 1,500 images; ≈ 0 when γ = 0, as it should be. Prediction "only at moderate-to-large n" WRONG: 3 votes per image suffice in this world.
+  - **Panel prediction (excess vote NLL over the oracle, Global-S → B²-r), when spread varies (γ > 0):** a large gain that grows with the size of the panel predicted. Trained on 3 votes: 0.050 → 0.043 (3-vote panels), 0.118 → 0.087 (10), 0.225 → 0.154 (50 votes, −31%). Trained on 50 votes: 0.211 → 0.115 on 50-vote panels (−45%). It holds under misspecification (logit-normal world, n = 3: 0.177 → 0.108 at 3 votes; 0.575 → 0.320 at 50). When the spread is constant (γ = 0), B²-r pays a small price for estimating an unnecessary spread (50-vote panels: 0.0975 vs 0.1019).
+  - **Discrimination:** AUROC equal everywhere (±0.002).
+  - **Biased-rater world:** not informative as designed. The same 3 raters label every image, so rater bias is constant across images and cannot drive per-image spread. The spread still tracks clarity (0.61). The design should have used rater panels that differ by image.
+  - **Reading:** B² is a model of the spread, not a better estimator of the mean. Its benefit appears in panel prediction exactly when the per-image spread varies and is predictable from the features, and it is largest when predicting larger panels than were trained on. That matches the real-data D0b split: informative spread on CIFAR-10H and MHIST, noise on Endoscapes and AMi-Br. The synthetic result says 3 votes are enough in principle, so Endoscapes' null more likely means its spread does not vary predictably (or is rater-driven) than that 3 votes are too few. Caveat: a clean 16-dim world; real features carry the spread less cleanly.
 
 ## Candidate iterations (to be fixed after D0)
 
