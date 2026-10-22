@@ -11,6 +11,11 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 - **7550711 `tune2`**: tuning grid rerun (54 runs) + `pilot choose` → `tune/chosen.json`, `tune_report.md`, `tune/curves_<ds>.png`.
 - **7550712 `r1`** (array 1–4, `-hold_jid 7550711`): block `r1`, 280 frozen runs → `results/journal/r1/`. Logs `jobs/logs/`.
 
+## Current step (2026-10-22): D8 B²-rba running
+User approved rater-aware B² ("B²-rba", revised bias adjusted) and asked to code + run it. Plan: iterations.md D8 (2 × 2 soft BCE / B²-r / soft BCE-ba / B²-rba; endpoints P1–P3; decision rule). Code commit 16d19ea (losses.rater_loglik quadrature, heads.RaterOffsets, posthoc.ordered_nll / rater_count_pmf / fit_scale_rater, train votes + β own lr 1e-2 no wd, pilot tune_ba/choose_ba, blocks tune_ba/d8, b2j/d8.py report, synth rater models). 178 tests pass.
+Jobs (cluster at 16d19ea): **7589954 d8tune** (array 1–4, 24 runs) → **7589955 d8choose** → **7589956 d8** (array 1–4, 40 runs) → **7589957 d8an** (report `results/journal/d8/tables_val/d8_report.md`); **7589958 synth** (array 1–30; only the 30 new rater-model runs train) → **7589959 synthrep**.
+**Next:** when done, pull `results/journal/d8/tables_val/` + `results/journal/tune_ba/tune_report.md` + `results/journal/synth/synth_report.md`; fill the D8 outcome (apply the decision rule) and the D7 rater-world rows.
+
 ## Exact next action (2026-10-20, round D)
 **User direction after R1:** gains are significant but too small to matter; make B² *useful*. Endoscapes may stay flat. New datasets allowed. **Rules (user, 2026-10-19): datasets are downloaded and training runs ON THE CLUSTER ONLY; draft code locally; packages on the Mac are fine. If an ssh call fails or the connection drops, do NOT retry/reconnect — stop and tell the user. Do NOT unpack FER+ or Galaxy Zoo (file limit; user asked support) — images are read inside zips (`data.open_image`).**
 Done 2026-10-19/20: AMi-Br downloaded + checked + cached; block `d_base` (job 7559187, AMi-Br tune + 45 runs + validation analysis; pulled to `results/journal/d_base/`); D0 complete incl. corrected ceiling (job 7559168) → outcome and D1+D2 entry in `iterations.md`; FER+ loader + in-zip reading; λ-grid variants `b2ms_shrink{0.03,0.3,3}`, block `d12` (120 runs), diag for every B² variant.
