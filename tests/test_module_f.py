@@ -216,3 +216,17 @@ def test_preflight_votes_give_finite_loss_for_every_variant():
         value = loss(head(torch.randn(len(k), 8)), k, n, v)
         value.backward()
         assert torch.isfinite(value), name
+
+
+def test_main_runs_takes_the_block_regime(tmp_path):
+    from dataclasses import asdict
+    from b2j import analysis as A
+    for regime, block in (("finetune", "ft"), ("frozen", "mix"), ("finetune", "mix")):
+        spec = R.RunSpec("endoscapes", "b2r", regime=regime, block=block)
+        d = spec.out_dir(tmp_path)
+        d.mkdir(parents=True)
+        (d / "spec.json").write_text(json.dumps(asdict(spec)))
+        (d / "summary.json").write_text("{}")
+    assert len(A.main_runs("ft", "endoscapes", tmp_path)["b2r"]) == 1                      # R2: fine-tuned only
+    assert "finetune" not in str(A.main_runs("mix", "endoscapes", tmp_path)["b2r"][0])   # mixed: frozen, as before
+    assert "finetune" in str(A.main_runs("mix", "endoscapes", tmp_path, "finetune")["b2r"][0])

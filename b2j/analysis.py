@@ -24,6 +24,7 @@ from b2j import posthoc as P
 from b2j import stats as St
 from b2j.data import DATA_ROOT, load_table
 from b2j.runs import RESULTS
+from b2j.variants import VARIANTS
 
 COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"]  # fixed order
 LABEL = {"hard_bce": "hard BCE", "hard_bce_w": "hard BCE-w", "soft_bce": "soft BCE (Global-S)", "b2r": "B²-r",
@@ -54,11 +55,15 @@ def boot_strata(dataset, tab):
     return None
 
 
-def main_runs(block, dataset, root=RESULTS, regime="frozen"):
-    """{variant: [run dirs over seeds]} for the main configuration (full panel, all training rows)."""
+def main_runs(block, dataset, root=RESULTS, regime=None):
+    """{variant: [run dirs over seeds]} for the main configuration (full panel, all training rows).
+
+    regime=None: the block's own regime (frozen if the block holds both), so R1 and R2 blocks need no flag."""
+    specs = [(f, json.loads(f.read_text())) for f in sorted((Path(root) / block / dataset).glob("*/spec.json"))]
+    if regime is None:
+        regime = "finetune" if {s["regime"] for _, s in specs} == {"finetune"} else "frozen"
     out = {}
-    for f in sorted((Path(root) / block / dataset).glob("*/spec.json")):
-        s = json.loads(f.read_text())
+    for f, s in specs:
         if (s["regime"] == regime and s["n_sub"] is None and s.get("part", "all") == "all"
                 and s.get("train_frac", 1.0) == 1.0 and not s["val_full_panel"]
                 and (f.parent / "summary.json").exists()):
@@ -143,6 +148,8 @@ def collect(block, dataset, split="val", root=RESULTS, open_test=False):
     per_vote = dataset == "cifar10h"
     recs = []
     runs = main_runs(block, dataset, root)
+    # rater-aware variants (soft BCE-ba, B²-rba) need β for their count pmf: scored by b2j.d8, not here
+    runs = {v: dirs for v, dirs in runs.items() if not VARIANTS[v].loss.rater}
     for variant, dirs in runs.items():
         for seed, d in enumerate(dirs):
             for name, p in run_rows(variant, d, split, ev, val).items():

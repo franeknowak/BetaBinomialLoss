@@ -112,6 +112,9 @@ def contrasts(runs, val, B=St.B_DEFAULT):
     if {"soft_bce", "soft_bce_ba"} <= set(runs):
         add("ordered NLL/vote: soft BCE-ba − soft BCE", "onll", g("soft_bce", "soft_bce_ba"),
             lambda x: x["soft_bce_ba"] - x["soft_bce"], -1)
+    if {"soft_bce", "b2rba"} <= set(runs):              # §5 B²-final F5 (fine-tuned), also shown frozen
+        add("count NLL/vote advantage: soft BCE (Global-S) − B²-rba", "cnll", g("soft_bce", "b2rba"),
+            lambda x: x["soft_bce"] - x["b2rba"], +1)
     if set(D8) <= set(runs):
         add("P3 interaction: (soft BCE-ba − B²-rba) − (soft BCE − B²-r), ordered NLL/vote", "onll", g(*D8),
             lambda x: (x["soft_bce_ba"] - x["b2rba"]) - (x["soft_bce"] - x["b2r"]), +1)
