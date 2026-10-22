@@ -140,9 +140,10 @@ def test_every_variant_trains_one_step(variant):
     k, n = _votes(N=32, K=3, n=3)
     if variant in SINGLE_LABEL:
         k = torch.distributions.Multinomial(3, torch.ones(3)).sample((32,))
-    head, loss = build(variant, 768, k, n)
+    v = (torch.arange(3.0)[None, :, None] < k[:, None, :]).float()     # ordered votes consistent with k (D8)
+    head, loss = build(variant, 768, k, n, n_raters=3)
     opt = torch.optim.SGD(head.parameters(), lr=1e-2)
-    value = loss(head(torch.randn(32, 768)), k, n)
+    value = loss(head(torch.randn(32, 768)), k, n, v)
     value.backward()
     opt.step()
     assert torch.isfinite(value)

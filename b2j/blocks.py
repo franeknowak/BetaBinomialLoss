@@ -104,4 +104,23 @@ def d6(root=None):
     return [RunSpec(ds, v, seed=s, block="d6", **hyper(ds, v, **kw)) for ds in D6_DATASETS for v in D6 for s in SEEDS]
 
 
-BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12, "d5": d5, "d6": d6}
+def tune_ba():
+    from b2j.pilot import tune_ba_specs
+    return tune_ba_specs()
+
+
+D8 = ("soft_bce", "b2r", "soft_bce_ba", "b2rba")
+D8_DATASETS = ("endoscapes", "amibr")   # the same 3 raters label every image, rater of each vote known
+
+
+def d8(root=None):
+    """Round D, D8 (journal_plan/iterations.md): the 2 × 2 {rater bias no / yes} × {per-image spread no / yes} = soft
+    BCE, B²-r, soft BCE-ba, B²-rba on the datasets with rater identities; frozen, full panels, 5 seeds (40 runs).
+    B²-rba / soft BCE-ba lr and wd from block tune_ba."""
+    from b2j.pilot import hyper
+    kw = {} if root is None else {"root": root}
+    return [RunSpec(ds, v, seed=s, block="d8", **hyper(ds, v, **kw)) for ds in D8_DATASETS for v in D8 for s in SEEDS]
+
+
+BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12, "d5": d5, "d6": d6,
+          "tune_ba": tune_ba, "d8": d8}

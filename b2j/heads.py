@@ -45,3 +45,22 @@ class MultiHead(nn.Module):
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         return torch.stack([h(z) for h in self.heads], dim=1)
+
+
+class RaterOffsets(nn.Module):
+    """Round D, D8: a head plus one learned bias per rater and label, β [K, R], centred over the raters so the panel
+    average is the 'typical rater'. Output [B, K, d + R]: the head's d outputs, then β repeated on every row (so the
+    saved predictions carry β and the loss sees it without a second argument)."""
+
+    def __init__(self, head: nn.Module, num_heads: int, num_raters: int):
+        super().__init__()
+        self.head = head
+        self.bias = nn.Parameter(torch.zeros(num_heads, num_raters))
+
+    def beta(self) -> torch.Tensor:
+        return self.bias - self.bias.mean(1, keepdim=True)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        o = self.head(z)
+        return torch.cat([o, self.beta().to(o.dtype)[None].expand(len(z), -1, -1)], -1)
+

@@ -1,7 +1,9 @@
 """Module b: label tables (exact per-sample k, n), vote subsampling, ambiguous subset, image datasets.
 
 A LabelTable holds one row per image: k, n as float arrays [N, K], plus a cluster id
-(bootstrap resampling unit), the split and the image path. See journal_plan/specs/b_loaders.md.
+(bootstrap resampling unit), the split and the image path; where the rater of each vote is known (Endoscapes,
+AMi-Br: the same 3 raters for every image) also the votes themselves [N, R, K] (round D, D8).
+See journal_plan/specs/b_loaders.md.
 """
 import json
 from dataclasses import dataclass
@@ -23,10 +25,11 @@ class LabelTable:
     split: np.ndarray      # [N] 'train' | 'val' | 'test'
     paths: np.ndarray      # [N] image path
     counts: np.ndarray | None = None   # [N, C] raw category counts (CIFAR-10H) for joint subsampling
+    votes: np.ndarray | None = None    # [N, R, K] each rater's 0/1 vote (NaN = rater did not vote); k = Σ_r votes
 
     def subset(self, mask):
         return LabelTable(*(None if v is None else v[mask] for v in
-                            (self.ids, self.k, self.n, self.cluster, self.split, self.paths, self.counts)))
+                            (self.ids, self.k, self.n, self.cluster, self.split, self.paths, self.counts, self.votes)))
 
     def take(self, split):
         return self.subset(self.split == split)
@@ -47,7 +50,8 @@ def endoscapes_labels(root) -> LabelTable:
         split[(d["vid"] >= lo) & (d["vid"] <= hi)] = s
     ids = (d["vid"].astype(str) + "_" + d["frame"].astype(str)).values.astype(str)   # str, not object: np.load needs no pickle
     paths = np.array([str(root / s / f"{i}.jpg") for s, i in zip(split, ids)])
-    return LabelTable(ids, k, np.full_like(k, 3.0), d["vid"].values, split.astype(str), paths)
+    return LabelTable(ids, k, np.full_like(k, 3.0), d["vid"].values, split.astype(str), paths,
+                      votes=votes.astype(np.float64))
 
 
 # ---------------------------------------------------------------- CIFAR-10H
@@ -120,7 +124,8 @@ def amibr_labels(root, seed=0) -> LabelTable:
     """
     root = Path(root)
     d = pd.read_csv(root / "AMI-BR.csv", index_col=0)
-    k = d[list(AMIBR_RATERS)].astype(bool).sum(1).values[:, None].astype(np.float64)
+    votes = d[list(AMIBR_RATERS)].astype(bool).values[:, :, None].astype(np.float64)   # [N, 3 experts, 1]
+    k = votes.sum(1)
     if ((k >= 2)[:, 0] != d["majority_atypical"].astype(bool).values).any():
         raise ValueError("expert votes disagree with majority_atypical")
     slide = (d["dataset"] + "/" + d["slide"].astype(str)).values.astype(str)
@@ -130,7 +135,7 @@ def amibr_labels(root, seed=0) -> LabelTable:
         raise ValueError("duplicate (dataset, uid) ids")
     folder = np.where(d["majority_atypical"].astype(bool).values, "atypical", "normal")
     paths = np.array([str(root / "patches" / f / f"{i}.png") for f, i in zip(folder, ids)])
-    return LabelTable(ids, k, np.full_like(k, 3.0), slide, split, paths)
+    return LabelTable(ids, k, np.full_like(k, 3.0), slide, split, paths, votes=votes)
 
 
 # ---------------------------------------------------------------- FER+
@@ -187,6 +192,7 @@ def subsample(table: LabelTable, n_sub: int, seed: int) -> LabelTable:
         counts = None
         k = rng.hypergeometric(table.k.astype(np.int64), (table.n - table.k).astype(np.int64), n_sub).astype(np.float64)
     return LabelTable(table.ids, k, np.full_like(k, float(n_sub)), table.cluster, table.split, table.paths, counts)
+    # votes are dropped: which raters were drawn is not tracked
 
 
 def ambiguous_mask(table: LabelTable, threshold=0.9) -> np.ndarray:

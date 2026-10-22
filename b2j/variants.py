@@ -4,7 +4,7 @@ Post-hoc comparisons (Binomial plug-in, Global-S, soft-BCE ensemble) are not tra
 """
 from dataclasses import dataclass, replace
 
-from b2j.heads import JointHead, MultiHead
+from b2j.heads import JointHead, MultiHead, RaterOffsets
 from b2j.losses import LossConfig, PanelLoss, class_weights, miccai_prior, moment_matched_prior
 
 KL_LAMBDA = 0.05
@@ -47,11 +47,18 @@ VARIANTS.update({f"b2ms_shrink{lam:g}": Variant(LossConfig("b2", param="ms", s_s
 VARIANTS.update({f"b2ms_var{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam, s_shrink_target="batch"))
                  for lam in S_SHRINK})
 
+# D8: rater bias adjustment (needs the rater of each vote: Endoscapes, AMi-Br). B²-rba = B²-r + one bias per rater;
+# soft BCE-ba = soft BCE + one bias per rater (no per-image spread): with soft BCE and B²-r a 2 × 2
+VARIANTS["b2rba"] = Variant(LossConfig("b2", rater=True))
+VARIANTS["soft_bce_ba"] = Variant(LossConfig("soft_bce", rater=True))
+
 MAIN = ("hard_bce", "hard_bce_w", "soft_bce", "b2r", "b2r_w", "b2r_kl", "b2m", "b2r_linear", "dup")   # R0-R2 set
 
 
-def build(name: str, in_dim: int, k_train, n_train, eps: float | None = None, dropout: float = 0.1):
+def build(name: str, in_dim: int, k_train, n_train, eps: float | None = None, dropout: float = 0.1,
+          n_raters: int | None = None):
     """Head and loss for one variant. k_train, n_train: [N, K] training labels (weights and priors come from them).
+    n_raters: the panel size R, required by the rater-aware variants (D8).
 
     eps overrides the B²-r positivity constant (the R0 fallback); it never touches B²-M.
     """
@@ -70,4 +77,8 @@ def build(name: str, in_dim: int, k_train, n_train, eps: float | None = None, dr
         head = JointHead(in_dim, k_train.shape[1], cfg.out_dim, shared_spread=cfg.kind == "dm", dropout=dropout)
     else:
         head = MultiHead(in_dim, k_train.shape[1], cfg.out_dim, variant.head_type, dropout=dropout)
+    if cfg.rater:
+        if not n_raters:
+            raise ValueError(f"variant {name} needs n_raters (votes with rater identities)")
+        head = RaterOffsets(head, k_train.shape[1], n_raters)
     return head, PanelLoss(cfg, weights=weights, prior=prior)

@@ -44,7 +44,7 @@ def test_spread_rules_and_eps():
         "hard_bce": "global", "hard_bce_w": "global", "soft_bce": "global", "b2r": "c", "b2r_w": "c",
         "b2r_kl": "c", "b2m": "none", "b2r_linear": "c", "dup": "dup", "b2ms": "c", "b2ms_shrink0.03": "c", "b2ms_shrink0.3": "c", "b2ms_shrink3": "c",
         "b2ms_var0.03": "c", "b2ms_var0.3": "c", "b2ms_var3": "c", "soft_bce_n": "global",
-            "dm": "c", "soft_ce": "global", "b2r_joint": "c"}
+            "dm": "c", "soft_ce": "global", "b2r_joint": "c", "b2rba": "c", "soft_bce_ba": "global"}
     out = np.full((1, 1, 2), -50.0)
     assert P.mean_spread("b2r", out)[1][0, 0] == pytest.approx(2e-3)
     assert P.mean_spread("b2r", out, eps=0.1)[1][0, 0] == pytest.approx(0.2)
@@ -71,7 +71,8 @@ def splits(N=600, **kw):
     X, k, n = synthetic(N, **kw)
     ids = np.array([f"i{i}" for i in range(N)])
     a, b = int(0.6 * N), int(0.8 * N)
-    return (T.Split(X[:a], ids[:a], k[:a], n[:a]), T.Split(X[a:b], ids[a:b], k[a:b], n[a:b]),
+    v = (np.arange(n.max())[None, :, None] < k[:, None, :]).astype(float)     # ordered votes (rater r: yes iff r < k)
+    return (T.Split(X[:a], ids[:a], k[:a], n[:a], v[:a]), T.Split(X[a:b], ids[a:b], k[a:b], n[a:b], v[a:b]),
             T.Split(X[b:], ids[b:]))
 
 
@@ -82,7 +83,8 @@ def test_every_variant_trains_and_writes(variant, tmp_path, capsys):
     for c in "AB":
         for part, sp in (("val", va), ("test", te)):
             z = np.load(tmp_path / f"{part}_{c}.npz")
-            assert z["out"].shape == (len(sp.ids), 2, VARIANTS[variant].loss.out_dim) and (z["ids"] == sp.ids).all()
+            extra = 3 if VARIANTS[variant].loss.rater else 0                     # D8: the rater biases
+            assert z["out"].shape == (len(sp.ids), 2, VARIANTS[variant].loss.out_dim + extra) and (z["ids"] == sp.ids).all()
             assert np.isfinite(z["out"]).all()
         assert (tmp_path / f"head_{c}.pt").exists()
         assert 0 <= s[c]["eval"] < 16 and 0 < s[c]["epoch"] <= 4

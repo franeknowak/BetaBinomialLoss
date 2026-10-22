@@ -12,7 +12,7 @@ def test_world_is_reproducible_and_beta_marginal_matches():
     assert all(np.array_equal(a[2][k], b[2][k]) for k in ("z", "k", "theta"))
     assert not np.array_equal(Y.draw_split(s, 1)[2]["k"], a[2]["k"])
     _, _, ev = a
-    nu, panels, oracle = Y.truths(s, ev, 0)
+    nu, panels, oracle, _ = Y.truths(s, ev, 0)
     assert np.allclose(nu, ev["mu"]) and set(panels) == set(Y.N_EVAL_PANELS)
     k = panels[10]                                   # beta world: the oracle is the exact Beta-Binomial
     assert np.allclose(oracle[10], P.vote_nll(ev["mu"], ev["S"], k, np.full_like(k, 10)))
@@ -30,7 +30,7 @@ def test_raters_world_poisson_binomial_and_panels():
     s = Y.Setting("r", world="raters")
     x = Y.sample(s, 50, np.random.default_rng(0))
     assert (x["n"] == 3).all() and set(np.unique(x["k"])) <= {0, 1, 2, 3}
-    nu, panels, oracle = Y.truths(s, x, 0)
+    nu, panels, oracle, ordered = Y.truths(s, x, 0)
     assert set(panels) == set(Y.RATER_PANELS) and all(np.isfinite(o).all() for o in oracle.values())
     assert panels[10].max() <= 10
     sf = Y.Setting("f", world="raters_fixed")

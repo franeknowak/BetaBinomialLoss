@@ -36,6 +36,9 @@ from b2j.losses import STUCK_LOGIT, split_target
 from b2j.variants import VARIANTS, build
 
 
+BETA_LR = 1e-2                        # D8: Adam step size of the rater biases (logit units), not tuned
+
+
 @dataclass
 class TrainConfig:
     variant: str
@@ -68,11 +71,13 @@ class Split:
     ids: np.ndarray
     k: np.ndarray | None = None     # [N, K]; None for test
     n: np.ndarray | None = None
+    v: np.ndarray | None = None     # [N, R, K] ordered votes (rater-aware variants, D8); None for test
 
 
 def split_from_table(table: LabelTable, x, labelled=True) -> Split:
-    """Split for one partition; labelled=False drops k and n (use for test)."""
-    return Split(x, table.ids, table.k if labelled else None, table.n if labelled else None)
+    """Split for one partition; labelled=False drops k, n and the votes (use for test)."""
+    return Split(x, table.ids, table.k if labelled else None, table.n if labelled else None,
+                 table.votes if labelled else None)
 
 
 class Model(nn.Module):
@@ -118,24 +123,28 @@ def predict(model, split: Split, device, batch_size=1024, num_workers=4) -> np.n
 
 
 # ---------------------------------------------------------------- validation scoring
-def score_split(name, out, k, n, scale, eps=None, prefix="val") -> dict:
-    """mAP of m against the majority vote and vote NLL per vote with a given spread scale (DUP: its BCE)."""
+def score_split(name, out, k, n, scale, eps=None, prefix="val", v=None) -> dict:
+    """mAP of m against the majority vote and vote NLL per vote with a given spread scale (DUP: its BCE).
+    Rater-aware variants (D8): NLL of the ordered votes v with their learned rater biases."""
     if posthoc.spread_rule(name) == "dup":
         t = split_target(torch.as_tensor(k), torch.as_tensor(n)).numpy()
         p = np.clip(expit(out[..., 0].astype(np.float64)), 1e-12, 1 - 1e-12)
         return {f"{prefix}_dup_bce": float(-(t * np.log(p) + (1 - t) * np.log1p(-p)).mean())}
     m, S = posthoc.panel(name, out, scale, eps)
-    nll = float((posthoc.vote_nll(m, S, k, n) / n).mean())
+    if VARIANTS[name].loss.rater:
+        nll = float((posthoc.ordered_nll(m, S, posthoc.rater_offsets(name, out), v) / n).mean())
+    else:
+        nll = float((posthoc.vote_nll(m, S, k, n) / n).mean())
     y = 2 * k > n
     aps = [average_precision_score(y[:, j], m[:, j]) for j in range(y.shape[1]) if 0 < y[:, j].sum() < len(y)]
     return {f"{prefix}_map": float(np.mean(aps)) if aps else float("nan"), f"{prefix}_nll_per_vote": nll,
             f"{prefix}_median_S": np.median(S, 0).tolist()}
 
 
-def score_val(name, out, k, n, eps=None) -> dict:
+def score_val(name, out, k, n, eps=None, v=None) -> dict:
     """Validation selection quantities for one evaluation. Uses validation labels only."""
-    scale = posthoc.fit_spread(name, out, k, n, eps)
-    sc = score_split(name, out, k, n, scale, eps)
+    scale = posthoc.fit_spread(name, out, k, n, eps, v)
+    sc = score_split(name, out, k, n, scale, eps, v=v)
     if posthoc.spread_rule(name) == "dup":
         return {**sc, "sel_A": -sc["val_dup_bce"], "sel_B": sc["val_dup_bce"], "scale": None}
     return {**sc, "sel_A": sc["val_map"], "sel_B": sc["val_nll_per_vote"],
@@ -147,7 +156,7 @@ def train_probe(train: "Split", n_val: int, seed: int) -> "Split":
     N = len(train.ids)
     idx = np.sort(np.random.default_rng(10_000 + seed).permutation(N)[: min(N, n_val)])
     x = train.x.subset(idx) if isinstance(train.x, ImageSet) else train.x[idx]
-    return Split(x, train.ids[idx], train.k[idx], train.n[idx])
+    return Split(x, train.ids[idx], train.k[idx], train.n[idx], None if train.v is None else train.v[idx])
 
 
 def _lr_lambda(warmup_steps, total_steps):
@@ -183,17 +192,28 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
     gen = torch.Generator().manual_seed(cfg.seed)
 
     if not finetune:   # embeddings live on the device for the whole run
-        train, val, test = (Split(torch.as_tensor(np.asarray(s.x), dtype=torch.float32, device=device), s.ids, s.k, s.n)
-                            for s in (train, val, test))
+        train, val, test = (Split(torch.as_tensor(np.asarray(s.x), dtype=torch.float32, device=device), s.ids, s.k, s.n,
+                                  s.v) for s in (train, val, test))
     probe = train_probe(train, len(val.ids), cfg.seed)
     in_dim = encoder.num_features if finetune else train.x.shape[1]
     k_tr, n_tr = torch.as_tensor(train.k, dtype=torch.float32), torch.as_tensor(train.n, dtype=torch.float32)
-    head, loss_fn = build(cfg.variant, in_dim, k_tr, n_tr, eps=cfg.eps)
+    rater = VARIANTS[cfg.variant].loss.rater
+    if rater and (train.v is None or val.v is None):
+        raise ValueError(f"{cfg.variant} needs the ordered votes (Split.v) for training and validation")
+    head, loss_fn = build(cfg.variant, in_dim, k_tr, n_tr, eps=cfg.eps, n_raters=train.v.shape[1] if rater else None)
+    v_tr = torch.as_tensor(train.v, dtype=torch.float32, device=device) if rater else None
     model = Model(head, encoder, cfg.amp).to(device)
     loss_fn = loss_fn.to(device)
     k_tr, n_tr = k_tr.to(device), n_tr.to(device)
 
-    groups = [{"params": model.head.parameters(), "lr": cfg.lr}]
+    if rater:
+        # D8: the rater biases are logit-scale intercepts (order 1), not network weights: their own Adam step size
+        # (Adam moves a parameter by ≈ lr per step) and no weight decay (decay would assume the raters identical)
+        head_params = [p for n_, p in model.head.named_parameters() if n_ != "bias"]
+        groups = [{"params": head_params, "lr": cfg.lr},
+                  {"params": [model.head.bias], "lr": BETA_LR, "weight_decay": 0.0}]
+    else:
+        groups = [{"params": model.head.parameters(), "lr": cfg.lr}]
     if finetune:
         groups.append({"params": model.encoder.parameters(), "lr": cfg.encoder_lr})
     opt = torch.optim.AdamW(groups, weight_decay=cfg.wd)
@@ -230,7 +250,7 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
             idx_t = torch.as_tensor(idx, device=device)
             kb, nb = k_tr[idx_t], n_tr[idx_t]
             out = model(x)
-            loss = loss_fn(out, kb, nb)
+            loss = loss_fn(out, kb, nb, None if v_tr is None else v_tr[idx_t])
             opt.zero_grad(set_to_none=True)
             if not torch.isfinite(loss):
                 nonfinite += 1
@@ -250,10 +270,10 @@ def run(cfg: TrainConfig, train: Split, val: Split, test: Split, out_dir, encode
             # ---- evaluation (validation only)
             t = len(hist)
             val_out = predict(model, val, device, num_workers=cfg.num_workers)
-            sc = score_val(cfg.variant, val_out, val.k, val.n, cfg.eps)
+            sc = score_val(cfg.variant, val_out, val.k, val.n, cfg.eps, val.v)
             scale = None if sc["scale"] is None else np.asarray(sc["scale"])
             tr = score_split(cfg.variant, predict(model, probe, device, num_workers=cfg.num_workers), probe.k, probe.n,
-                             scale, cfg.eps, prefix="train")
+                             scale, cfg.eps, prefix="train", v=probe.v)
             rec = {"eval": t, "epoch": round(epoch + b / steps_per_epoch, 3), "train_loss": loss_sum / max(n_steps, 1),
                    "nonfinite_steps": nonfinite, "lr": sched.get_last_lr()[0], **_jsonable(sc), **tr}
             if is_b2:

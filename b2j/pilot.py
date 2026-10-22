@@ -20,13 +20,16 @@ FAMILIES = ("hard_bce", "soft_bce", "b2r")
 FAMILY = {"hard_bce": "hard_bce", "hard_bce_w": "hard_bce", "soft_bce": "soft_bce", "dup": "soft_bce", "soft_bce_n": "soft_bce", "soft_ce": "soft_bce", "dm": "b2r", "b2r_joint": "b2r",
           "b2r": "b2r", "b2r_w": "b2r", "b2r_kl": "b2r", "b2r_linear": "b2r", "b2m": "b2r",
           "b2ms": "b2r", **{f"b2ms_{t}{lam:g}": "b2r" for t in ("shrink", "var") for lam in (0.03, 0.3, 3.0)}}   # round D: B²-r's lr / wd
+FAMILY.update({"b2rba": "b2rba", "soft_bce_ba": "soft_bce_ba"})   # D8: tuned on their own (block tune_ba, same grid)
+BA_FAMILIES = ("soft_bce_ba", "b2rba")
+BA_DATASETS = ("endoscapes", "amibr")                              # the datasets with rater identities
 GRID = [(lr, wd) for lr in (1e-4, 3e-4, 1e-3) for wd in (1e-4, 1e-2)]
 MAP_TIE = 1e-3                    # within this of the best val mAP, the lower val vote NLL wins (CIFAR-10H: mAP at ceiling)
 SEEDS = range(5)
 
 
-def chosen_path(root=RESULTS) -> Path:
-    return Path(root) / "tune" / "chosen.json"
+def chosen_path(root=RESULTS, block="tune") -> Path:
+    return Path(root) / block / "chosen.json"
 
 
 # ---------------------------------------------------------------- blocks
@@ -34,10 +37,17 @@ def tune_specs():
     return [RunSpec(ds, fam, lr=lr, wd=wd, block="tune") for ds in DATASETS for fam in FAMILIES for lr, wd in GRID]
 
 
+def tune_ba_specs():
+    """D8: the baselines' tuning grid for the two rater-aware variants (fairness: same grid size, same choice rule)."""
+    return [RunSpec(ds, fam, lr=lr, wd=wd, block="tune_ba") for ds in BA_DATASETS for fam in BA_FAMILIES
+            for lr, wd in GRID]
+
+
 def hyper(dataset: str, variant: str, root=RESULTS) -> dict:
     """Chosen {lr, wd} for a variant (inherited from its loss family)."""
-    chosen = json.loads(chosen_path(root).read_text())
-    c = chosen[dataset][FAMILY[variant]]
+    fam = FAMILY[variant]
+    chosen = json.loads(chosen_path(root, "tune_ba" if fam in BA_FAMILIES else "tune").read_text())
+    c = chosen[dataset][fam]
     return {"lr": c["lr"], "wd": c["wd"]}
 
 
@@ -47,20 +57,23 @@ def pilot_specs(root=RESULTS):
 
 
 # ---------------------------------------------------------------- choice
-def choose(root=RESULTS):
-    chosen, lines = {}, ["# Tuning (validation only)", "",
+def choose(root=RESULTS, block="tune", datasets=None, families=None):
+    """Per dataset and family: the best validation mAP (A), ties within MAP_TIE broken by validation NLL (B).
+    block 'tune_ba' (D8): the rater-aware families; their NLL is on the ordered votes."""
+    chosen, lines = {}, [f"# Tuning (validation only; block {block})", "",
                          "| dataset | family | lr | wd | val mAP (A) | val NLL/vote (B) | A epoch | B epoch | chosen |",
                          "|---|---|---|---|---|---|---|---|---|"]
-    for ds in DATASETS:
-        if not all((RunSpec(ds, f, lr=lr, wd=wd, block="tune").out_dir(root) / "summary.json").exists()
-                   for f in FAMILIES for lr, wd in GRID):
+    datasets, families = datasets or DATASETS, families or FAMILIES
+    for ds in datasets:
+        if not all((RunSpec(ds, f, lr=lr, wd=wd, block=block).out_dir(root) / "summary.json").exists()
+                   for f in families for lr, wd in GRID):
             print(f"choose: tuning of {ds} incomplete, skipped")
             continue
         chosen[ds] = {}
-        for fam in FAMILIES:
+        for fam in families:
             cands = []
             for lr, wd in GRID:
-                spec = RunSpec(ds, fam, lr=lr, wd=wd, block="tune")
+                spec = RunSpec(ds, fam, lr=lr, wd=wd, block=block)
                 s = json.loads((spec.out_dir(root) / "summary.json").read_text())
                 cands.append({"lr": lr, "wd": wd, "map": s["A"]["val_map"], "nll": s["B"]["val_nll_per_vote"],
                               "A_epoch": s["A"]["epoch"], "B_epoch": s["B"]["epoch"]})
@@ -70,7 +83,7 @@ def choose(root=RESULTS):
             for c in cands:
                 lines.append(f"| {ds} | {fam} | {c['lr']:g} | {c['wd']:g} | {c['map']:.4f} | {c['nll']:.4f} | "
                              f"{c['A_epoch']:.2f} | {c['B_epoch']:.2f} | {'**yes**' if c is best else ''} |")
-    path = chosen_path(root)
+    path = chosen_path(root, block)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(chosen, indent=1))
     (path.parent / "tune_report.md").write_text("\n".join(lines) + "\n")
@@ -118,5 +131,8 @@ if __name__ == "__main__":
         choose()
         print((chosen_path().parent / "tune_report.md").read_text())
         print("\n".join(map(str, curves())))
+    elif cmd == "choose_ba":
+        choose(block="tune_ba", datasets=BA_DATASETS, families=BA_FAMILIES)
+        print((chosen_path(block="tune_ba").parent / "tune_report.md").read_text())
     else:
-        raise SystemExit("usage: python -m b2j.pilot choose")
+        raise SystemExit("usage: python -m b2j.pilot choose | choose_ba")

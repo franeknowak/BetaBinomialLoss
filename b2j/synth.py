@@ -80,8 +80,12 @@ def settings():
     return out
 
 
+RATER_MODELS = ("soft_bce_ba", "b2rba")    # D8: rater worlds only (they need the rater of each vote)
+
+
 def models(s: Setting):
-    return ("soft_bce", "b2r", "ref200") + (("soft_bce_n",) if s.weighted_baseline else ())
+    return (("soft_bce", "b2r", "ref200") + (("soft_bce_n",) if s.weighted_baseline else ())
+            + (RATER_MODELS if s.world in ("raters", "raters_fixed") else ()))
 
 
 # ---------------------------------------------------------------- the world
@@ -141,16 +145,22 @@ def sample(s: Setting, N, rng, n_votes=None):
     clar = u @ d
     S = np.exp(s.log_s_bar + s.gamma * clar)
     theta = _theta_draws(s, mu, S, rng, 1)[:, 0]
+    v = None                                          # ordered votes [N, R, 1] (rater worlds; NaN = not on the panel)
     if s.world == "raters_fixed":
         votes = rng.random((N, 3)) < _rater_p(theta, fixed=True)
         n = np.full(N, 3.0)
         k = votes.sum(1).astype(float)
         theta_eff = _rater_p(theta, fixed=True).mean(-1)
+        v = votes.astype(float)[..., None]
     elif s.world == "raters":
-        votes = rng.random((N, 3)) < _rater_p(theta, _panels(rng, (N,), 3))
+        r = rng.random((N, 3))                         # (draw order as before D8: votes' uniforms, then the panels)
+        idx = _panels(rng, (N,), 3)
+        votes = r < _rater_p(theta, idx)
         n = np.full(N, 3.0)
         k = votes.sum(1).astype(float)
         theta_eff = _rater_p(theta).mean(-1)
+        v = np.full((N, RATER_POOL, 1), np.nan)
+        np.put_along_axis(v[..., 0], idx, votes.astype(float), 1)
     else:
         if n_votes is not None:
             n = np.full(N, float(n_votes))
@@ -160,7 +170,7 @@ def sample(s: Setting, N, rng, n_votes=None):
             n = np.full(N, float(s.n))
         k = rng.binomial(n.astype(int), theta).astype(float)
         theta_eff = theta
-    return {"z": z, "mu": mu, "S": S, "clarity": clar, "theta": theta_eff, "theta_raw": theta, "k": k, "n": n}
+    return {"z": z, "mu": mu, "S": S, "clarity": clar, "theta": theta_eff, "theta_raw": theta, "k": k, "n": n, "v": v}
 
 
 def draw_split(s: Setting, seed):
@@ -177,23 +187,37 @@ def truths(s: Setting, ev, seed):
     rng = np.random.default_rng([seed, 7, zlib.crc32(s.name.encode())])
     mu, S = ev["mu"], ev["S"]
     th = _theta_draws(s, mu, S, rng, N_DRAWS)
-    panels, oracle_nll = {}, {}
+    panels, oracle_nll, ordered = {}, {}, {}
+
+    def pattern_nll(p, y):
+        """Oracle −log P(the ordered votes y [N, R] | u) by Monte Carlo over θ: p [N, draws, R] per-rater yes-probs."""
+        lp = (y[:, None, :] * np.log(p) + (1 - y[:, None, :]) * np.log1p(-p)).sum(-1)
+        mx = lp.max(1, keepdims=True)
+        return -(mx[:, 0] + np.log(np.exp(lp - mx).mean(1)))
+
     if s.world == "raters_fixed":
         p = _rater_p(th, fixed=True)                               # [N, draws, 3]
         nu = p.mean((1, 2))
         pr = _rater_p(ev["theta_raw"], fixed=True)
-        k3 = (rng.random(pr.shape) < pr).sum(-1).astype(float)
+        y3 = (rng.random(pr.shape) < pr).astype(float)
+        k3 = y3.sum(-1)
         pmf = _pb(p).mean(1)                                       # [N, 4]
         panels[3] = k3
         oracle_nll[3] = -np.log(np.take_along_axis(pmf, k3.astype(int)[:, None], 1)[:, 0])
+        ordered[3] = (y3[..., None], pattern_nll(p, y3))
     elif s.world == "raters":
         nu = _rater_p(th).mean((1, 2))
         for ne in RATER_PANELS:
-            pr = _rater_p(ev["theta_raw"], _panels(rng, (len(th),), ne))
-            k = (rng.random(pr.shape) < pr).sum(-1).astype(float)
+            idx = _panels(rng, (len(th),), ne)
+            pr = _rater_p(ev["theta_raw"], idx)
+            y = (rng.random(pr.shape) < pr).astype(float)
+            k = y.sum(-1)
             pmf = _pb(_rater_p(th, _panels(rng, th.shape, ne))).mean(1)   # mixture over θ and over panels: [N, ne + 1]
             panels[ne] = k
             oracle_nll[ne] = -np.log(np.take_along_axis(pmf, k.astype(int)[:, None], 1)[:, 0])
+            v = np.full((len(th), RATER_POOL, 1), np.nan)            # ordered votes of the known panel
+            np.put_along_axis(v[..., 0], idx, y, 1)
+            ordered[ne] = (v, pattern_nll(_rater_p(th, np.repeat(idx[:, None, :], th.shape[1], 1)), y))
     else:
         nu = mu if s.world == "beta" else th.mean(1)
         for ne in N_EVAL_PANELS:
@@ -205,7 +229,7 @@ def truths(s: Setting, ev, seed):
                 lp = binom.logpmf(k[:, None], ne, th)
                 mx = lp.max(1, keepdims=True)
                 oracle_nll[ne] = -(mx[:, 0] + np.log(np.exp(lp - mx).mean(1)))
-    return nu, panels, oracle_nll
+    return nu, panels, oracle_nll, ordered
 
 
 # ---------------------------------------------------------------- training
@@ -232,8 +256,9 @@ def train_one(s: Setting, model, seed, root=OUT, device="cpu"):
             x["k"] = r.binomial(REF_VOTES, x["theta"]).astype(float)
     variant = "soft_bce" if model == "ref200" else model
     ids = lambda N, p: np.array([f"{p}{i}" for i in range(N)])
+    keep_v = model in RATER_MODELS
     sp = lambda x, p, lab=True: T.Split(x["z"], ids(len(x["z"]), p), x["k"][:, None] if lab else None,
-                                        x["n"][:, None] if lab else None)
+                                        x["n"][:, None] if lab else None, x["v"] if (lab and keep_v) else None)
     cfg = T.TrainConfig(variant, seed=seed, num_workers=0)
     T.run(cfg, sp(tr, "tr"), sp(va, "va"), sp(ev, "ev", False), d, device=device, verbose=False)
     (d / "setting.json").write_text(json.dumps({**asdict(s), "model": model, "seed": seed}))
@@ -244,7 +269,8 @@ def train_one(s: Setting, model, seed, root=OUT, device="cpu"):
 def score(s: Setting, seed, root=OUT):
     """Rows (one per model and checkpoint) for one setting and seed."""
     _, va, ev = draw_split(s, seed)
-    nu, panels, oracle = truths(s, ev, seed)
+    nu, panels, oracle, ordered = truths(s, ev, seed)
+    true_beta = np.asarray(FIXED_BIAS) if s.world == "raters_fixed" else _rater_bias()
     rows = []
     for model in models(s):
         d = run_dir(s, model, seed, root)
@@ -258,11 +284,18 @@ def score(s: Setting, seed, root=OUT):
             m, S = m[:, 0], S[:, 0]
             r = {"setting": s.name, "model": model, "seed": seed, "checkpoint": ck,
                  "mse_nu": float(((m - nu) ** 2).mean()), "mse_theta": float(((m - ev["theta"]) ** 2).mean()),
+                 "mse_mu": float(((m - ev["mu"]) ** 2).mean()),
                  "auroc": auroc(m, (ev["theta"] > 0.5).astype(float)),
                  "spearman_S_clarity": (float(spearmanr(S, ev["clarity"])[0])
-                                        if model == "b2r" and np.std(S) > 0 else np.nan)}
+                                        if model in ("b2r", "b2rba") and np.std(S) > 0 else np.nan)}
             for ne, k in panels.items():
                 r[f"excess_nll_n{ne}"] = float((P.vote_nll(m, S, k, np.full_like(k, ne)) - oracle[ne]).mean())
+            beta = P.rater_offsets(variant, out) if model in RATER_MODELS else None
+            if beta is not None:
+                r["beta_corr"] = float(np.corrcoef(beta[0], true_beta)[0, 1])
+                r["beta_mae"] = float(np.abs(beta[0] - true_beta).mean())
+            for ne, (v, o) in ordered.items():               # D8: who voted what, on fresh panels of known raters
+                r[f"excess_onll_n{ne}"] = float((P.ordered_nll(m[:, None], S[:, None], beta, v)[:, 0] - o).mean())
             rows.append(r)
     return rows
 
@@ -303,6 +336,25 @@ def report(root=OUT):
                       f"{g['mse_nu']['ref200'].mean() if 'ref200' in g['mse_nu'] else np.nan:.5f} | "
                       f"{g['spearman_S_clarity']['b2r'].mean():+.2f} | {nll(3)} | {nll(10)} | {nll(50)} | "
                       f"{g['auroc']['soft_bce'].mean():.3f} / {g['auroc']['b2r'].mean():.3f} | {wb} |")
+        md.append("")
+    rt = df[df.setting.isin([x.name for x in settings() if x.world in ("raters", "raters_fixed")])]
+    if not rt.empty and "beta_corr" in rt:
+        md += ["## D8 — rater worlds: B²-rba and soft BCE-ba (checkpoint B)", "",
+               "Ordered-vote excess NLL over the oracle on fresh panels of known raters (who voted what); for models that "
+               "treat raters as interchangeable every ordering of the count is equally likely. β: learned rater biases "
+               "against the true ones. MSE(m, μ): μ = the typical (unbiased) rater's mean share.", "",
+               "| setting | model | excess ordered NLL n=3 | n=10 | excess count NLL n=3 | Spearman S~clarity | "
+               "corr(β̂, β) | mean abs(β̂ − β) | MSE(m, μ) | MSE(m, ν) | AUROC |", "|" + "---|" * 11]
+        for name in dict.fromkeys(rt.setting):
+            for model in ("soft_bce", "b2r", "soft_bce_ba", "b2rba"):
+                g = rt[(rt.setting == name) & (rt.model == model) & (rt.checkpoint == "B")]
+                if g.empty:
+                    continue
+                c = lambda col, f=".4f": "–" if col not in g or g[col].isna().all() else \
+                    f"{g[col].mean():{f}} ± {g[col].std():{f}}"
+                md.append(f"| {name} | {model} | {c('excess_onll_n3')} | {c('excess_onll_n10')} | {c('excess_nll_n3')} | "
+                          f"{c('spearman_S_clarity', '+.2f')} | {c('beta_corr', '+.3f')} | {c('beta_mae', '.3f')} | "
+                          f"{c('mse_mu', '.5f')} | {c('mse_nu', '.5f')} | {c('auroc', '.3f')} |")
         md.append("")
     out = Path(root) / "synth_report.md"
     out.write_text("\n".join(md))

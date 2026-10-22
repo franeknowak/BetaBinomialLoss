@@ -16,6 +16,11 @@ from b2j.runs import execute
 PREFLIGHT_K = torch.tensor([[0.0, 1, 2], [2, 1, 0], [1, 2, 0], [0, 0, 3]] * 2)
 
 
+def preflight_votes():
+    """Ordered votes [B, 3, K] consistent with PREFLIGHT_K (rater r votes yes iff r < k)."""
+    return (torch.arange(3.0)[None, :, None] < PREFLIGHT_K[:, None, :]).float()
+
+
 def gpu_preflight():
     """Forward + backward of every variant's loss on the GPU once, so a broken card fails the job at once.
 
@@ -26,11 +31,12 @@ def gpu_preflight():
         return
     from b2j.variants import VARIANTS, build
     k, n = PREFLIGHT_K.cuda(), PREFLIGHT_K.new_full(PREFLIGHT_K.shape, 3.0).cuda()
+    v = preflight_votes().cuda()
     for name in VARIANTS:
-        head, loss = build(name, 8, k.cpu(), n.cpu())
+        head, loss = build(name, 8, k.cpu(), n.cpu(), n_raters=v.shape[1])
         head, loss = head.cuda(), loss.cuda()
         out = head(torch.randn(len(k), 8, device="cuda"))
-        value = loss(out, k, n)
+        value = loss(out, k, n, v)
         value.backward()
         assert torch.isfinite(value), name
     torch.cuda.synchronize()

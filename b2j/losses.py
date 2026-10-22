@@ -134,6 +134,58 @@ def dm_nll(log_alpha, k):
     return -(log_coef + ll)
 
 
+# ---------------------------------------------------------------- rater-aware likelihood (round D, D8: B²-rba)
+QUAD_HALF = 129          # nodes per half-grid (257 in all): ≤ 5e-5 nats from the exact Beta-Binomial at β = 0
+QUAD_T = 30.0            # |logit θ| beyond which every vote is certain: the far tails are integrated analytically
+
+
+def logit_grid(a0, a1, half=QUAD_HALF, T=QUAD_T):
+    """Quadrature of θ ~ Beta(a1, a0) on the logit scale t = logit θ, where the density ∝ exp(a1 logσ(t) + a0 logσ(−t))
+    (no singularity at the ends). Nodes cluster around the mode t* = logit m with the Laplace width
+    s = 1/sqrt(S m (1 − m)); the two halves [−T, t*] and [t*, T] are stretched separately (sinh map) and each has its
+    own trapezoid rule, since the stretch differs on the two sides. Beyond ±T, logσ(t) ≈ t (left) / ≈ −t (right):
+    those tails have closed forms e^{−a1 T}/a1 and e^{−a0 T}/a0.
+
+    Works on numpy arrays or torch tensors (elementwise in a0, a1 [...]). Returns (t [..., J], log weight incl.
+    the density [..., J], log mass of the left / right tails [...]); the density's normaliser is not needed because
+    every use is self-normalised (rater_loglik).
+    """
+    xp = torch if isinstance(a0, torch.Tensor) else __import__("numpy")
+    lsig = F.logsigmoid if xp is torch else (lambda x: -xp.logaddexp(0.0, -x))
+    log_a0, log_a1 = xp.log(a0), xp.log(a1)
+    ts = xp.clip(log_a1 - log_a0, -T + 1e-6, T - 1e-6)[..., None]
+    s = xp.exp(0.5 * (xp.log(a0 + a1) - log_a0 - log_a1))[..., None]          # 1/sqrt(S m (1 − m))
+    cl, cr = xp.arcsinh((ts + T) / s), xp.arcsinh((T - ts) / s)
+    h = xp.linspace(0.0, 1.0, half) if xp is not torch else torch.linspace(0.0, 1.0, half, dtype=a0.dtype, device=a0.device)
+    w = xp.full_like(h, 1.0 / (half - 1)) if xp is not torch else torch.full_like(h, 1.0 / (half - 1))
+    w[0] = w[-1] = 0.5 / (half - 1)
+    cat = (lambda xs: torch.cat(xs, -1)) if xp is torch else (lambda xs: xp.concatenate(xs, -1))
+    t = cat([ts - s * xp.sinh(cl * h), ts + s * xp.sinh(cr * h)])
+    jac = cat([s * cl * xp.cosh(cl * h), s * cr * xp.cosh(cr * h)])
+    ww = cat([w, w]) if xp is torch else xp.concatenate([w, w])
+    lw = xp.log(ww * jac) + a1[..., None] * lsig(t) + a0[..., None] * lsig(-t)
+    return t, lw, -a1 * T - log_a1, -a0 * T - log_a0
+
+
+def rater_loglik(a0, a1, beta, y, mask):
+    """log P(the ordered votes) under θ ~ Beta(a1, a0), vote_r ~ Bernoulli(σ(logit θ + β_r)) (D8, B²-rba).
+
+    a0, a1 [B, K]; beta, y, mask [B, K, R] (y 0/1, mask = rater voted). Self-normalised quadrature (logit_grid):
+    the left tail carries the 'all no' pattern, the right tail 'all yes'. torch only (log / exp / logsigmoid:
+    no lgamma on the GPU, see _on_cpu). Returns [B, K].
+    """
+    t, lw, lt_l, lt_r = logit_grid(a0, a1)
+    tb = t[..., None] + beta[..., None, :]                                     # [B, K, J, R]
+    lf = (mask[..., None, :] * (y[..., None, :] * F.logsigmoid(tb) + (1 - y[..., None, :]) * F.logsigmoid(-tb))).sum(-1)
+    none_yes = ((y * mask).sum(-1) == 0)
+    none_no = (((1 - y) * mask).sum(-1) == 0)
+    ninf = torch.full_like(lt_l, -torch.inf)
+    num = torch.logsumexp(torch.cat([lw + lf, torch.where(none_yes, lt_l, ninf)[..., None],
+                                     torch.where(none_no, lt_r, ninf)[..., None]], -1), -1)
+    den = torch.logsumexp(torch.cat([lw, lt_l[..., None], lt_r[..., None]], -1), -1)
+    return num - den
+
+
 def beta_kl(a0, a1, p0, p1):
     """KL( Beta(a1, a0) || Beta(p1, p0) ), analytic; evaluated on the CPU (lgamma/digamma, see _on_cpu)."""
     def kl(a0, a1, p0, p1):
@@ -166,6 +218,8 @@ class LossConfig:
                                     #   penalty on the spread's variation between images; its level is learned
     n_weight: bool = False          # soft BCE only (round D, D5): per-sample weight n / batch mean of n, i.e. the
                                     #   Binomial NLL (= n × soft BCE + const) rescaled to the soft-BCE loss level
+    rater: bool = False             # round D, D8: one learned bias per rater (head outputs carry them after the
+                                    #   d base outputs); loss on the ordered votes. soft BCE -> soft BCE-ba, B² -> B²-rba
 
     def __post_init__(self):
         if self.kind not in ("hard_bce", "soft_bce", "b2", "dup", "dm", "soft_ce"):
@@ -182,6 +236,9 @@ class LossConfig:
             raise ValueError("s_shrink needs the mean-spread head")
         if self.n_weight and self.kind != "soft_bce":
             raise ValueError("n_weight is a soft-BCE option")
+        if self.rater and (self.kind not in ("soft_bce", "b2") or self.weighted or self.kl_lambda or self.plus_one
+                           or self.param != "alpha" or self.n_weight):
+            raise ValueError("rater bias adjustment is defined for soft BCE and plain B²-r (softplus alphas)")
         if self.s_shrink_target not in ("prior", "batch"):
             raise ValueError(f"unknown s_shrink_target {self.s_shrink_target}")
 
@@ -207,8 +264,23 @@ class PanelLoss(nn.Module):
         self.register_buffer("weights", None if weights is None else torch.as_tensor(weights, dtype=torch.float32))
         self.register_buffer("prior", None if prior is None else torch.as_tensor(prior, dtype=torch.float32))
 
-    def per_sample(self, out: torch.Tensor, k: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
+    def per_sample(self, out: torch.Tensor, k: torch.Tensor, n: torch.Tensor, v: torch.Tensor | None = None) -> torch.Tensor:
         cfg = self.cfg
+        if cfg.rater:
+            # D8: out = [B, K, d + R] (the R rater biases repeated on every row, see heads.RaterOffsets); v [B, R, K]
+            if v is None:
+                raise ValueError("a rater-aware loss needs the votes")
+            d = cfg.out_dim
+            beta = out[..., d:]
+            vk = v.transpose(1, 2)                                     # [B, K, R]
+            mask = torch.isfinite(vk).to(out.dtype)
+            y = torch.nan_to_num(vk, nan=0.0)
+            if cfg.kind == "soft_bce":                                 # soft BCE with each vote's own rater bias
+                z = out[..., :1] + beta
+                bce = F.binary_cross_entropy_with_logits(z, y, reduction="none")
+                return (bce * mask).sum(-1) / mask.sum(-1).clamp(min=1)
+            a0, a1 = alphas(out[..., :d].double(), cfg.eps)
+            return (-rater_loglik(a0, a1, beta.double(), y.double(), mask.double())).to(out.dtype)
         if cfg.kind in ("dm", "soft_ce"):
             # single-label data: one joint prediction per image; its loss is spread evenly over the K columns so that
             # forward() (batch mean, sum over heads) gives the batch-mean per-image loss
@@ -248,5 +320,5 @@ class PanelLoss(nn.Module):
             loss = loss + cfg.kl_lambda * beta_kl(a0, a1, self.prior[:, 0].double(), self.prior[:, 1].double())
         return loss.to(out.dtype)                       # [B, K]
 
-    def forward(self, out, k, n):
-        return self.per_sample(out, k, n).mean(0).sum()
+    def forward(self, out, k, n, v=None):
+        return self.per_sample(out, k, n, v).mean(0).sum()

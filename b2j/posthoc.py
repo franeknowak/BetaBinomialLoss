@@ -27,7 +27,7 @@ def spread_rule(name: str) -> str:
     """'c' (scale the B² spread) | 'global' (fit S* on a plug-in mean) | 'none' | 'dup'."""
     cfg = VARIANTS[name].loss
     if cfg.kind == "b2":
-        return "none" if cfg.plus_one else "c"
+        return "none" if cfg.plus_one else "c"          # B²-rba too: S = c · (α₀ + α₁), fitted on the ordered votes
     return {"soft_bce": "global", "hard_bce": "global", "dup": "dup", "dm": "c", "soft_ce": "global"}[cfg.kind]
 
 
@@ -38,6 +38,8 @@ def mean_spread(name: str, out: np.ndarray, eps: float | None = None):
     """
     cfg = VARIANTS[name].loss
     out = np.asarray(out, dtype=np.float64)
+    if cfg.rater:                               # D8: drop the rater biases carried after the d outputs
+        out = out[..., :cfg.out_dim]
     if cfg.kind in ("dm", "soft_ce"):           # softmax mean vector; DM: one concentration per image, repeated per class
         from scipy.special import softmax
         from b2j.losses import LOG_S_BOUNDS, LOGIT_M_BOUND
@@ -107,13 +109,94 @@ def panel(name: str, out, scale=None, eps=None):
     return m, S0
 
 
-def fit_spread(name: str, out, k, n, eps=None):
-    """Fit the variant's spread scale on (validation) labels. Returns [K] or None."""
+def fit_spread(name: str, out, k, n, eps=None, v=None):
+    """Fit the variant's spread scale on (validation) labels. Returns [K] or None.
+    Rater-aware variants (D8) fit it on the ordered votes v [N, R, K] with their learned rater biases."""
     rule = spread_rule(name)
     if rule in ("none", "dup"):
         return None
     m, S0 = mean_spread(name, out, eps)
-    return fit_scale(m, S0 if rule == "c" else np.ones_like(m), k, n)
+    S0 = S0 if rule == "c" else np.ones_like(m)
+    if VARIANTS[name].loss.rater:
+        return fit_scale_rater(m, S0, rater_offsets(name, out), v)
+    return fit_scale(m, S0, k, n)
+
+
+# ---------------------------------------------------------------- ordered votes and rater biases (round D, D8)
+def rater_offsets(name: str, out) -> np.ndarray:
+    """The learned rater biases β [K, R] of a rater-aware variant (repeated on every row of its output)."""
+    return np.asarray(out[0, :, VARIANTS[name].loss.out_dim:], np.float64)
+
+
+def ordered_nll(m, S, beta, v):
+    """−log P(the ordered votes) per (image, label) [N, K]: θ ~ Beta(m S, (1 − m) S), vote_r ~ Bernoulli(σ(logit θ +
+    β_r)). v [N, R, K] 0/1 with NaN for raters who did not vote; beta [K, R] (None: raters interchangeable, β = 0).
+    β = 0: exact, = count NLL − log C(n, k) (every ordering of k equally likely). S = inf: Π_r Bernoulli.
+    Else the quadrature of losses.logit_grid (≤ 5e-5 nats)."""
+    from scipy.special import log_expit, logsumexp
+    from b2j.losses import logit_grid
+    m = np.clip(np.asarray(m, np.float64), 1e-12, 1 - 1e-12)
+    S = np.broadcast_to(np.asarray(S, np.float64), m.shape)
+    vk = np.moveaxis(np.asarray(v, np.float64), 1, 2)                            # [N, K, R]
+    mask = np.isfinite(vk)
+    y = np.where(mask, vk, 0.0)
+    if beta is None or not np.any(beta):
+        k, n = y.sum(-1), mask.sum(-1).astype(np.float64)
+        return vote_nll(m, S, k, n) + (gammaln(n + 1) - gammaln(k + 1) - gammaln(n - k + 1))
+    b = np.broadcast_to(np.asarray(beta, np.float64), vk.shape)
+    shape, R = m.shape, vk.shape[-1]
+    m, S, b, y, mask = m.ravel(), S.ravel(), b.reshape(-1, R), y.reshape(-1, R), mask.reshape(-1, R)
+    out = np.empty(len(m))
+    inf = ~np.isfinite(S)
+    z = np.log(m / (1 - m))[:, None] + b
+    out[inf] = -(mask * (y * log_expit(z) + (1 - y) * log_expit(-z))).sum(-1)[inf]
+    for sl in np.array_split(np.flatnonzero(~inf), max(1, int((~inf).sum()) // 4000)):   # bounded memory
+        if not len(sl):
+            continue
+        t, lw, lt_l, lt_r = logit_grid((1 - m[sl]) * S[sl], m[sl] * S[sl])
+        tb = t[..., None] + b[sl][:, None, :]
+        yy, mm = y[sl][:, None, :], mask[sl][:, None, :]
+        lf = (mm * (yy * log_expit(tb) + (1 - yy) * log_expit(-tb))).sum(-1)
+        none_yes, none_no = (y[sl] * mask[sl]).sum(-1) == 0, ((1 - y[sl]) * mask[sl]).sum(-1) == 0
+        num = logsumexp(np.concatenate([lw + lf, np.where(none_yes, lt_l, -np.inf)[:, None],
+                                        np.where(none_no, lt_r, -np.inf)[:, None]], -1), -1)
+        den = logsumexp(np.concatenate([lw, lt_l[:, None], lt_r[:, None]], -1), -1)
+        out[sl] = -(num - den)
+    return out.reshape(shape)
+
+
+def fit_scale_rater(m, S0, beta, v):
+    """fit_scale on the ordered votes with fixed rater biases β [K, R]: per head the s minimising Σ_i ordered NLL."""
+    m, S0 = np.asarray(m, np.float64), np.asarray(S0, np.float64)
+    out = np.empty(m.shape[1])
+    for j in range(m.shape[1]):
+        vj, bj = np.asarray(v)[:, :, j:j + 1], np.asarray(beta)[j:j + 1]
+        f = lambda t: ordered_nll(m[:, j:j + 1], np.exp(t) * S0[:, j:j + 1], bj, vj).sum()
+        out[j] = np.exp(minimize_scalar(f, bounds=LOG_SCALE_BOUNDS, method="bounded", options={"xatol": 1e-3}).x)
+    return out
+
+
+def rater_count_pmf(m, S, beta, v):
+    """P(k | the known panel) [N, K, R + 1] for a rater-aware model: sum over the 2^R ordered patterns with k yes
+    votes among the raters present in v (rows with fewer raters put 0 on k > n). Needs R <= 12."""
+    import itertools
+    vk = np.moveaxis(np.asarray(v, np.float64), 1, 2)
+    N, K, R = vk.shape
+    if R > 12:
+        raise ValueError("pattern enumeration needs R <= 12")
+    pmf = np.zeros((N, K, R + 1))
+    mask = np.isfinite(vk)
+    for pat in itertools.product((0.0, 1.0), repeat=R):
+        p = np.broadcast_to(np.asarray(pat), vk.shape)
+        if not mask.all():                       # absent raters: only the all-zero pattern on them counts once
+            if ((p == 1) & ~mask).any(-1).all():
+                continue
+        vv = np.moveaxis(np.where(mask, p, np.nan), 2, 1)
+        lp = -ordered_nll(m, S, beta, vv)
+        ok = ~((p == 1) & ~mask).any(-1)
+        kk = (p * mask).sum(-1).astype(int)
+        np.add.at(pmf, (*np.nonzero(ok), kk[ok]), np.exp(lp[ok]))
+    return pmf
 
 
 # ---------------------------------------------------------------- vote pmf and panel probabilities
