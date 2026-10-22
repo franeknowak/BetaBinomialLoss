@@ -9,15 +9,16 @@ do not explain) and its votes:
   logitnormal  θ_i = sigmoid(logit μ + σ ε), σ² = ψ'(μ S) + ψ'((1 − μ) S)      (same logit variance, not Beta)
   raters       θ_i as in beta; a pool of 20 raters with personal biases β_r ~ N(0, 1) (Endoscapes-like spread of rater
                rates); each image is labelled by its own 3 raters drawn from the pool: vote_r ~ Bernoulli(sigmoid(logit θ_i + β_r))
-               (2026-10-22: replaces one fixed panel of 3 for every image, where bias could not vary across images)
+               (crowdsourcing-like: CIFAR-10H, FER+)
+  raters_fixed θ_i as in beta; the same 3 raters with biases (−1, 0, 1) label every image (Endoscapes, AMi-Br, MHIST)
 n_i is fixed or drawn uniformly per image. The real trainer (train.run, frozen-head path) fits soft BCE, B²-r,
 vote-count weighted soft BCE and a reference soft BCE trained on 200 votes per image (≈ the hidden θ_i).
 
 Scored against the truth on held-out images ("eval"; synthetic, so the real-data test rule does not apply):
 mean — MSE(m, ν(u)), ν(u) = E[k/n | u] (the best any model can do from features), and MSE(m, θ_i); spread — Spearman
 of the predicted S with the clarity dᵀu; vote NLL on fresh panels (n_eval = 3, 10, 50; the 3 raters in the raters
-world: fresh panels of 3 and 10 pool raters) minus the oracle's (true distribution of k given u); AUROC of m for θ_i > 0.5.
-In the raters world θ_i above is the pool-average rater's share, mean_r sigmoid(logit θ_i + β_r).
+world: fresh panels of 3 and 10 pool raters; the 3 raters in raters_fixed) minus the oracle's (true distribution of k given u); AUROC of m for θ_i > 0.5.
+In the rater worlds θ_i above is the pool-average rater's share, mean_r sigmoid(logit θ_i + β_r).
 
   python -m b2j.synth run --task $SGE_TASK_ID --ntasks N      -> results/journal/synth/<setting>/<model>__seed<s>/
   python -m b2j.synth report                                  -> results/journal/synth/synth_report.md, synth_long.csv
@@ -46,6 +47,7 @@ N_EVAL, N_DRAWS = 5000, 200            # held-out images; Monte Carlo draws of �
 N_EVAL_PANELS = (3, 10, 50)
 RATER_POOL, RATER_SD = 20, 1.0        # raters world: pool size and sd of the biases (logit scale)
 RATER_PANELS = (3, 10)                 # raters world: fresh evaluation panels (distinct pool raters)
+FIXED_BIAS = (-1.0, 0.0, 1.0)          # raters_fixed world: one panel for every image
 SEEDS = range(5)
 REF_VOTES = 200                        # the reference model's votes per image (≈ θ_i itself)
 
@@ -57,7 +59,7 @@ class Setting:
     n_range: tuple | None = None       # (lo, hi): n_i uniform on lo..hi instead
     n_train: int = 6000
     gamma: float = 1.0                 # clarity -> log S slope; 0 = one spread for every image
-    world: str = "beta"                # beta | logitnormal | raters
+    world: str = "beta"                # beta | logitnormal | raters | raters_fixed
     b: float = -0.5
     tau: float = 0.4                   # with S̄ = 5: 29% split 3-vote panels, as Endoscapes (27%) and AMi-Br (22%)
     log_s_bar: float = float(np.log(5.0))
@@ -74,7 +76,7 @@ def settings():
                 for lo, hi in ((3, 20), (4, 10))]
         out += [Setting(f"S3_fixed{n}_g{g:g}", n=n, gamma=g, weighted_baseline=True) for n in (11, 7)]
     out += [Setting("S4_logitnormal_n3", world="logitnormal"), Setting("S4_logitnormal_n10", n=10, world="logitnormal"),
-            Setting("S4_pool_n3_g1", world="raters"), Setting("S4_pool_n3_g0", world="raters", gamma=0.0)]  # S4
+            Setting("S4_raters_n3", world="raters_fixed"), Setting("S4_pool_n3_g1", world="raters"), Setting("S4_pool_n3_g0", world="raters", gamma=0.0)]  # S4
     return out
 
 
@@ -108,9 +110,10 @@ def _rater_bias():
     return b - b.mean()
 
 
-def _rater_p(theta, raters=None):
-    """[..., R]: each rater's probability of a yes vote given θ; raters [..., R] pool indices (None: the whole pool)."""
-    b = _rater_bias()
+def _rater_p(theta, raters=None, fixed=False):
+    """[..., R]: each rater's probability of a yes vote given θ; raters [..., R] pool indices (None: the whole pool;
+    fixed: the raters_fixed panel)."""
+    b = np.asarray(FIXED_BIAS) if fixed else _rater_bias()
     lt = logit(np.clip(theta, 1e-9, 1 - 1e-9))[..., None]
     return expit(lt + (b if raters is None else b[raters]))
 
@@ -138,7 +141,12 @@ def sample(s: Setting, N, rng, n_votes=None):
     clar = u @ d
     S = np.exp(s.log_s_bar + s.gamma * clar)
     theta = _theta_draws(s, mu, S, rng, 1)[:, 0]
-    if s.world == "raters":
+    if s.world == "raters_fixed":
+        votes = rng.random((N, 3)) < _rater_p(theta, fixed=True)
+        n = np.full(N, 3.0)
+        k = votes.sum(1).astype(float)
+        theta_eff = _rater_p(theta, fixed=True).mean(-1)
+    elif s.world == "raters":
         votes = rng.random((N, 3)) < _rater_p(theta, _panels(rng, (N,), 3))
         n = np.full(N, 3.0)
         k = votes.sum(1).astype(float)
@@ -170,7 +178,15 @@ def truths(s: Setting, ev, seed):
     mu, S = ev["mu"], ev["S"]
     th = _theta_draws(s, mu, S, rng, N_DRAWS)
     panels, oracle_nll = {}, {}
-    if s.world == "raters":
+    if s.world == "raters_fixed":
+        p = _rater_p(th, fixed=True)                               # [N, draws, 3]
+        nu = p.mean((1, 2))
+        pr = _rater_p(ev["theta_raw"], fixed=True)
+        k3 = (rng.random(pr.shape) < pr).sum(-1).astype(float)
+        pmf = _pb(p).mean(1)                                       # [N, 4]
+        panels[3] = k3
+        oracle_nll[3] = -np.log(np.take_along_axis(pmf, k3.astype(int)[:, None], 1)[:, 0])
+    elif s.world == "raters":
         nu = _rater_p(th).mean((1, 2))
         for ne in RATER_PANELS:
             pr = _rater_p(ev["theta_raw"], _panels(rng, (len(th),), ne))

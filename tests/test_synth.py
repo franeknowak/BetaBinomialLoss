@@ -33,6 +33,9 @@ def test_raters_world_poisson_binomial_and_panels():
     nu, panels, oracle = Y.truths(s, x, 0)
     assert set(panels) == set(Y.RATER_PANELS) and all(np.isfinite(o).all() for o in oracle.values())
     assert panels[10].max() <= 10
+    sf = Y.Setting("f", world="raters_fixed")
+    x = Y.sample(sf, 50, np.random.default_rng(0))
+    assert (x["n"] == 3).all() and set(Y.truths(sf, x, 0)[1]) == {3}
 
 
 def test_variable_n_and_specs():
