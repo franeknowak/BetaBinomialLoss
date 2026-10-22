@@ -13,7 +13,7 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 
 ## Current step (2026-10-22): D8 B²-rba running
 User approved rater-aware B² ("B²-rba", revised bias adjusted) and asked to code + run it. Plan: iterations.md D8 (2 × 2 soft BCE / B²-r / soft BCE-ba / B²-rba; endpoints P1–P3; decision rule). Code commit 16d19ea (losses.rater_loglik quadrature, heads.RaterOffsets, posthoc.ordered_nll / rater_count_pmf / fit_scale_rater, train votes + β own lr 1e-2 no wd, pilot tune_ba/choose_ba, blocks tune_ba/d8, b2j/d8.py report, synth rater models). 178 tests pass.
-Jobs (cluster at 16d19ea): **7589954 d8tune** (array 1–4, 24 runs) → **7589955 d8choose** → **7589956 d8** (array 1–4, 40 runs) → **7589957 d8an** (report `results/journal/d8/tables_val/d8_report.md`); **7589958 synth** (array 1–30; only the 30 new rater-model runs train) → **7589959 synthrep**.
+Jobs (cluster at 16d19ea): **7589954 d8tune** (array 1–4, 24 runs) → **7589955 d8choose** → **7589956 d8** (array 1–4, 40 runs) → **7589957 d8an** (report `results/journal/d8/tables_val/d8_report.md`); **7589958 synth** (array 1–30; only the 30 new rater-model runs train) → **7589959 synthrep**. d8tune task 1 died at once with CUDA OOM (scheduler gave it card 4, already used by task 3; not our code) → resubmitted as **7589976** (-t 1); d8choose hold now 7589954 + 7589976.
 **Next:** when done, pull `results/journal/d8/tables_val/` + `results/journal/tune_ba/tune_report.md` + `results/journal/synth/synth_report.md`; fill the D8 outcome (apply the decision rule) and the D7 rater-world rows.
 
 ## Exact next action (2026-10-20, round D)
