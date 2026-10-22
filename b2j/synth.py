@@ -6,7 +6,10 @@ direction d. Mean vote share μ(u) = sigmoid((aᵀu + b) / τ). Clarity drives t
 log S(u) = log S̄ + γ dᵀu (γ = 0: one spread for every image). Each image's true vote share θ_i (the part the features
 do not explain) and its votes:
   beta         θ_i ~ Beta(μ S, (1 − μ) S), k ~ Binomial(n_i, θ_i)              (B²'s model, correctly specified)
-  logitnormal  θ_i = sigmoid(logit μ + σ ε), σ² = ψ'(μ S) + ψ'((1 − μ) S)      (same logit variance, not Beta)
+  logitnormal  θ_i = sigmoid(c + σ ε), (c, σ) per image such that E θ = μ and Var θ = μ(1 − μ)/(S + 1)
+               (the Beta's mean and variance, not Beta; panels of ≤ 2 votes cannot tell the two apart). Fixed
+               2026-10-22: the first version centred at logit μ and matched the logit variance, which scrambled the
+               mean at extreme μ (runs moved to results/journal/synth_invalid_logitnormal/).
   raters       θ_i as in beta; a pool of 20 raters with personal biases β_r ~ N(0, 1) (Endoscapes-like spread of rater
                rates); each image is labelled by its own 3 raters drawn from the pool: vote_r ~ Bernoulli(sigmoid(logit θ_i + β_r))
                (crowdsourcing-like: CIFAR-10H, FER+)
@@ -15,9 +18,11 @@ n_i is fixed or drawn uniformly per image. The real trainer (train.run, frozen-h
 vote-count weighted soft BCE and a reference soft BCE trained on 200 votes per image (≈ the hidden θ_i).
 
 Scored against the truth on held-out images ("eval"; synthetic, so the real-data test rule does not apply):
-mean — MSE(m, ν(u)), ν(u) = E[k/n | u] (the best any model can do from features), and MSE(m, θ_i); spread — Spearman
+mean — MSE(m, ν(u)), ν(u) = E[k/n | u] (≈ the floor from features; z is noisy, so the exact floor is E[ν | z]), and MSE(m, θ_i); spread — Spearman
 of the predicted S with the clarity dᵀu; vote NLL on fresh panels (n_eval = 3, 10, 50; the 3 raters in the raters
-world: fresh panels of 3 and 10 pool raters; the 3 raters in raters_fixed) minus the oracle's (true distribution of k given u); AUROC of m for θ_i > 0.5.
+world: fresh panels of 3 and 10 pool raters; the 3 raters in raters_fixed) minus the oracle's (true distribution of k given u; exact or quadrature except the pool world's count oracle, Monte
+Carlo over θ and panels with N_DRAWS_POOL draws); spread ablation — vote NLL with one S fitted on the evaluation panels
+minus with the per-image S (the D0b test on real data); AUROC of m for θ_i > 0.5.
 In the rater worlds θ_i above is the pool-average rater's share, mean_r sigmoid(logit θ_i + β_r).
 
   python -m b2j.synth run --task $SGE_TASK_ID --ntasks N      -> results/journal/synth/<setting>/<model>__seed<s>/
@@ -30,10 +35,11 @@ import time
 import traceback
 import zlib
 from dataclasses import asdict, dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-from scipy.special import expit, logit, polygamma
+from scipy.special import expit, log_expit, logit, logsumexp
 from scipy.stats import binom, spearmanr
 
 from b2j import posthoc as P
@@ -43,7 +49,9 @@ from b2j.runs import RESULTS
 OUT = RESULTS / "synth"
 LATENT, DIM, SIGMA_Z = 16, 768, 0.7
 WORLD_SEED = 2026                      # U, a, d and the rater biases are fixed: one world, many samples
-N_EVAL, N_DRAWS = 5000, 200            # held-out images; Monte Carlo draws of θ per image for ν(u) and the oracle
+N_EVAL, N_DRAWS = 5000, 200            # held-out images; Monte Carlo draws of θ per image for ν(u) (rater worlds)
+N_DRAWS_POOL = 4000                    # pool world: draws of (θ, panel) per image for the count oracle (bias ≈ 1/draws)
+EPS_GRID = np.linspace(-8.5, 8.5, 401)  # logitnormal: quadrature nodes of ε ~ N(0, 1) (trapezoid)
 N_EVAL_PANELS = (3, 10, 50)
 RATER_POOL, RATER_SD = 20, 1.0        # raters world: pool size and sd of the biases (logit scale)
 RATER_PANELS = (3, 10)                 # raters world: fresh evaluation panels (distinct pool raters)
@@ -77,7 +85,15 @@ def settings():
         out += [Setting(f"S3_fixed{n}_g{g:g}", n=n, gamma=g, weighted_baseline=True) for n in (11, 7)]
     out += [Setting("S4_logitnormal_n3", world="logitnormal"), Setting("S4_logitnormal_n10", n=10, world="logitnormal"),
             Setting("S4_raters_n3", world="raters_fixed"), Setting("S4_pool_n3_g1", world="raters"), Setting("S4_pool_n3_g0", world="raters", gamma=0.0)]  # S4
+    out += [Setting(f"S5_n{n}_g{g:g}", n=n, gamma=g) for n in (3, 7) for g in GAMMA_SWEEP]   # S5: how much must S vary?
+    out += [Setting(f"S5_raters_n3_g{g:g}", world="raters_fixed", gamma=g) for g in GAMMA_SWEEP]
     return out
+
+
+GAMMA_SWEEP = (0.25, 0.5)   # added 2026-10-22 after the review (γ = 0 and 1 are in S1 / S3 / S4)
+SWEEP_ROWS = (("S1_n3_g0", "S5_n3_g0.25", "S5_n3_g0.5", "S1_n3_g1"),
+              ("S3_fixed7_g0", "S5_n7_g0.25", "S5_n7_g0.5", "S3_fixed7_g1"),
+              ("S5_raters_n3_g0.25", "S5_raters_n3_g0.5", "S4_raters_n3"))
 
 
 RATER_MODELS = ("soft_bce_ba", "b2rba")    # D8: rater worlds only (they need the rater of each vote)
@@ -100,11 +116,57 @@ def _fixed():
     return U, a, d
 
 
+def _ln_moments(c, ls):
+    """logit E θ and logit ρ (ρ = Var θ / (E θ (1 − E θ))) of θ = sigmoid(c + e^ls ε), by quadrature; stable when
+    saturated. Uses Var θ = E θ (1 − E θ) − E[θ (1 − θ)]."""
+    lw = -EPS_GRID ** 2 / 2
+    lw = lw - logsumexp(lw)
+    x = np.asarray(c)[..., None] + np.exp(np.asarray(ls))[..., None] * EPS_GRID
+    lp, lq = log_expit(x), log_expit(-x)
+    l1, l0, lpq = logsumexp(lw + lp, -1), logsumexp(lw + lq, -1), logsumexp(lw + lp + lq, -1)
+    one_minus_rho = np.clip(np.exp(lpq - l1 - l0), 1e-300, 1 - 1e-15)
+    return l1 - l0, np.log1p(-one_minus_rho) - np.log(one_minus_rho)
+
+
+@lru_cache(maxsize=1)
+def _ln_table():
+    cg, lsg = np.linspace(-40, 40, 801), np.linspace(-5, np.log(300), 300)
+    a, b = _ln_moments(cg[:, None] + 0 * lsg, lsg + 0 * cg[:, None])
+    return cg, lsg, a, b
+
+
+def ln_params(mu, S, newton=30):
+    """(c, σ) per image with E θ = μ and Var θ = μ(1 − μ)/(S + 1) for θ = sigmoid(c + σ ε): a start from a table
+    (c for the mean at each σ, then σ for ρ), then Newton steps on (c, log σ)."""
+    cg, lsg, A, B = _ln_table()
+    lmu, lrho = logit(mu), -np.log(S)                              # logit ρ = logit 1/(S + 1) = −log S
+    cj = np.stack([np.interp(lmu, A[:, j], cg) for j in range(len(lsg))], 1)
+    i = np.clip(np.searchsorted(cg, cj) - 1, 0, len(cg) - 2)
+    f, J = (cj - cg[i]) / (cg[1] - cg[0]), np.arange(len(lsg))[None, :]
+    rj = np.maximum.accumulate(B[i, J] * (1 - f) + B[i + 1, J] * f, 1)          # ρ rises with σ (start only)
+    ls = np.array([np.interp(lrho[n], rj[n], lsg) for n in range(len(mu))])
+    c = np.array([np.interp(ls[n], lsg, cj[n]) for n in range(len(mu))])
+    h = 1e-4
+    for _ in range(newton):
+        a, b = _ln_moments(c, ls)
+        if np.abs(a - lmu).max() < 1e-7 and np.abs(b - lrho).max() < 1e-7:
+            break
+        ac, bc = _ln_moments(c + h, ls)
+        as_, bs = _ln_moments(c, ls + h)
+        jac = np.stack([np.stack([(ac - a) / h, (as_ - a) / h], -1), np.stack([(bc - b) / h, (bs - b) / h], -1)], -2)
+        d = np.linalg.solve(jac, np.stack([a - lmu, b - lrho], -1)[..., None])[..., 0]
+        c, ls = c - d[:, 0], ls - d[:, 1]
+    a, b = _ln_moments(c, ls)
+    if np.abs(a - lmu).max() > 1e-4 or np.abs(b - lrho).max() > 1e-4:
+        raise RuntimeError("logit-normal moment matching did not converge")
+    return c, np.exp(ls)
+
+
 def _theta_draws(s: Setting, mu, S, rng, size):
     """size draws of the per-image vote share given u (rater-level shares in the raters world): [N, size]."""
     if s.world == "logitnormal":
-        sig = np.sqrt(polygamma(1, mu * S) + polygamma(1, (1 - mu) * S))
-        return expit(logit(mu)[:, None] + sig[:, None] * rng.normal(size=(len(mu), size)))
+        c, sig = ln_params(mu, S)
+        return expit(c[:, None] + sig[:, None] * rng.normal(size=(len(mu), size)))
     return rng.beta(mu[:, None] * S[:, None], (1 - mu[:, None]) * S[:, None], size=(len(mu), size))
 
 
@@ -183,17 +245,17 @@ def draw_split(s: Setting, seed):
 
 
 def truths(s: Setting, ev, seed):
-    """ν(u) = E[k/n | u] and the oracle vote pmf on fresh panels, by Monte Carlo over θ given u (exact in beta)."""
+    """ν(u) = E[k/n | u] and the oracle NLL of fresh panels: exact (beta), quadrature (logitnormal, the ordered votes
+    and the fixed panel's count), Monte Carlo over (θ, panel) for the pool's count (own generator, N_DRAWS_POOL)."""
     rng = np.random.default_rng([seed, 7, zlib.crc32(s.name.encode())])
+    rng_o = np.random.default_rng([seed, 8, zlib.crc32(s.name.encode())])
     mu, S = ev["mu"], ev["S"]
-    th = _theta_draws(s, mu, S, rng, N_DRAWS)
+    th = _theta_draws(s, mu, S, rng, N_DRAWS) if s.world != "logitnormal" else None   # (logitnormal: not used)
     panels, oracle_nll, ordered = {}, {}, {}
 
-    def pattern_nll(p, y):
-        """Oracle −log P(the ordered votes y [N, R] | u) by Monte Carlo over θ: p [N, draws, R] per-rater yes-probs."""
-        lp = (y[:, None, :] * np.log(p) + (1 - y[:, None, :]) * np.log1p(-p)).sum(-1)
-        mx = lp.max(1, keepdims=True)
-        return -(mx[:, 0] + np.log(np.exp(lp - mx).mean(1)))
+    def pattern_nll(beta, v):
+        """Oracle −log P(the ordered votes v [N, R, 1] | u): the B²-rba likelihood at the true μ, S, β (quadrature)."""
+        return P.ordered_nll(mu[:, None], S[:, None], np.asarray(beta)[None, :], v)[:, 0]
 
     if s.world == "raters_fixed":
         p = _rater_p(th, fixed=True)                               # [N, draws, 3]
@@ -201,10 +263,10 @@ def truths(s: Setting, ev, seed):
         pr = _rater_p(ev["theta_raw"], fixed=True)
         y3 = (rng.random(pr.shape) < pr).astype(float)
         k3 = y3.sum(-1)
-        pmf = _pb(p).mean(1)                                       # [N, 4]
+        pmf = P.rater_count_pmf(mu[:, None], S[:, None], np.asarray(FIXED_BIAS)[None, :], y3[..., None])[:, 0]
         panels[3] = k3
         oracle_nll[3] = -np.log(np.take_along_axis(pmf, k3.astype(int)[:, None], 1)[:, 0])
-        ordered[3] = (y3[..., None], pattern_nll(p, y3))
+        ordered[3] = (y3[..., None], pattern_nll(FIXED_BIAS, y3[..., None]))
     elif s.world == "raters":
         nu = _rater_p(th).mean((1, 2))
         for ne in RATER_PANELS:
@@ -212,23 +274,29 @@ def truths(s: Setting, ev, seed):
             pr = _rater_p(ev["theta_raw"], idx)
             y = (rng.random(pr.shape) < pr).astype(float)
             k = y.sum(-1)
-            pmf = _pb(_rater_p(th, _panels(rng, th.shape, ne))).mean(1)   # mixture over θ and over panels: [N, ne + 1]
+            _panels(rng, th.shape, ne)                               # (kept: the draw order of the panels above)
+            pmf = np.concatenate([_pb(_rater_p(_theta_draws(s, mu[sl], S[sl], rng_o, N_DRAWS_POOL),
+                                               _panels(rng_o, (len(sl), N_DRAWS_POOL), ne))).mean(1)
+                                  for sl in np.array_split(np.arange(len(mu)), 50)])   # mixture over θ and panels
             panels[ne] = k
             oracle_nll[ne] = -np.log(np.take_along_axis(pmf, k.astype(int)[:, None], 1)[:, 0])
             v = np.full((len(th), RATER_POOL, 1), np.nan)            # ordered votes of the known panel
             np.put_along_axis(v[..., 0], idx, y, 1)
-            ordered[ne] = (v, pattern_nll(_rater_p(th, np.repeat(idx[:, None, :], th.shape[1], 1)), y))
+            ordered[ne] = (v, pattern_nll(_rater_bias(), v))
     else:
-        nu = mu if s.world == "beta" else th.mean(1)
+        nu = mu                                                      # both worlds: E θ = μ (logitnormal by construction)
+        if s.world == "logitnormal":
+            c, sig = ln_params(mu, S)
+            lw = -EPS_GRID ** 2 / 2
+            lw = lw - logsumexp(lw)
+            th_q = expit(c[:, None] + sig[:, None] * EPS_GRID)       # [N, nodes]
         for ne in N_EVAL_PANELS:
             k = rng.binomial(ne, ev["theta"]).astype(float)
             panels[ne] = k
             if s.world == "beta":
                 oracle_nll[ne] = P.vote_nll(mu, S, k, np.full_like(k, ne))
             else:
-                lp = binom.logpmf(k[:, None], ne, th)
-                mx = lp.max(1, keepdims=True)
-                oracle_nll[ne] = -(mx[:, 0] + np.log(np.exp(lp - mx).mean(1)))
+                oracle_nll[ne] = -logsumexp(lw + binom.logpmf(k[:, None], ne, th_q), -1)
     return nu, panels, oracle_nll, ordered
 
 
@@ -287,7 +355,9 @@ def score(s: Setting, seed, root=OUT):
                  "mse_mu": float(((m - ev["mu"]) ** 2).mean()),
                  "auroc": auroc(m, (ev["theta"] > 0.5).astype(float)),
                  "spearman_S_clarity": (float(spearmanr(S, ev["clarity"])[0])
-                                        if model in ("b2r", "b2rba") and np.std(S) > 0 else np.nan)}
+                                        if model in ("b2r", "b2rba") and np.std(S) > 0 else np.nan),
+                 "spearman_S_absm": (float(spearmanr(S, np.abs(logit(np.clip(m, 1e-9, 1 - 1e-9))))[0])
+                                     if model in ("b2r", "b2rba") and np.std(S) > 0 else np.nan)}
             for ne, k in panels.items():
                 r[f"excess_nll_n{ne}"] = float((P.vote_nll(m, S, k, np.full_like(k, ne)) - oracle[ne]).mean())
             beta = P.rater_offsets(variant, out) if model in RATER_MODELS else None
@@ -296,8 +366,27 @@ def score(s: Setting, seed, root=OUT):
                 r["beta_mae"] = float(np.abs(beta[0] - true_beta).mean())
             for ne, (v, o) in ordered.items():               # D8: who voted what, on fresh panels of known raters
                 r[f"excess_onll_n{ne}"] = float((P.ordered_nll(m[:, None], S[:, None], beta, v)[:, 0] - o).mean())
+            if model in ("b2r", "b2rba"):                    # spread ablation (D0b on real data), 3-vote panels
+                r["d_nll_spread_n3"] = spread_ablation(m, S, beta, *((ordered[3][0], None) if model == "b2rba"
+                                                                     else (None, panels[3])))
             rows.append(r)
     return rows
+
+
+def spread_ablation(m, S, beta=None, v=None, k=None):
+    """NLL per panel with one S (fitted on these panels, as on real data) minus with the per-image S: > 0 = the
+    per-image spread is informative. Ordered votes v with rater biases β (B²-rba), else the 3-vote counts k."""
+    from scipy.optimize import minimize_scalar
+    nll = ((lambda SS: P.ordered_nll(m[:, None], np.broadcast_to(SS, m.shape)[:, None], beta, v)[:, 0]) if v is not None
+           else (lambda SS: P.vote_nll(m, np.broadcast_to(SS, m.shape), k, np.full_like(k, 3.0))))
+    best = minimize_scalar(lambda ls: nll(np.exp(ls)).mean(), bounds=(-3, 12), method="bounded").fun
+    return float(best - nll(S).mean())
+
+
+def _ms(x, f=".4f"):
+    x = np.asarray(x, float)
+    x = x[np.isfinite(x)]
+    return "–" if not len(x) else f"{x.mean():{f}} ± {x.std(ddof=1) if len(x) > 1 else 0:{f}}"
 
 
 def report(root=OUT):
@@ -309,52 +398,83 @@ def report(root=OUT):
     df = pd.DataFrame(rows)
     df.to_csv(Path(root) / "synth_long.csv", index=False)
     md = ["# D7 — synthetic study (validation-free: scored against the known truth)", "",
-          "Mean recovery: MSE(m, ν) with ν = E[k/n | features]; Δ = MSE(soft BCE) − MSE(B²-r) (positive = B²-r closer), "
-          "mean ± sd over 5 seeds (paired: same data per seed), and the share of soft BCE's few-votes penalty "
-          "(its MSE − the 200-vote reference's) that B²-r recovers. Spread: Spearman of B²-r's S with the true "
-          "clarity (which drives S when γ > 0). Vote NLL: excess over the oracle on fresh panels, Global-S vs B²-r.",
-          ""]
+          "Mean recovery: MSE(m, ν) with ν = E[k/n | latent]; Δ = MSE(soft BCE) − MSE(B²-r) (positive = B²-r closer). "
+          "All ± are sd over 5 seeds; differences are paired (same data per seed). Spread: Spearman of B²-r's S with "
+          "the true clarity (which drives S when γ > 0), and the spread ablation (NLL per 3-vote panel with one S "
+          "fitted on the evaluation panels minus with the per-image S; > 0 = per-image S informative; the D0b test on "
+          "real data). Vote NLL: excess over the oracle on fresh panels, Global-S / B²-r, and Δ = Global-S − B²-r.", ""]
     for ck in ("B", "A"):
         t = df[df.checkpoint == ck]
         md += [f"## checkpoint {ck}", "",
-               "| setting | MSE soft BCE | MSE B²-r | Δ (± sd) | B² better (seeds) | share of penalty recovered | "
-               "MSE 200-vote ref | Spearman S~clarity | excess NLL n=3 GS / B² | n=10 GS / B² | n=50 GS / B² | "
-               "AUROC soft / B² | MSE vote-weighted |",
+               "| setting | MSE soft BCE | MSE B²-r | Δ MSE | B² better (seeds) | MSE 200-vote ref | Spearman S~clarity | "
+               "spread ablation n=3 | excess NLL n=3 GS / B² (Δ) | n=10 | n=50 | AUROC soft / B² | MSE vote-weighted |",
                "|" + "---|" * 13]
         for s in settings():
             g = t[t.setting == s.name].pivot(index="seed", columns="model")
             if g.empty or "b2r" not in g["mse_nu"] or "soft_bce" not in g["mse_nu"]:
                 continue
             dlt = g["mse_nu"]["soft_bce"] - g["mse_nu"]["b2r"]
-            pen = g["mse_nu"]["soft_bce"].mean() - g["mse_nu"]["ref200"].mean() if "ref200" in g["mse_nu"] else np.nan
-            nll = lambda ne: (f"{g[f'excess_nll_n{ne}']['soft_bce'].mean():.4f} / {g[f'excess_nll_n{ne}']['b2r'].mean():.4f}"
-                              if f"excess_nll_n{ne}" in g and g[f"excess_nll_n{ne}"]["b2r"].notna().any() else "–")
-            wb = f"{g['mse_nu']['soft_bce_n'].mean():.5f}" if "soft_bce_n" in g["mse_nu"] else "–"
-            md.append(f"| {s.name} | {g['mse_nu']['soft_bce'].mean():.5f} | {g['mse_nu']['b2r'].mean():.5f} | "
-                      f"{dlt.mean():+.5f} ± {dlt.std():.5f} | {(dlt > 0).sum()}/{len(dlt)} | "
-                      f"{dlt.mean() / pen:+.0%} | "
-                      f"{g['mse_nu']['ref200'].mean() if 'ref200' in g['mse_nu'] else np.nan:.5f} | "
-                      f"{g['spearman_S_clarity']['b2r'].mean():+.2f} | {nll(3)} | {nll(10)} | {nll(50)} | "
-                      f"{g['auroc']['soft_bce'].mean():.3f} / {g['auroc']['b2r'].mean():.3f} | {wb} |")
+            col = lambda c, mdl: g[c][mdl] if c in g and mdl in g[c] else pd.Series(dtype=float)
+
+            def nll(ne):
+                a, b = col(f"excess_nll_n{ne}", "soft_bce"), col(f"excess_nll_n{ne}", "b2r")
+                return "–" if not b.notna().any() else f"{a.mean():.4f} / {b.mean():.4f} ({_ms(a - b)})"
+            md.append(f"| {s.name} | {_ms(col('mse_nu', 'soft_bce'), '.5f')} | {_ms(col('mse_nu', 'b2r'), '.5f')} | "
+                      f"{_ms(dlt, '+.5f')} | {(dlt > 0).sum()}/{len(dlt)} | {_ms(col('mse_nu', 'ref200'), '.5f')} | "
+                      f"{_ms(col('spearman_S_clarity', 'b2r'), '+.2f')} | {_ms(col('d_nll_spread_n3', 'b2r'), '+.4f')} | "
+                      f"{nll(3)} | {nll(10)} | {nll(50)} | "
+                      f"{_ms(col('auroc', 'soft_bce'), '.3f')} / {_ms(col('auroc', 'b2r'), '.3f')} | "
+                      f"{_ms(col('mse_nu', 'soft_bce_n'), '.5f')} |")
         md.append("")
+    tb = df[df.checkpoint == "B"]
+    md += ["## S5 — how strongly must the spread vary to be seen? (checkpoint B)", "",
+           "γ = slope of log S on clarity (log S sd = γ; γ = 1: S from ≈ 1.4 to 18, p10–p90). Real-data reference "
+           "(D0b, B²-r, ΔNLL per image and label): Endoscapes +0.001 ± 0.000, AMi-Br −0.001 ± 0.001 (3 votes), "
+           "MHIST +0.046 ± 0.003 (7 votes). Rater rows: the fixed 3-rater panel with biases (−1, 0, 1); B²-rba's "
+           "ablation uses its ordered-vote likelihood.", "",
+           "| setting | γ | model | Spearman S~clarity | spread ablation n=3 | Δ excess NLL n=3 (GS − B²) | n=10 |",
+           "|---|---|---|---|---|---|---|"]
+    by = {x.name: x for x in settings()}
+    for grp in SWEEP_ROWS:
+        for name in grp:
+            g = tb[tb.setting == name].pivot(index="seed", columns="model")
+            if g.empty or "b2r" not in g["mse_nu"]:
+                continue
+            for mdl in ("b2r", "b2rba"):
+                if mdl not in g["mse_nu"]:
+                    continue
+                dn = lambda ne: (_ms(g[f"excess_nll_n{ne}"]["soft_bce"] - g[f"excess_nll_n{ne}"]["b2r"], "+.4f")
+                                 if mdl == "b2r" and f"excess_nll_n{ne}" in g and g[f"excess_nll_n{ne}"]["b2r"].notna().any()
+                                 else "–")
+                md.append(f"| {name} | {by[name].gamma:g} | {mdl} | {_ms(g['spearman_S_clarity'][mdl], '+.2f')} | "
+                          f"{_ms(g['d_nll_spread_n3'][mdl], '+.4f')} | {dn(3)} | {dn(10)} |")
+    md.append("")
     rt = df[df.setting.isin([x.name for x in settings() if x.world in ("raters", "raters_fixed")])]
-    if not rt.empty and "beta_corr" in rt:
+    if not rt.empty and "beta_mae" in rt:
         md += ["## D8 — rater worlds: B²-rba and soft BCE-ba (checkpoint B)", "",
                "Ordered-vote excess NLL over the oracle on fresh panels of known raters (who voted what); for models that "
-               "treat raters as interchangeable every ordering of the count is equally likely. β: learned rater biases "
-               "against the true ones. MSE(m, μ): μ = the typical (unbiased) rater's mean share.", "",
+               "treat raters as interchangeable every ordering of the count is equally likely. β: mean abs error of the "
+               "learned rater biases. MSE(m, μ): μ = the typical (unbiased) rater's mean share. Spearman S~|logit m|: does "
+               "S track how extreme the mean is (where bias-driven dispersion would sit) rather than clarity.", "",
                "| setting | model | excess ordered NLL n=3 | n=10 | excess count NLL n=3 | Spearman S~clarity | "
-               "corr(β̂, β) | mean abs(β̂ − β) | MSE(m, μ) | MSE(m, ν) | AUROC |", "|" + "---|" * 11]
+               "Spearman S~abs logit m | spread ablation n=3 | mean abs(β̂ − β) | MSE(m, μ) | MSE(m, ν) | AUROC |",
+               "|" + "---|" * 12]
         for name in dict.fromkeys(rt.setting):
             for model in ("soft_bce", "b2r", "soft_bce_ba", "b2rba"):
                 g = rt[(rt.setting == name) & (rt.model == model) & (rt.checkpoint == "B")]
                 if g.empty:
                     continue
-                c = lambda col, f=".4f": "–" if col not in g or g[col].isna().all() else \
-                    f"{g[col].mean():{f}} ± {g[col].std():{f}}"
+                c = lambda col, f=".4f": "–" if col not in g else _ms(g[col], f)
                 md.append(f"| {name} | {model} | {c('excess_onll_n3')} | {c('excess_onll_n10')} | {c('excess_nll_n3')} | "
-                          f"{c('spearman_S_clarity', '+.2f')} | {c('beta_corr', '+.3f')} | {c('beta_mae', '.3f')} | "
+                          f"{c('spearman_S_clarity', '+.2f')} | {c('spearman_S_absm', '+.2f')} | "
+                          f"{c('d_nll_spread_n3', '+.4f')} | {c('beta_mae', '.3f')} | "
                           f"{c('mse_mu', '.5f')} | {c('mse_nu', '.5f')} | {c('auroc', '.3f')} |")
+            g = rt[(rt.setting == name) & (rt.checkpoint == "B")].pivot(index="seed", columns="model")
+            if "b2rba" in g["mse_nu"] and "b2r" in g["mse_nu"]:
+                d = lambda col, f: _ms(g[col]["b2rba"] - g[col]["b2r"], f)
+                md.append(f"| {name} | paired B²-rba − B²-r | {d('excess_onll_n3', '+.4f')} | – | {d('excess_nll_n3', '+.4f')} | "
+                          f"{d('spearman_S_clarity', '+.2f')} | {d('spearman_S_absm', '+.2f')} | "
+                          f"{d('d_nll_spread_n3', '+.4f')} | – | {d('mse_mu', '+.5f')} | – | – |")
         md.append("")
     out = Path(root) / "synth_report.md"
     out.write_text("\n".join(md))
