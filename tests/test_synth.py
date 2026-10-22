@@ -20,13 +20,19 @@ def test_world_is_reproducible_and_beta_marginal_matches():
     assert np.std(np.log(Y.sample(Y.Setting("t", gamma=0.0), 100, np.random.default_rng(0))["S"])) < 1e-12
 
 
-def test_raters_world_poisson_binomial():
+def test_raters_world_poisson_binomial_and_panels():
     p = np.array([[0.2, 0.5, 0.9]])
-    f = Y._pb3(p)[0]
+    f = Y._pb(p)[0]
     assert f.sum() == pytest.approx(1) and f[0] == pytest.approx(0.8 * 0.5 * 0.1) and f[3] == pytest.approx(0.2 * 0.5 * 0.9)
+    pan = Y._panels(np.random.default_rng(0), (500,), 3)          # distinct raters per panel, panels differ by image
+    assert all(len(set(r)) == 3 for r in pan) and len({tuple(sorted(r)) for r in pan}) > 100
+    assert len(Y._rater_bias()) == Y.RATER_POOL and abs(Y._rater_bias().mean()) < 1e-12
     s = Y.Setting("r", world="raters")
     x = Y.sample(s, 50, np.random.default_rng(0))
     assert (x["n"] == 3).all() and set(np.unique(x["k"])) <= {0, 1, 2, 3}
+    nu, panels, oracle = Y.truths(s, x, 0)
+    assert set(panels) == set(Y.RATER_PANELS) and all(np.isfinite(o).all() for o in oracle.values())
+    assert panels[10].max() <= 10
 
 
 def test_variable_n_and_specs():

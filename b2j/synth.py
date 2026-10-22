@@ -7,14 +7,17 @@ log S(u) = log S̄ + γ dᵀu (γ = 0: one spread for every image). Each image's
 do not explain) and its votes:
   beta         θ_i ~ Beta(μ S, (1 − μ) S), k ~ Binomial(n_i, θ_i)              (B²'s model, correctly specified)
   logitnormal  θ_i = sigmoid(logit μ + σ ε), σ² = ψ'(μ S) + ψ'((1 − μ) S)      (same logit variance, not Beta)
-  raters       θ_i as in beta; a fixed panel of 3 raters with biases β_r: vote_r ~ Bernoulli(sigmoid(logit θ_i + β_r))
+  raters       θ_i as in beta; a pool of 20 raters with personal biases β_r ~ N(0, 1) (Endoscapes-like spread of rater
+               rates); each image is labelled by its own 3 raters drawn from the pool: vote_r ~ Bernoulli(sigmoid(logit θ_i + β_r))
+               (2026-10-22: replaces one fixed panel of 3 for every image, where bias could not vary across images)
 n_i is fixed or drawn uniformly per image. The real trainer (train.run, frozen-head path) fits soft BCE, B²-r,
 vote-count weighted soft BCE and a reference soft BCE trained on 200 votes per image (≈ the hidden θ_i).
 
 Scored against the truth on held-out images ("eval"; synthetic, so the real-data test rule does not apply):
 mean — MSE(m, ν(u)), ν(u) = E[k/n | u] (the best any model can do from features), and MSE(m, θ_i); spread — Spearman
 of the predicted S with the clarity dᵀu; vote NLL on fresh panels (n_eval = 3, 10, 50; the 3 raters in the raters
-world) minus the oracle's (true distribution of k given u); AUROC of m for θ_i > 0.5.
+world: fresh panels of 3 and 10 pool raters) minus the oracle's (true distribution of k given u); AUROC of m for θ_i > 0.5.
+In the raters world θ_i above is the pool-average rater's share, mean_r sigmoid(logit θ_i + β_r).
 
   python -m b2j.synth run --task $SGE_TASK_ID --ntasks N      -> results/journal/synth/<setting>/<model>__seed<s>/
   python -m b2j.synth report                                  -> results/journal/synth/synth_report.md, synth_long.csv
@@ -41,7 +44,8 @@ LATENT, DIM, SIGMA_Z = 16, 768, 0.7
 WORLD_SEED = 2026                      # U, a, d and the rater biases are fixed: one world, many samples
 N_EVAL, N_DRAWS = 5000, 200            # held-out images; Monte Carlo draws of θ per image for ν(u) and the oracle
 N_EVAL_PANELS = (3, 10, 50)
-RATER_BIAS = (-1.0, 0.0, 1.0)
+RATER_POOL, RATER_SD = 20, 1.0        # raters world: pool size and sd of the biases (logit scale)
+RATER_PANELS = (3, 10)                 # raters world: fresh evaluation panels (distinct pool raters)
 SEEDS = range(5)
 REF_VOTES = 200                        # the reference model's votes per image (≈ θ_i itself)
 
@@ -70,7 +74,7 @@ def settings():
                 for lo, hi in ((3, 20), (4, 10))]
         out += [Setting(f"S3_fixed{n}_g{g:g}", n=n, gamma=g, weighted_baseline=True) for n in (11, 7)]
     out += [Setting("S4_logitnormal_n3", world="logitnormal"), Setting("S4_logitnormal_n10", n=10, world="logitnormal"),
-            Setting("S4_raters_n3", world="raters")]                         # S4: misspecified worlds
+            Setting("S4_pool_n3_g1", world="raters"), Setting("S4_pool_n3_g0", world="raters", gamma=0.0)]  # S4
     return out
 
 
@@ -98,15 +102,28 @@ def _theta_draws(s: Setting, mu, S, rng, size):
     return rng.beta(mu[:, None] * S[:, None], (1 - mu[:, None]) * S[:, None], size=(len(mu), size))
 
 
-def _rater_p(theta):
-    """[..., 3]: each rater's probability of a yes vote given θ."""
-    return expit(logit(np.clip(theta, 1e-9, 1 - 1e-9))[..., None] + np.asarray(RATER_BIAS))
+def _rater_bias():
+    """The pool's biases (fixed with the world), centred so the pool-average rater has no bias on the logit scale."""
+    b = np.random.default_rng(WORLD_SEED + 1).normal(0, RATER_SD, RATER_POOL)
+    return b - b.mean()
 
 
-def _pb3(p):
-    """Poisson-binomial pmf of the 3 raters' yes count: [..., 4] from p [..., 3]."""
+def _rater_p(theta, raters=None):
+    """[..., R]: each rater's probability of a yes vote given θ; raters [..., R] pool indices (None: the whole pool)."""
+    b = _rater_bias()
+    lt = logit(np.clip(theta, 1e-9, 1 - 1e-9))[..., None]
+    return expit(lt + (b if raters is None else b[raters]))
+
+
+def _panels(rng, shape, size):
+    """shape + (size,) distinct pool raters per panel, drawn at random."""
+    return np.argsort(rng.random(shape + (RATER_POOL,)), -1)[..., :size]
+
+
+def _pb(p):
+    """Poisson-binomial pmf of the raters' yes count: [..., R + 1] from p [..., R]."""
     f = np.ones(p.shape[:-1] + (1,))
-    for r in range(3):
+    for r in range(p.shape[-1]):
         q = p[..., r:r + 1]
         f = np.concatenate([f * (1 - q), np.zeros_like(q)], -1) + np.concatenate([np.zeros_like(q), f * q], -1)
     return f
@@ -122,7 +139,7 @@ def sample(s: Setting, N, rng, n_votes=None):
     S = np.exp(s.log_s_bar + s.gamma * clar)
     theta = _theta_draws(s, mu, S, rng, 1)[:, 0]
     if s.world == "raters":
-        votes = rng.random((N, 3)) < _rater_p(theta)
+        votes = rng.random((N, 3)) < _rater_p(theta, _panels(rng, (N,), 3))
         n = np.full(N, 3.0)
         k = votes.sum(1).astype(float)
         theta_eff = _rater_p(theta).mean(-1)
@@ -154,13 +171,13 @@ def truths(s: Setting, ev, seed):
     th = _theta_draws(s, mu, S, rng, N_DRAWS)
     panels, oracle_nll = {}, {}
     if s.world == "raters":
-        p = _rater_p(th)                                           # [N, draws, 3]
-        nu = p.mean((1, 2))
-        pr = _rater_p(ev["theta_raw"])
-        k3 = (rng.random(pr.shape) < pr).sum(-1).astype(float)
-        pmf = _pb3(p).mean(1)                                      # [N, 4]
-        panels[3] = k3
-        oracle_nll[3] = -np.log(np.take_along_axis(pmf, k3.astype(int)[:, None], 1)[:, 0])
+        nu = _rater_p(th).mean((1, 2))
+        for ne in RATER_PANELS:
+            pr = _rater_p(ev["theta_raw"], _panels(rng, (len(th),), ne))
+            k = (rng.random(pr.shape) < pr).sum(-1).astype(float)
+            pmf = _pb(_rater_p(th, _panels(rng, th.shape, ne))).mean(1)   # mixture over θ and over panels: [N, ne + 1]
+            panels[ne] = k
+            oracle_nll[ne] = -np.log(np.take_along_axis(pmf, k.astype(int)[:, None], 1)[:, 0])
     else:
         nu = mu if s.world == "beta" else th.mean(1)
         for ne in N_EVAL_PANELS:
