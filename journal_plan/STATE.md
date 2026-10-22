@@ -11,6 +11,12 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 - **7550711 `tune2`**: tuning grid rerun (54 runs) + `pilot choose` → `tune/chosen.json`, `tune_report.md`, `tune/curves_<ds>.png`.
 - **7550712 `r1`** (array 1–4, `-hold_jid 7550711`): block `r1`, 280 frozen runs → `results/journal/r1/`. Logs `jobs/logs/`.
 
+## Current step (2026-10-23): R2 finished; R2 validation analysis running
+- r2 7591568: 40/40 ok, 0 failed (4 tasks, all ended 21:05–21:24 on 2026-10-22).
+- Code c0d452e: `analysis.main_runs` takes the block's own regime (R2 = finetune; mixed blocks stay frozen); `analysis.collect` skips rater-aware variants (scored by `b2j.d8`, which needs β); `d8.contrasts` adds the §5 F5 count-NLL advantage soft BCE (Global-S) − B²-rba. 184 tests pass.
+- Submitted **r2an 7593051** (`jobs/r2_analysis.qsub.sh`, validation only): `analysis tables r2`, `analysis figures r2`, `d8 report r2`, `verdicts r1 --fine-tune-block r2` (S5c preview; rewrites `r1/verdicts_val.md`).
+- **Exact next action:** when 7593051 ends, read `results/journal/r2/tables_val/{tables.md,d8_report.md}` and `r1/verdicts_val.md` on the cluster; summarise R2 validation for the user (no test files); then propose the open R3 choices (checkpoint, failed runs, seed pooling, Global-S under fine-tuning, NLL normalisation; rename F0–F5 → E0–E5) and lock R3 before any test prediction is opened.
+
 ## Current step (2026-10-22): D8 B²-rba DONE (all jobs ok; outcome in iterations.md D8)
 User approved rater-aware B² ("B²-rba", revised bias adjusted) and asked to code + run it. Plan: iterations.md D8 (2 × 2 soft BCE / B²-r / soft BCE-ba / B²-rba; endpoints P1–P3; decision rule). Code commit 16d19ea (losses.rater_loglik quadrature, heads.RaterOffsets, posthoc.ordered_nll / rater_count_pmf / fit_scale_rater, train votes + β own lr 1e-2 no wd, pilot tune_ba/choose_ba, blocks tune_ba/d8, b2j/d8.py report, synth rater models). 178 tests pass.
 Jobs (cluster at 16d19ea): **7589954 d8tune** (array 1–4, 24 runs) → **7589955 d8choose** → **7589956 d8** (array 1–4, 40 runs) → **7589957 d8an** (report `results/journal/d8/tables_val/d8_report.md`); **7589958 synth** (array 1–30; only the 30 new rater-model runs train) → **7589959 synthrep**. d8tune task 1 died at once with CUDA OOM (scheduler gave it card 4, already used by task 3; not our code) → resubmitted as **7589976** (-t 1); d8choose hold now 7589954 + 7589976.
