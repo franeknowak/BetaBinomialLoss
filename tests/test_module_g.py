@@ -90,3 +90,29 @@ def test_d6_block(tmp_path):
 def test_no_margins_command():
     assert not hasattr(G, "margins")
     assert len(G.pilot_specs.__code__.co_varnames) >= 1        # the pilot block itself stays (validation preview)
+
+
+def test_r2_tuning_choice_and_block(tmp_path):
+    """R2: encoder-lr tuning for every family (+ B²-rba / soft BCE-ba on Endoscapes), the same choice rule, then the
+    40-run main block with the chosen encoder lr and the frozen head lr / wd."""
+    from b2j.blocks import r2
+    for block, fams in (("tune", G.FAMILIES), ("tune_ba", G.BA_FAMILIES)):
+        p = G.chosen_path(tmp_path, block)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({ds: {f: {"lr": 3e-4, "wd": 1e-2} for f in fams} for ds in G.DATASETS}))
+    specs = G.r2_tune_specs(tmp_path)
+    assert len(specs) == 2 * (5 + 3) and all(s.regime == "finetune" and s.epochs is None for s in specs)
+    assert {s.variant for s in specs if s.dataset == "cifar10h"} == set(G.FAMILIES)
+    assert G.choose_r2(tmp_path) == {}                                   # nothing finished yet
+    for s in specs:
+        d = s.out_dir(tmp_path)
+        d.mkdir(parents=True)
+        good = s.encoder_lr == (3e-6 if s.variant == "b2rba" else 1e-5)
+        (d / "summary.json").write_text(json.dumps(_summary(0.55 if good else 0.50, 0.3, 1.0, 2.0, epochs=5)))
+    chosen = G.choose_r2(tmp_path)
+    assert chosen["endoscapes"]["b2rba"]["encoder_lr"] == 3e-6 and chosen["cifar10h"]["b2r"]["encoder_lr"] == 1e-5
+    assert G.hyper_ft("endoscapes", "b2rba", tmp_path) == {"lr": 3e-4, "wd": 1e-2, "encoder_lr": 3e-6}
+    main = r2(root=tmp_path)
+    assert len(main) == 40 and len({(s.dataset, s.name) for s in main}) == 40
+    assert {s.variant for s in main if s.dataset == "endoscapes"} == set(G.FAMILIES + G.BA_FAMILIES)
+    assert all(s.block == "r2" and s.regime == "finetune" for s in main)

@@ -122,5 +122,20 @@ def d8(root=None):
     return [RunSpec(ds, v, seed=s, block="d8", **hyper(ds, v, **kw)) for ds in D8_DATASETS for v in D8 for s in SEEDS]
 
 
+def r2_tune():
+    from b2j.pilot import r2_tune_specs
+    return r2_tune_specs()
+
+
+def r2(root=None):
+    """R2, full fine-tuning (plan §4.4 R2; §5 re-commit 2026-10-22): hard BCE, soft BCE, B²-r on Endoscapes and
+    CIFAR-10H, plus B²-rba (B²-final where rater identities exist) and its control soft BCE-ba on Endoscapes; 5 seeds,
+    5 epochs (40 runs). Head lr / wd and encoder lr from block r2_tune (pilot choose_r2). No encoder weights are kept."""
+    from b2j.pilot import R2_DATASETS, hyper_ft, r2_families
+    kw = {} if root is None else {"root": root}
+    return [RunSpec(ds, v, seed=s, regime="finetune", block="r2", **hyper_ft(ds, v, **kw)) for ds in R2_DATASETS
+            for v in r2_families(ds) for s in SEEDS]
+
+
 BLOCKS = {"smoke": smoke, "tune": tune, "pilot": pilot, "r1": r1, "d_base": d_base, "d12": d12, "d5": d5, "d6": d6,
-          "tune_ba": tune_ba, "d8": d8}
+          "tune_ba": tune_ba, "d8": d8, "r2_tune": r2_tune, "r2": r2}

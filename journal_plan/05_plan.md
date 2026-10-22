@@ -283,8 +283,9 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 
 | Block | Datasets | Arms | Seeds | Runs |
 |---|---|---|---|---|
-| Tuning (5 epochs) | Endoscapes, CIFAR-10H | hard BCE, soft BCE, B²-r × 2 encoder lr | 1 | 12 |
+| Tuning (5 epochs) | Endoscapes, CIFAR-10H | hard BCE, soft BCE, B²-r × 2 encoder lr (1e-5, 3e-6; head lr / wd from frozen tuning) | 1 | 12 |
 | Main | Endoscapes, CIFAR-10H | hard BCE, soft BCE, B²-r | 5 | 30 |
+| B²-final additions (2026-10-22) | Endoscapes | soft BCE-ba, B²-rba (tuning: × 2 encoder lr, 4 runs) | 5 | 10 |
 | ~~Re-head~~ | dropped 2026-10-16 #6 | | | 0 |
 
 **R3: lock and analyse (5–6 user-days; no training).** Open the test predictions once and write down the verdicts.
@@ -309,6 +310,24 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 ## 5. Success criteria and outcomes (rewritten 2026-10-16, amendments #1–#3, #6)
 
 **PRE-REGISTERED 2026-10-16 for B²-r** (git tag `prereg-b2r-2026-10-16`), before any R1 job was submitted and before any test prediction was opened. Only validation outputs (smoke, tune, pilot) had been seen. Re-committed for B²-final at the end of round D.
+
+**RE-COMMITTED 2026-10-22 for B²-final** (end of round D; git tag `prereg-b2final-2026-10-22`), before any R2 job and before any test prediction was opened. Round D used validation only (`iterations.md` D0–D8, D7b). Everything above and in 5.1 stays in force for B²-r unchanged; this block adds B²-final.
+- **Definition.** B²-final = **B²-rba** where the rater of every vote is known and the same raters label every image (Endoscapes, AMi-Br; the CVS Challenge only if its release gives per-vote rater identities, decided in the R4 loader before its test is opened), otherwise **B²-r** (CIFAR-10H, MHIST, FER+). B²-rba: θ ~ Beta(m S, (1 − m) S) for a typical rater, vote_r ~ Bernoulli(σ(logit θ + β_r)), one β per rater and label (sum 0 over raters), loss = −log P(ordered votes); head lr / wd from block `tune_ba`. Its control is **soft BCE-ba** (same biases, no spread), always reported beside it.
+- **Endpoints for B²-final** (test, checkpoint B unless stated; readings of 5.1; frozen unless stated):
+
+| ID | Endpoint | Reading | Datasets |
+|---|---|---|---|
+| F0 | S0 with B²-final in place of B²-r (Δ BACC, Δ mAP vs soft BCE, checkpoint A) | difference | Endoscapes (B²-rba) + CIFAR-10H (= B²-r) |
+| F1 | ordered-vote NLL per vote, B²-rba − B²-r | superiority (< 0) | Endoscapes + AMi-Br |
+| F1c | same, soft BCE-ba − soft BCE (is the gain the biases, or B²?) | difference | Endoscapes + AMi-Br |
+| F2 | per-image S vs one S per label (ordered NLL), within B²-rba | difference | Endoscapes + AMi-Br |
+| F3 | interaction (soft BCE-ba − B²-rba) − (soft BCE − B²-r), ordered NLL | difference | Endoscapes + AMi-Br |
+| F4 | count NLL (raters interchangeable), B²-rba − B²-r; mAP, split AP | difference | Endoscapes + AMi-Br |
+| F5 | under fine-tuning (R2): F1, F2 and the count-NLL advantage over soft BCE + Global-S | difference | Endoscapes |
+
+- **Claim rule for F1–F4:** the predicted reading on both Endoscapes and AMi-Br (the two datasets with rater identities). On CIFAR-10H B²-final is B²-r, so S0/S4/S5c/S6 are unchanged.
+- **Stated in advance (from validation, not claims):** the F1 gain is expected to come mostly from the rater biases (F1c of similar size); F2 is expected to show no evidence of a difference with 3 votes (synthetic D7b: only strong spread variation is detectable with 3 votes); S at extreme m is not identified and is not interpreted as ambiguity.
+- **R2 additions:** B²-rba and soft BCE-ba fine-tuned on Endoscapes with the same 2-encoder-lr tuning as the other losses (§4.4 R2: 16 tuning runs, 40 main runs).
 
 ### 5.1 Readings
 Every endpoint is a difference between two scores, reported with its two-level bootstrap 95% CI (§4.3). There are no equivalence margins and no equivalence or non-inferiority verdicts.

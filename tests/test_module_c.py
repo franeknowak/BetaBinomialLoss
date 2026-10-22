@@ -194,3 +194,21 @@ def test_finetune_path_and_feature_cache(image_table, tmp_path, monkeypatch):
     fr = {s: T.split_from_table(t.take(s), E.load_cache(t.take(s), path), labelled=s != "test") for s in ("train", "val", "test")}
     T.run(T.TrainConfig("b2r", epochs=2), fr["train"], fr["val"], fr["test"], tmp_path / "head", device="cpu", verbose=False)
     assert (tmp_path / "head" / "val_B.npz").exists()
+
+
+def test_finetune_rater_variant(image_table, tmp_path):
+    """R2: B²-rba (rater biases, own lr) fine-tunes on images with the ordered votes; the encoder moves, β is saved."""
+    from dataclasses import replace
+    t = image_table
+    v = (np.arange(3.0)[None, :, None] < t.k[:, None, :]).astype(float)      # [N, 3, 1] consistent with k
+    t = replace(t, votes=v)
+    sp = {s: T.split_from_table(t.take(s), ImageSet(t.take(s), "cifar10h"), labelled=s != "test")
+          for s in ("train", "val", "test")}
+    assert sp["test"].v is None and sp["train"].v.shape == (12, 3, 1)
+    enc = StubEncoder()
+    w0 = enc.net[0].weight.detach().clone()
+    cfg = T.TrainConfig.finetune("b2rba", encoder_lr=1e-4, epochs=2, batch_size=4, num_workers=0)
+    s = T.run(cfg, sp["train"], sp["val"], sp["test"], tmp_path / "run", encoder=enc, device="cpu", verbose=False)
+    assert s["finetune"] and not torch.equal(enc.net[0].weight, w0)
+    assert np.load(tmp_path / "run" / "test_B.npz")["out"].shape == (6, 1, 2 + 3)      # (α0, α1) + 3 rater biases
+    assert "bias" in torch.load(tmp_path / "run" / "head_B.pt")
