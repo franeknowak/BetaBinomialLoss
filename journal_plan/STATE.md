@@ -15,7 +15,8 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 - User agreed all 6 R3 choices → 05_plan amendment 2026-10-23 #1–#7 (#7 = scope of what R3 opens: r1 + S5c from r2, d_base confirmatory, d8 E0–E4, r2 E5; tables/figures r1, r2, d_base). Tag `r3-lock-2026-10-23`.
 - Code: NLL per vote everywhere (`analysis.collect`, `fig2`, `verdicts.Block`); `d8.report(block, split, open_test)` scores test with validation-fitted threshold and P2 single S; contrasts labelled E0–E5 (E1 read as superiority). 184 tests pass.
 - `jobs/r3.qsub.sh` (job scripts are gitignored; copied to the cluster by scp): verdicts r1/d_base, d8 report d8/r2, tables+figures r1/r2/d_base, all `--split test --open-test`.
-- **Exact next action:** if not yet submitted: on the cluster `git pull` to the tag, scp `jobs/r3.qsub.sh`, `qsub jobs/r3.qsub.sh`. When it ends: read `r1/verdicts_test.md`, `d_base/verdicts_test.md`, `{d8,r2}/tables_test/d8_report.md`, `{r1,r2,d_base}/tables_test/tables.md`; report the verdicts against §5 to the user (claim rule: both core datasets). Then R4 (CVS Challenge).
+- SUBMITTED **r3 7594355** (cluster at 67582fe = tag). Log `jobs/logs/r3.o7594355`.
+- **Exact next action:** when 7594355 ends (check log for errors): read `r1/verdicts_test.md`, `d_base/verdicts_test.md`, `{d8,r2}/tables_test/d8_report.md`, `{r1,r2,d_base}/tables_test/tables.md`; report the verdicts against §5 to the user (claim rule: both core datasets). Then R4 (CVS Challenge).
 
 ## Previous step (2026-10-23, later): R2 validation summarised; waiting for the user's R3 lock decisions
 - r2an 7593051 DONE 02:08, no errors. Outputs: `r2/tables_val/{tables.md,d8_report.md,*_long.csv}`, `r2/figures_val/` (F1, F3, F4, F5). Skipped figures are expected (R2 has no subsampled-n or training-fraction runs). `r1/verdicts_val.md` now has S5c (CIFAR-10H, frozen − fine-tuned advantage = +0.0010 [+0.0008, +0.0012], success).
