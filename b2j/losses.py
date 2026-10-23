@@ -213,7 +213,7 @@ class LossConfig:
     kl_lambda: float = 0.0          # 0 = no KL
     param: str = "alpha"            # B² head output: 'alpha' (two softplus alphas) | 'ms' (logit m, log S; round D)
     s_shrink: float = 0.0           # 'ms' only: lambda * (log S - target)^2 (round D, D2)
-    s_shrink_target: str = "prior"  # 'prior': log S of the moment-matched prior = concentration ACROSS images (D2, invalid:
+    s_shrink_target: str = "prior"  # 'prior': log S of the moment-matched prior = concentration of the vote-share distribution ACROSS images (D2, invalid:
                                     #   ignores x, ~0.5 on CIFAR-10H); 'batch': the batch mean of log S (D2b), i.e. a
                                     #   penalty on the concentration's variation between images; its level is learned
     n_weight: bool = False          # soft BCE only (round D, D5): per-sample weight n / batch mean of n, i.e. the
