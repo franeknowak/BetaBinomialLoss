@@ -16,7 +16,7 @@ Round 0 of `05_plan.md` §4.4 (modules a → g in order, each with a short spec 
 ## Hard rules
 1. **Git:** work only on branch `journal-extension`. Never commit to or push `main`. Commit small; push after each module.
 2. **Pre-registration:** the success criteria (`05_plan.md` §5, rewritten 2026-10-16; no δ values any more) are committed and dated at the end of R0, before any R1 job is submitted, and re-committed for B²-final at the end of round D.
-3. **Test discipline:** test predictions are written to disk but never printed, plotted or summarised before R3 (CVS Challenge: after R3, in R4). The trainer must not print test metrics (the current `main.py` does; remove that).
+3. **Test discipline (relaxed by the user 2026-10-23):** test results may be viewed and reviewed freely; they are never used to develop, tune or select anything (method, hyperparameters, thresholds, checkpoints, spreads: validation only).
 4. **Validation only** for tuning, thresholds, c, Global-S (S\*), checkpoint choice and the pilot.
 5. **Do not change the design mid-round.** A bug means fix it and re-run the whole affected block. Anything else goes to the user.
 6. **Keep `journal_plan/STATE.md` current** after every unit of work: current step, what is done, the exact next action, open questions. The user's Claude usage is limited and sessions may be cut off.

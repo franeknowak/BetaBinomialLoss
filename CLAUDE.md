@@ -6,4 +6,4 @@ Before doing anything, read `journal_plan/HANDOFF.md`, then `journal_plan/STATE.
 - Never commit to or push `main`.
 - Update `journal_plan/STATE.md` after every unit of work: current step, done, exact next action, open questions.
 - Cluster: `ssh -o BatchMode=yes comic '<cmd>'` only. Never handle credentials. Login node: no compute; submit jobs.
-- Test predictions are never looked at before the round the plan says (R3; R4 for CVS Challenge).
+- Test results may be looked at and reviewed freely; never use them to develop, tune or select anything (all fitting and selection on validation).
