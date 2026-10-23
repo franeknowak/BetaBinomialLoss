@@ -5,9 +5,9 @@
 The rule is fixed now, before any experiment, so the choice of venue cannot steer the analysis. The experiments are identical for both venues, so nothing is lost by deciding after Round 3.
 
 ## Why TMLR is the default
-- **The most likely result is outcome B.** The per-sample spread helps where there are many raters (CIFAR-10H), and on 3-rater CVS data it is equivalent to a spread that depends only on the mean. The theory in 01_foundations predicts this, and both critics independently expected it. The defensible core is therefore an *analysis* paper:
+- **The most likely result is outcome B.** The per-sample concentration helps where there are many raters (CIFAR-10H), and on 3-rater CVS data it is equivalent to a concentration that depends only on the mean. The theory in 01_foundations predicts this, and both critics independently expected it. The defensible core is therefore an *analysis* paper:
   - the soft-BCE decomposition;
-  - where the spread enters decisions (only at thresholds ≠ 0.5, through per-sample variation at fixed mean);
+  - where the concentration enters decisions (only at thresholds ≠ 0.5, through per-sample variation at fixed mean);
   - how many raters identify it;
   - the three implementation traps;
   - an honest comparison against matched baselines.
@@ -19,7 +19,7 @@ The rule is fixed now, before any experiment, so the choice of venue cannot stee
 ## When MedIA is better (outcomes A or B+)
 - MedIA is the natural home for an extended MICCAI paper, and its readers include the surgical data science community.
 - It needs **positive medical evidence**: either
-  - a CVS gain on Endoscapes (outcome A: S-aware confirmation lowers false confirmations, or the per-sample spread beats S\*(m)), or
+  - a CVS gain on Endoscapes (outcome A: S-aware confirmation lowers false confirmations, or the per-sample concentration beats S\*(m)), or
   - the many-rater effect replicating on MHIST pathology (outcome B+).
 - With one of these, the paper becomes "a method for predicting expert-panel responses in medical imaging, and when it works", which suits MedIA.
 - Without them, MedIA reviewers would see a null medical result supported mainly by CIFAR-10H, and the risk of rejection is high.

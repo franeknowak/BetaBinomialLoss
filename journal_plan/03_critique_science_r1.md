@@ -8,7 +8,7 @@ r1 resolves almost every round-0 issue. The ones that mattered most are fixed: H
 
 Two errors remain that could change a conclusion:
 1. **The equivalence margin rule δ = 1.5·h makes "inconclusive" likely even when the truth is exactly 0.** The per-test success probability is 0.67, and S0 alone needs four such tests.
-2. **H4's per-sample test mixes mean and spread.** S\*(m) is built on soft-BCE's m, so B²-r can beat it through a better m alone.
+2. **H4's per-sample test mixes mean and concentration.** S\*(m) is built on soft-BCE's m, so B²-r can beat it through a better m alone.
 
 Both have one-line fixes. With them, the plan is accept-worthy for TMLR, and for MedIA under outcomes A or B+. Marks: 22 accept, 7 revise, 3 cut (cuts agreed).
 
@@ -39,7 +39,7 @@ Both have one-line fixes. With them, the plan is accept-worthy for TMLR, and for
 | BL-B2M | accept | The table says both "× c" and "native output"; pick one (trivial) | — |
 | MET | accept | Scored quantity fixed per arm; per-vote NLL; P(split) reliability with a jackknife noise floor | — |
 | STAT | revise | Sound overall. **Margin rule error:** an equivalence test succeeds iff \|estimate\| < δ − h. With δ = 1.5h and a true difference of 0, P(success) = P(\|Z\| < 0.98) = **0.67** per test (scipy). S0 needs 4 tests (BACC and mAP on 2 datasets), so success is roughly 0.2–0.45 when the theory is exactly right. The anchor would read "inconclusive" by design | Set **δ = 2h** (P(success) = 0.95 per test at zero difference), keep the caps. The pilot's 5 seeds against the test's 10 make the test-time h smaller, so this stays conservative |
-| SEL | accept | Two checkpoint rules, per-epoch spread fitting, enforced test silence | — |
+| SEL | accept | Two checkpoint rules, per-epoch concentration fitting, enforced test silence | — |
 | R0 | accept | Modular, pilot included, licence rule fixed | — |
 | R1 | accept | Arms complete. The S\*(m\_B²) fix is post-hoc and adds no runs | — |
 | R2 | accept | Scope cuts (LoRA, 3 seeds) leave H5c decidable | — |

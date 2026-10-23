@@ -21,7 +21,7 @@ Every number below is reproducible from `journal_plan/analysis/` (scripts + outp
    - the **KL term** caps S at ≈ 7–10 wherever the data would push it higher (λ = 0.05, hard-coded).
    As a result, **a single constant S ≈ 1–2 per criterion gives a lower held-out vote NLL than the per-image S the model predicts, in all 4 runs and all 3 criteria**, and S separates split votes from unanimous ones almost no better than the mean does (AUROC within mean-quintiles 0.37–0.65).
 5. **With 3 annotators, S is barely identifiable.** One image carries Fisher information about log S of 0.014 (n=3, S=10) against 0.35 (n=50). Pinning S down to within ×1.6 takes ≈290 *indistinguishable* images at n=3 against ≈12 at n=50; at S=50 it takes ≈4000 against ≈33. Reported S values above ~10 at n=3 come from regularisation, not from the data.
-6. **S is not "evidence" or epistemic uncertainty.** In this likelihood it is the predicted spread of θ among images the model treats as alike (heterogeneity), plus any annotator correlation, *minus* annotator heterogeneity (a biased annotator makes the votes **under**-dispersed, which pushes S up). With a learnable encoder S grows every epoch (E2E val S 5 → 16 in 4 epochs), so the S you see depends on when early stopping fired.
+6. **S is not "evidence" or epistemic uncertainty.** In this likelihood S is a concentration: 1/(S+1) is the predicted spread of θ among images the model treats as alike (heterogeneity), plus any annotator correlation, *minus* annotator heterogeneity (a biased annotator makes the votes **under**-dispersed, which pushes S up). With a learnable encoder S grows every epoch (E2E val S 5 → 16 in 4 epochs), so the S you see depends on when early stopping fired.
 7. **The decision quantity and the reported uncertainty should change** (Step 2 inputs): drop the +1 floor, remove or post-hoc correct the label-dependent weights, report P(split vote) and P(unanimous) instead of 2/S, and evaluate them with vote-level proper scores on held-out data.
 8. **Reproducibility gap:** `FT_WEIGHTS` loading is not implemented (the config validator says so), λ is not configurable, and the paper's encoder-adaptation stage cannot be run from `main`. The 26/05 reference runs (frozen SwinV2, ImageNet weights) reach test BACC ≈ 64%, against 72.4% in the paper. The journal paper does not need to reproduce MICCAI, but it must not reuse those numbers.
 9. **Synthetic evaluation: not found** (repo, every branch, git history, project). Section 7 lists the likely causes this analysis predicts, each with a one-line check.
@@ -40,7 +40,7 @@ P(k ≥ 2 | α) for n=3 is 3E[θ²] − 2E[θ³], with E[θʲ] the rising-factor
 | # | Assumption | Where it enters | Consequence |
 |---|---|---|---|
 | A1 | The 3 votes are conditionally iid given θ (exchangeable, equally skilled, independent) | Binomial likelihood, P_maj formula | See §6. Endoscapes uses fixed raters, not a random draw from a population |
-| A2 | Images the network maps to the same output share one Beta | Identifies S at all (§3) | S means "spread among look-alikes", not per-image uncertainty |
+| A2 | Images the network maps to the same output share one Beta | Identifies S at all (§3) | S measures how concentrated θ is among look-alikes (small S = widely spread θ), not per-image uncertainty |
 | A3 | α ≥ 1 (head = softplus + 1) | Model family | Excludes U-shaped and low-concentration Betas; S ≥ 2 and S ≥ 1/min(m, 1−m). The data need α < 1: the moment-matched marginal S per criterion is 2.3 / 1.0 / 1.5 (C1/C2/C3, train) |
 | A4 | Label-dependent weights do not change what θ means | Weighted loss | False: they change the fitted distribution (§5) |
 | A5 | The KL prior is reachable | Prior α₁ᵖ = πν = 0.31, 0.22, 0.36 < 1 | Unreachable under A3, so the KL pushes α₁ to its floor of 1 |
@@ -63,7 +63,7 @@ P(k ≥ 2 | α) for n=3 is 3E[θ²] − 2E[θ³], with E[θʲ] the rising-factor
 ## 2. What S determines
 
 S does not enter the location of θ. It enters:
-- the **spread** of θ: Var θ = m(1−m)/(S+1);
+- the **spread** of θ (set by the concentration S): Var θ = m(1−m)/(S+1);
 - the **predicted vote distribution**. Its useful functionals are P(split) = 1 − P(k=0) − P(k=3) and P(unanimous). For two random annotators, the disagreement probability is 2m(1−m)·S/(S+1);
 - **P_maj only slightly**: at m = 0.3, P_maj moves from 0.259 (S = 3.4) to 0.216 (S → ∞). P_maj > 0.5 ⟺ m > 0.5 holds for all S (`checkA.out`, §C).
 
@@ -131,7 +131,7 @@ E_k[c] = (n(n−1)/2) · Var_G(θ)/(m(1−m)) for k drawn from a mixture G of θ
 
 **Implications for what the method adds:**
 1. The mean m is learned by the same objective as soft BCE (×3), so **any accuracy or AP claim against soft BCE has to come from S**, and §2 shows S cannot affect thresholded metrics and barely affects AP. Prediction: **B² and properly tuned soft BCE will tie on BACC/AP/AUROC**. The journal paper should not claim classification gains over soft BCE.
-2. What B² can claim is a **calibrated predictive distribution over the panel's votes**: P(split), P(unanimous), P_maj accounting for spread. It can win only on proper scores for votes (vote NLL, P(split) calibration), and only where the data identify S (§3.1). This is a narrower but honest contribution, and it is testable.
+2. What B² can claim is a **calibrated predictive distribution over the panel's votes**: P(split), P(unanimous), P_maj accounting for concentration. It can win only on proper scores for votes (vote NLL, P(split) calibration), and only where the data identify S (§3.1). This is a narrower but honest contribution, and it is testable.
 3. Soft BCE has its own dispersion-free analogue: a **soft BCE + post-hoc constant S** fitted on validation. That is the natural strong baseline for claim 2, and the current models already lose to it (§3.3).
 4. Against hard BCE, the advantage comes from soft labels, not from the Beta-Binomial structure.
 

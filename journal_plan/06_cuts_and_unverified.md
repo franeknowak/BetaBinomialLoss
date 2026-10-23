@@ -11,7 +11,7 @@
 | One-sided Wilcoxon over 5 seeds | MICCAI rebuttal | Cut | User instruction. Replaced by a two-level bootstrap (test clusters × seeds) with three-way verdicts and margins sized on validation |
 | `+1` floor, majority-vote weights, KL | MICCAI recipe | Removed from the proposed recipe; kept as ablation arms (HT) | 01_foundations §3, §5: each sets S instead of the data |
 | LoRA regime | Brief (open item) | Cut | Not wired into the model; frozen vs full fine-tuning already answers what S means per regime |
-| Held-out spread head on CVS | r0 H5 | Moved to CIFAR-10H only | No effect is predicted at n = 3, so it could not refute anything there |
+| Held-out concentration head on CVS | r0 H5 | Moved to CIFAR-10H only | No effect is predicted at n = 3, so it could not refute anything there |
 | Mean–precision fallback head; cross-fitted S-head | r0 H2/H5, science critic | Cut | Cost; a single ε fallback (10⁻³ → 0.1) decided in the R0 smoke test is enough |
 | Synthetic generator (user's design and the minimal version) | User | Cut (restore for TMLR if reviewers ask) | Not essential. The user's design mostly tests mean recovery (S_true = ∞ in its default regime) and its OOD test is ill-posed for this loss (01b §C). CIFAR-10H with ~51 votes gives near-known θ |
 | ChaosNLI / non-image modality | r0 §5 | Cut | Tests no new hypothesis; restore only for generality at TMLR |
@@ -19,7 +19,7 @@
 | U3 (audit/teaching use case) | r0 | Folded into the metrics | No decision differs from U1/U2 |
 | U2 vote-allocation simulation | r0 | Cut | Leaks the reference votes and has a straw-man comparator (uniform allocation) |
 | Equivalence margins δ = 2h, caps, equivalence / non-inferiority verdicts | plan §4.3, §5.1 | Cut (2026-10-16, user) | δ followed the experiment's noise, not what matters; every comparison is now a difference with its bootstrap CI |
-| S\*(m) and S\*(m_B²) (mean-dependent spread) | r1 H4 | Cut (2026-10-16, user) | Hard to explain; Global-S answers the "one constant" objection and the P_maj-vs-m ranking shows information beyond m |
+| S\*(m) and S\*(m_B²) (mean-dependent concentration) | r1 H4 | Cut (2026-10-16, user) | Hard to explain; Global-S answers the "one constant" objection and the P_maj-vs-m ranking shows information beyond m |
 | Recall-at-fixed-precision operating point | 2026-10-16 review | Not adopted | Adds a choice (the precision level) and breaks cross-dataset consistency; FCR at recall 0.90 kept, PR curves added |
 | Label auditing / posterior-predictive check | 01b D.4 | At most one exploratory figure | The known Endoscapes artefact (sequential/hierarchical marking) is per rater and across criteria, so a per-criterion panel Beta cannot see it |
 | Variable-n use case | 01b D.5 | Replaced by controlled vote subsampling | No core dataset has materially variable n |

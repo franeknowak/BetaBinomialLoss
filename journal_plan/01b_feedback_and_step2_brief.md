@@ -14,7 +14,7 @@
 | — | Think about use cases and users (CVS in particular, others allowed). Alphas are probably useful under conditions such as a frozen encoder. "Just output the mean" is not an option we take | Use-case section D. The proposer must name users, conditions and the decision each output supports |
 | — | Check that softplus is not removed by accident | **Confirmed: softplus stays.** Only the `+ 1` after softplus is in question (see B.1) |
 | — | Make a new branch before touching the repo; never push to main | No repo code changes in this planning stage. `journal_plan/` is an untracked folder; nothing has been committed. Before any code work: `git checkout -b journal-extension` |
-| — | "Dispersion-aware baseline" was unclear | Renamed and defined in E.4 as **"soft BCE + one global spread"** |
+| — | "Dispersion-aware baseline" was unclear | Renamed and defined in E.4 as **"soft BCE + one global concentration"** |
 | — | Metrics: at least ACC, BACC, mAP, F1, plus others per task | Section E.5 |
 | — | Ignore per-video evaluation completely | Removed from the plan. Frame/sample-level only |
 | — | Don't overthink assumption violations: the world isn't perfect, and real data always carries bias | Given to the science critic as an explicit instruction: judge assumption violations by whether they change a conclusion, not by purity |
@@ -66,7 +66,7 @@ The question is: under what conditions is the full Beta (not just its mean) wort
    - P(split panel) = 1 − P(k = 0) − P(k = n);
    - P(unanimous agreement).
    Refer the frames where these are low. The mean-only versions (S → ∞) exist as well, so the test is whether the Beta-based score gives a better risk–coverage curve than mean-only scores and than plain soft-BCE / hard-BCE confidence. CVS user: an intraoperative assistant that *declines to confirm* a criterion when experts would plausibly disagree. That is safer than a confident yes/no, and it is the natural reading of "flag doubtful views".
-2. **Frozen foundation-model encoder + light head** (the user's hunch; 01_foundations §3.4 agrees). Here look-alike groups exist, so S has a defined meaning: experts disagree on frames like this. This is the realistic deployment setting for small surgical datasets (DINOv3 / surgical FMs, linear or MLP probes). Prediction: per-sample α carry more information than a global spread under a frozen encoder than under full fine-tuning.
+2. **Frozen foundation-model encoder + light head** (the user's hunch; 01_foundations §3.4 agrees). Here look-alike groups exist, so S has a defined meaning: experts disagree on frames like this. This is the realistic deployment setting for small surgical datasets (DINOv3 / surgical FMs, linear or MLP probes). Prediction: per-sample α carry more information than a global concentration under a frozen encoder than under full fine-tuning.
 3. **Annotation triage / adaptive number of annotators** (dataset builders, e.g. CVS dataset curators). Use the predicted vote distribution to decide which frames need a 4th/5th expert or a consensus meeting (high P(split)), and which can be single-annotated (P(unanimous) high). Concrete payoff: annotation cost saved at a fixed label quality.
 4. **Label auditing / posterior predictive check.** Frames where the observed k is improbable under the predicted Beta-Binomial point to label errors or protocol artefacts, e.g. the sequential-marking pattern the user found. Users: dataset maintainers. Cheap to evaluate if a known artefact exists.
 5. **Variable or small n.** When the number of votes differs per sample, the likelihood weights samples correctly. Its fair rival is count-weighted soft BCE (C), so the method's specific gain is only in combination with S.
@@ -85,7 +85,7 @@ The question is: under what conditions is the full Beta (not just its mean) wort
 **E.4 Baselines (equally tuned, same budget, same model selection):**
 - hard BCE (majority vote);
 - soft BCE (target k/n; count-weighted if n varies);
-- **soft BCE + one global spread**: train soft BCE, then fit a single number S* per criterion on validation, so that Beta(m·S*, (1−m)·S*) maximises the validation vote likelihood. This gives the same kinds of outputs as B² (P(split), P_maj, …) with no per-sample spread. If B² cannot beat it, the per-sample α carry no extra information;
+- **soft BCE + one global concentration**: train soft BCE, then fit a single number S* per criterion on validation, so that Beta(m·S*, (1−m)·S*) maximises the validation vote likelihood. This gives the same kinds of outputs as B² (P(split), P_maj, …) with no per-sample concentration. If B² cannot beat it, the per-sample α carry no extra information;
 - optionally: a deep ensemble of soft-BCE models as a non-evidential source of uncertainty for selective prediction (cost: training extra seeds).
 Class handling must be identical across losses (see the weighting finding, 01_foundations §5).
 

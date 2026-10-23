@@ -1,13 +1,13 @@
 # Module d — post-hoc quantities (validation only)
 
-> **Changed 2026-10-16 (module h, 05_plan amendment #3):** S\*(m), S\*(m_B²) and `pmaj_monotone` were removed. Spreads are compared as a ladder: plug-in (S = ∞) → Global-S (soft BCE's m) → B²-r. Whether S carries information beyond m is shown by ranking B²-r frames by P_maj vs by m (F5, module f).
+> **Changed 2026-10-16 (module h, 05_plan amendment #3):** S\*(m), S\*(m_B²) and `pmaj_monotone` were removed. Concentrations are compared as a ladder: plug-in (S = ∞) → Global-S (soft BCE's m) → B²-r. Whether S carries information beyond m is shown by ranking B²-r frames by P_maj vs by m (F5, module f).
 
-Code: `b2j/posthoc.py` (its spread step was started in module c). Tests: `tests/test_module_d.py` (+ the spread tests in `tests/test_module_c.py`).
+Code: `b2j/posthoc.py` (its concentration step was started in module c). Tests: `tests/test_module_d.py` (+ the concentration tests in `tests/test_module_c.py`).
 Everything here is fitted on validation and applied unchanged to test; nothing is resampled in the bootstrap (plan §4.3).
 
 ## From a model's output to a panel prediction
-- `mean_spread(variant, out, eps)` → m (predicted share of "yes" votes) and the raw spread S0 (B²: α₀+α₁; BCE: ∞).
-- `panel(variant, out, scale)` applies the variant's spread step (module c, plan amendment 2026-10-14 #5): B² → S = c·S0; hard/soft BCE → Global-S (one S\* per criterion); B²-M native. The independent-raters plug-in is `S = ∞` (supplementary row).
+- `mean_spread(variant, out, eps)` → m (predicted share of "yes" votes) and the raw concentration S0 (B²: α₀+α₁; BCE: ∞).
+- `panel(variant, out, scale)` applies the variant's concentration step (module c, plan amendment 2026-10-14 #5): B² → S = c·S0; hard/soft BCE → Global-S (one S\* per criterion); B²-M native. The independent-raters plug-in is `S = ∞` (supplementary row).
 
 ## Panel probabilities (from the vote distribution)
 - `vote_pmf(m, S, n)`: P(k of n say yes), Beta-Binomial (Binomial at S = ∞); n may differ per image (CIFAR-10H).

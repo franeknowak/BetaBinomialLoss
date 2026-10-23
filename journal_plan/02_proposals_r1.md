@@ -3,10 +3,10 @@
 *Written 2026-10-08 by the proposer after `03_critique_science_r0.md` and `03_critique_scope_r0.md`. This is a complete, standalone plan; it replaces `02_proposals_r0.md`. Inputs as for r0, plus both critiques. Nothing has been run. Facts not confirmed on the web are marked **UNVERIFIED**. Maths re-checked for this round with scipy: the threshold table in §2 and the monotonicity of P_maj in m at fixed S.*
 
 **Shorthand.** k = positive votes; n = votes on the sample; m = α₁/S (Beta mean); S = α₀ + α₁; t = decision threshold.
-- **B²-r**: the revised recipe. softplus + ε (ε = 10⁻³), unweighted Beta-Binomial NLL, no KL, then one post-hoc spread scalar c per criterion fitted on validation.
+- **B²-r**: the revised recipe. softplus + ε (ε = 10⁻³), unweighted Beta-Binomial NLL, no KL, then one post-hoc concentration scalar c per criterion fitted on validation.
 - **B²-M**: the MICCAI recipe (+1 floor, majority-vote weights, KL λ = 0.05, ν = 2), kept as a legacy row.
 - **Global-S**: soft BCE plus one S* per criterion fitted on validation.
-- **S\*(m)**: soft BCE plus a spread that depends only on m, fitted on validation (new).
+- **S\*(m)**: soft BCE plus a concentration that depends only on m, fitted on validation (new).
 - **DUP**: a direct split predictor, i.e. a head trained by BCE to predict whether the panel splits (Raghu-style; new).
 
 ## R. Response to the critics
@@ -24,7 +24,7 @@ Marks: A = accept, R = revise, C = cut, — = not reviewed by that critic. "Acti
 | H2 | R | R | partly | Gradient argument corrected: \|∂L/∂f\| ≲ 1, the risk is saturation. Diagnostic changed to the share of pre-softplus logits < −7. Reported with and without c. **One fallback (ε = 0.1), decided in the R0 smoke test**; the mean–precision head F2 is dropped (scope: new code). Science asked to keep the ladder; time wins, and the terminal fallback needs no code (§3 HT) |
 | H3 | R | R | adopted (merged into HT) | c applied to every B² arm, trap effects also reported without c. c ranges and "m pulled to π" are now descriptive |
 | H4 | R | A | adopted | S\*(m) baseline added; "B²-r beats S\*(m)" is now the per-sample claim. n = 1 is an anchor with a pre-set tie-break (c = S\* = ∞). n_train = 5 added. Ambiguous-image subset reported. NLL per vote on CIFAR-10H |
-| H5 | R | R | partly | LoRA cut (not wired; scope). Frozen vs full fine-tuning on Endoscapes + CIFAR-10H, 3 seeds. Held-out spread arm moved to **CIFAR-10H** and built from existing parts (a fresh head on frozen fine-tuned features of held-out images), not a new head type. Memorisation check: linear-head arm + train–val S gap (zero new code). The cross-fitted S-head is rejected (new code). Augmentation confound removed: no augmentation in either regime |
+| H5 | R | R | partly | LoRA cut (not wired; scope). Frozen vs full fine-tuning on Endoscapes + CIFAR-10H, 3 seeds. Held-out concentration arm moved to **CIFAR-10H** and built from existing parts (a fresh head on frozen fine-tuned features of held-out images), not a new head type. Memorisation check: linear-head arm + train–val S gap (zero new code). The cross-fitted S-head is rejected (new code). Augmentation confound removed: no augmentation in either regime |
 | H6 | R | R | adopted | Merged with U1. Old (a) is now an equivalence claim with a pilot margin, linked to H4: an S-aware decision gain is predicted exactly where B²-r beats S\*(m). 2/S is reported descriptively. Soft-BCE ensemble only |
 | D-ENDO | R | A | adopted | Disclose that Step 1 analysed this test split. Endoscapes conclusions need CIFAR-10H agreement. Count test split-frames per criterion from labels in R0. Per-rater table capped at ½ day |
 | D-CVSC | R | R | adopted | Off the critical path: email on R0 day 1, decision at the R1 launch or 2026-11-06, whichever is first. All criteria satisfiable without it. "Test clips replace our split" deleted. Not presented as a test of panel structure |
@@ -40,7 +40,7 @@ Marks: A = accept, R = revise, C = cut, — = not reviewed by that critic. "Acti
 | BL-DUP (new) | suggested | suggested | adopted | Frozen head, BCE on the split indicator; minutes per run, reuses the soft-BCE code |
 | MET | R | R | adopted | Scored quantity fixed per arm (§4.4 table). Primary list cut to the minimum + 4 panel metrics. NLL per vote. P(split) reliability added as the higher-order calibration check (Ahdritz et al.). "Exact" renamed "unbiased estimate". acc@90 and P(split-among-3) MSE cut |
 | STAT | R | R | adopted | 10 seeds in the frozen regime (minutes each), 3 under fine-tuning. Three-way verdicts. ≤ 5 primary comparison families. Claim rule written for Endoscapes + CIFAR-10H; the third dataset is confirmatory |
-| SEL | R | A | adopted | Per-epoch val and test predictions written silently. Two checkpoints per run: best val mAP (discrimination) and best val vote NLL after post-hoc spread (panel endpoints), same rule for every arm. Test silence enforced in the trainer |
+| SEL | R | A | adopted | Per-epoch val and test predictions written silently. Two checkpoints per run: best val mAP (discrimination) and best val vote NLL after post-hoc concentration (panel endpoints), same rule for every arm. Test silence enforced in the trainer |
 | R0 | R | R | adopted | Re-estimated at 11–12 user-days, 6 modules each with a one-page spec and a unit test. Validation-only pilot sizes the margins. Licence rule fixed |
 | R1 | R | R | adopted | Arms per §4.6 (10 arms × 10 seeds), plus subsampling n ∈ {1, 3, 5, 10, all}. ≈ 25 GPU-h |
 | R2 | R | R | adopted | Full fine-tuning only, Endoscapes + CIFAR-10H, 3 seeds; held-out arm on CIFAR-10H; no augmentation. ≈ 25 GPU-h |
@@ -56,9 +56,9 @@ Marks: A = accept, R = revise, C = cut, — = not reviewed by that critic. "Acti
 
 **Working title.** *Predicting the expert panel: when does a Beta-Binomial head add to soft labels? An analysis with application to the Critical View of Safety.*
 
-**The constraint.** B² = n·BCE(k/n, m) − log C(n,k) − c(k,m)/S + O(S⁻²) (01_foundations §4). The mean is learned by the soft-BCE objective, so the paper makes no accuracy claim against soft BCE. The only thing B² can add is the spread S. S matters only where (i) the data identify it and (ii) a decision depends on it.
+**The constraint.** B² = n·BCE(k/n, m) − log C(n,k) − c(k,m)/S + O(S⁻²) (01_foundations §4). The mean is learned by the soft-BCE objective, so the paper makes no accuracy claim against soft BCE. The only thing B² can add is the concentration S. S matters only where (i) the data identify it and (ii) a decision depends on it.
 
-**Expected story (outcome B, §4.8), with A and C both reachable.** On many-rater data (CIFAR-10H; MHIST if used) a per-sample spread is learnable and changes decisions. On 3-rater CVS data, the corrected recipe matches or beats soft BCE on panel prediction, but a per-sample spread adds little over a spread that depends only on the mean. The paper says *how many raters* that takes, and which implementation choices silently set S instead of the data.
+**Expected story (outcome B, §4.8), with A and C both reachable.** On many-rater data (CIFAR-10H; MHIST if used) a per-sample concentration is learnable and changes decisions. On 3-rater CVS data, the corrected recipe matches or beats soft BCE on panel prediction, but a per-sample concentration adds little over a concentration that depends only on the mean. The paper says *how many raters* that takes, and which implementation choices silently set S instead of the data.
 
 **Contributions (3).**
 1. **Analysis.** (a) The soft-BCE decomposition above. (b) How S enters decisions. At t = 0.5 it never does (symmetry). With a constant S, or an S that depends only on m, P_maj is a strictly increasing function of m (checked numerically), so the decisions equal mean-thresholding at a re-tuned threshold. A per-sample S changes decisions only through its variation among samples with similar m, and that effect is large at the low thresholds a BACC-tuned or safety-tuned classifier uses (t ≈ 0.15–0.3, §2), and grows with panel size. (c) Identifiability: S is identified only from within-sample annotator pairs. This is classical Beta-Binomial overdispersion theory (intra-class correlation ρ = 1/(S+1), design effect 1 + (n−1)ρ; Williams 1975, Crowder 1978, Prentice 1986), applied here to deep second-order heads and quantified on real data by vote subsampling.
@@ -72,7 +72,7 @@ Marks: A = accept, R = revise, C = cut, — = not reviewed by that critic. "Acti
 **Claims the paper CAN make (conditional on the results).**
 - B²-r and soft BCE rank and classify frames equivalently on m, within a margin sized in advance (H0).
 - Each trap moves S (and m, for the weights) in a predicted direction; removing it does not hurt discrimination and improves vote NLL (HT).
-- How many raters per training image a per-sample spread needs, on real data (H4).
+- How many raters per training image a per-sample concentration needs, on real data (H4).
 - What S means under a frozen vs a fine-tuned encoder (H5).
 - Whether S-aware decisions at the operating threshold reduce false confirmations on CVS and on many-rater data (H6), with a CI and a three-way verdict.
 
@@ -156,13 +156,13 @@ Three single-factor ablations, each adding one trap to B²-r. One primary endpoi
 - **HT-KL.** The KL is applied per sample to the predicted Beta, so it never fades with more data. With the MICCAI settings its prior was unreachable under the floor; it caps S at ≈ 7–10 and pulls m toward π (01_foundations §3.2). Post-hoc c is a one-parameter maximiser of a strictly proper held-out score, so it is consistent for the best level. The KL arm also gets c, so the comparison is "KL against no KL" at equal post-processing.
 - **Descriptive expectations (not criteria).** c is near 1 in the frozen regime; the floor costs more vote NLL on C2/C3 than on C1; the weighted B² mean m on validation sits about 0.1 above the vote fraction.
 
-### H4 (core). Does B²-r's per-sample spread carry information beyond m?
-- **Arms (all spreads fitted on validation).** B²-r (with c); **S\*(m)**: soft-BCE m plus a spread fitted on validation in 5 equal-mass bins of m (MLE per bin, piecewise-linear interpolation in logit m); **Global-S**; soft BCE with the Binomial plug-in (S = ∞).
+### H4 (core). Does B²-r's per-sample concentration carry information beyond m?
+- **Arms (all concentrations fitted on validation).** B²-r (with c); **S\*(m)**: soft-BCE m plus a concentration fitted on validation in 5 equal-mass bins of m (MLE per bin, piecewise-linear interpolation in logit m); **Global-S**; soft BCE with the Binomial plug-in (S = ∞).
 - **Design.** CIFAR-10H: training votes subsampled to n_train ∈ {1, 3, 5, 10, all ≈ 51}, validation subsampled to the same n, test scored against the full panel. MHIST (if it is the third dataset): n_train ∈ {1, 3, 5, 7}. Endoscapes (and CVS Challenge): n = 3 as given.
 - **n = 1 is an anchor, not evidence.** At n = 1 the Beta-Binomial is Bernoulli(m). S is not constrained: it drifts with the optimiser rather than staying at its initial value, and c, S\* and S\*(m) are unidentified (the validation likelihood is flat). Pre-set tie-break: c = S\* = S\*(m) = ∞, so all arms become Binomial(m) and the margin is zero by construction. The growth test uses n ≥ 3.
 - **Endpoint.** Test vote NLL **per vote** (n varies 47–63 on CIFAR-10H), on all images and on the **ambiguous subset**, fixed now as images whose full-panel plurality share is < 0.9. That keeps the one-vs-rest dilution (most head–image pairs have k ≈ 0) from hiding the effect.
-- **Justification.** Fisher information about log S per sample is 0 at n = 1 and grows with the number of rater pairs n(n−1)/2 (0.014 at n = 3 against 0.35 at n = 50 for S = 10; 01_foundations §3.1). This is the classical overdispersion picture (§1). B²-r nests Global-S and S\*(m) in the population sense, so its optimum is never worse; in finite samples its extra variance can lose. Because P_maj and P(split) depend only on (m, S), a spread that tracks only m adds no information about x beyond m. Hence the per-sample claim is "B²-r beats S\*(m)", and "S\*(m) beats Global-S" is the weaker "spread varies" claim.
-- **Predictions.** (a) CIFAR-10H, n = all: B²-r beats S\*(m) (CI below 0) on all images and on the ambiguous subset, and S\*(m) beats Global-S. (b) The B²-r − S\*(m) margin grows with n: the CI of [margin(all) − margin(3)] lies above 0. (c) Endoscapes, frozen: B²-r and S\*(m) are equivalent within ±δ_NLL; S\*(m) beats Global-S. (d) The soft-BCE plug-in loses to every spread arm on every dataset. Descriptive: a per-image gain on CIFAR-10H of the order of 0.02 nats.
+- **Justification.** Fisher information about log S per sample is 0 at n = 1 and grows with the number of rater pairs n(n−1)/2 (0.014 at n = 3 against 0.35 at n = 50 for S = 10; 01_foundations §3.1). This is the classical overdispersion picture (§1). B²-r nests Global-S and S\*(m) in the population sense, so its optimum is never worse; in finite samples its extra variance can lose. Because P_maj and P(split) depend only on (m, S), a concentration that tracks only m adds no information about x beyond m. Hence the per-sample claim is "B²-r beats S\*(m)", and "S\*(m) beats Global-S" is the weaker "concentration varies" claim.
+- **Predictions.** (a) CIFAR-10H, n = all: B²-r beats S\*(m) (CI below 0) on all images and on the ambiguous subset, and S\*(m) beats Global-S. (b) The B²-r − S\*(m) margin grows with n: the CI of [margin(all) − margin(3)] lies above 0. (c) Endoscapes, frozen: B²-r and S\*(m) are equivalent within ±δ_NLL; S\*(m) beats Global-S. (d) The soft-BCE plug-in loses to every arm with a fitted concentration on every dataset. Descriptive: a per-image gain on CIFAR-10H of the order of 0.02 nats.
 - **Verdict.** (a) decides H4: success / fail (CI favouring S\*(m) or including 0 with the point estimate ≥ 0) / inconclusive (point estimate < 0 but the CI includes 0). If (a) fails, the story is outcome C (§4.8).
 
 ### H5. What S means under a frozen vs a fine-tuned encoder
@@ -178,7 +178,7 @@ Three single-factor ablations, each adding one trap to B²-r. One primary endpoi
 - **Change.** The model reports P_maj, P(majority agrees with the decision), P(split) and P(unanimous), never 2/S. Decision scores and risks are as defined in U1-a/b/c and U2.
 - **Justification.** §2 points 1–5: S changes decisions only through per-sample variation at fixed m, and mostly at low t. Chow's rule makes max(P_maj, 1 − P_maj) the optimal referral score for majority-disagreement risk.
 - **Prediction (linked to H4, which makes it refutable both ways).** (a) Where B²-r and S\*(m) are equivalent on vote NLL (expected: Endoscapes), the U1-a ΔFCR (P_maj against m, within B²-r) is equivalent within ±δ_FCR, and the U2 AP of B²-r P(split) is equivalent to the best m-only score within ±δ_AP. (b) Where H4a succeeds (CIFAR-10H, full-panel-majority target, t ≈ 0.1): ΔFCR < 0 with the CI excluding 0. Descriptive: AURC of the P_maj-based confidence about 10% below the mean-only confidence. (c) Descriptive: DUP against B²-r P(split) on U2 (no predicted sign), the soft-BCE ensemble, and 2/S.
-- **Verdict.** (b) fails → the spread is identified but does not change decisions. (a) shows a CVS gain (CI excluding 0 in favour of P_maj) → upgrade toward outcome A. Both would be reported.
+- **Verdict.** (b) fails → the concentration is identified but does not change decisions. (a) shows a CVS gain (CI excluding 0 in favour of P_maj) → upgrade toward outcome A. Both would be reported.
 
 ---
 
@@ -209,14 +209,14 @@ Three single-factor ablations, each adding one trap to B²-r. One primary endpoi
 - **Frozen regime.** Cached embeddings; 50 epochs; minutes per run; **10 seeds**.
 - **Full fine-tuning.** 10 epochs, AdamW, cosine schedule; **3 seeds**. LoRA is cut.
 - **Hyperparameters.** Tuned per loss family (hard BCE / soft BCE / B²) in the R0 pilot on validation: head lr ∈ {1e-4, 3e-4, 1e-3} × weight decay ∈ {1e-4, 1e-2}, 1 seed, selected by validation mAP. Encoder lr ∈ {1e-5, 3e-5} for fine-tuning. Trap arms, the linear head and DUP inherit their family's setting.
-- **Checkpoints, same rule for every arm.** Validation and test predictions are written silently at **every epoch**. Two checkpoints are chosen on validation: **best val mAP**, used for discrimination (H0, HT-w); and **best val vote NLL after the post-hoc spread step** (c, S\*, S\*(m)), used for every panel endpoint (HT-floor, HT-KL, H4–H6). Validation S per epoch is logged for H5.
+- **Checkpoints, same rule for every arm.** Validation and test predictions are written silently at **every epoch**. Two checkpoints are chosen on validation: **best val mAP**, used for discrimination (H0, HT-w); and **best val vote NLL after the post-hoc concentration step** (c, S\*, S\*(m)), used for every panel endpoint (HT-floor, HT-KL, H4–H6). Validation S per epoch is logged for H5.
 - **Post-hoc, all on validation.** Thresholds (validation-BACC rule; for U1-a, matched sensitivity 0.80); c for every B² arm; S\* and S\*(m) for soft BCE.
 - **Test silence.** The trainer never prints or aggregates test metrics. Test prediction files are opened once, in R3.
 - **Code.** Branch `journal-extension`; never `main`. Each R0 module gets a one-page spec and a unit test, and is committed before the next starts, so a cut session can resume from the spec.
 
 ### 4.3 Baselines
 
-| Arm | Target | Spread | Notes |
+| Arm | Target | Concentration | Notes |
 |---|---|---|---|
 | Hard BCE | majority vote | — | weighted variant only in HT-w |
 | Soft BCE | k/n | Binomial plug-in (S = ∞) | no `pos_weight` |
@@ -334,10 +334,10 @@ GPU: ≈ 4 (R0) + 26 (R1) + 25 (R2) ≈ **55 GPU-h**, down from ≈ 175 in r0.
 
 | Outcome | Condition | Story | Venue view (§6) |
 |---|---|---|---|
-| **A** | S4a success **and** on a CVS dataset either the H4 margin favours B²-r or S6a shows a gain (FCR lower, CI excluding 0) | "A per-sample panel spread is learnable from 3 raters under a frozen foundation encoder, and it reduces false CVS confirmations." | MedIA |
-| **B+** | S4a success; CVS equivalent or inconclusive; **MHIST** S4a-type and S6b-type results succeed | "The spread needs more than 3 raters: shown on natural and pathology images. For 3-rater CVS data, use the corrected recipe with S\*(m)." Medical many-rater evidence included | MedIA |
+| **A** | S4a success **and** on a CVS dataset either the H4 margin favours B²-r or S6a shows a gain (FCR lower, CI excluding 0) | "A per-sample panel concentration is learnable from 3 raters under a frozen foundation encoder, and it reduces false CVS confirmations." | MedIA |
+| **B+** | S4a success; CVS equivalent or inconclusive; **MHIST** S4a-type and S6b-type results succeed | "The concentration needs more than 3 raters: shown on natural and pathology images. For 3-rater CVS data, use the corrected recipe with S\*(m)." Medical many-rater evidence included | MedIA |
 | **B** (expected) | S4a success; CVS equivalent or inconclusive; no medical many-rater success | Same as B+, but the many-rater evidence is natural-image only | TMLR (MedIA borderline) |
-| **C** | S4a fail or inconclusive | "B² = soft BCE + a mean-dependent spread. Theory, the traps, and how many raters a spread needs." | TMLR |
+| **C** | S4a fail or inconclusive | "B² = soft BCE + a mean-dependent concentration. Theory, the traps, and how many raters a concentration needs." | TMLR |
 
 H0 and HT are reportable under every outcome. An H0 fail (a discrimination difference) is reported as a finding and does not change the outcome letter.
 
@@ -355,7 +355,7 @@ There is no non-image modality in the plan, and the synthetic check is cut. Neit
 |---|---|---|
 | A | **MedIA** | A non-null CVS result plus theory and a corrected recipe: a medical-imaging methods paper with clinical relevance |
 | B+ | **MedIA** | The many-rater evidence includes a medical dataset (MHIST), and the CVS application has matched baselines. Medical readers get both the rule ("how many raters") and a medical demonstration |
-| B | **TMLR** (MedIA possible, but borderline) | The positive result is on CIFAR-10H only. MedIA reviewers would ask why the medical result is null. TMLR judges correctness and evidence, and a well-argued "when does the spread help" paper is in scope |
+| B | **TMLR** (MedIA possible, but borderline) | The positive result is on CIFAR-10H only. MedIA reviewers would ask why the medical result is null. TMLR judges correctness and evidence, and a well-argued "when does the concentration help" paper is in scope |
 | C | **TMLR** | An analysis paper with a careful negative result |
 
 Not recommended under any outcome:
@@ -380,17 +380,17 @@ Not recommended under any outcome:
    - Singh et al. ("Distributions In, Distributions Out: The Case for Soft-Label Training", [arXiv 2511.14117](https://arxiv.org/abs/2511.14117)): soft-label training matches hard-label accuracy and tracks annotator entropy on ChaosNLI, POPQUORN and CIFAR-10H, with no second-order model. Supports H0.
    - Raykar et al. 2010 ([JMLR](https://www.jmlr.org/beta/papers/v11/raykar10a.html)) and coupled cross-entropy ([arXiv 2306.03288](https://arxiv.org/pdf/2306.03288)): annotator models.
    - Collins et al. 2022 (CIFAR-10S), Baan et al. 2022 ("Stop measuring calibration when humans disagree"), Malinin et al. 2019 (Dirichlet likelihood on ensemble outputs), Tanno et al. 2019: cited from the science critic's list, not re-read (UNVERIFIED details).
-4. **Rater subsampling.** Kohli 2026 ("Metric-Dependent Annotation Saturation", [arXiv 2605.29797](https://arxiv.org/abs/2605.29797)) subsamples ChaosNLI's 100 annotators. First-order metrics such as KL saturate by about 10 annotators; disagreement ranking needs 20–50. This overlaps our vote-subsampling idea. Ours differs: it concerns the identifiability of a **per-sample second-order spread** in a deep head, judged against S\*(m).
+4. **Rater subsampling.** Kohli 2026 ("Metric-Dependent Annotation Saturation", [arXiv 2605.29797](https://arxiv.org/abs/2605.29797)) subsamples ChaosNLI's 100 annotators. First-order metrics such as KL saturate by about 10 annotators; disagreement ranking needs 20–50. This overlaps our vote-subsampling idea. Ours differs: it concerns the identifiability of a **per-sample second-order concentration** in a deep head, judged against S\*(m).
 5. **Predicting disagreement directly.** Raghu et al. 2019 ([ICML](https://proceedings.mlr.press/v97/raghu19a.html)) show that direct prediction of doctor disagreement beats classifier-derived uncertainty. It is now a **baseline** (DUP), not only a citation.
 6. **Second-order uncertainty.**
    - Bengs et al. 2022 ([NeurIPS](https://arxiv.org/abs/2203.06102)): second-order learners trained on single labels give unfaithful epistemic uncertainty. With several votes per sample, the Beta-Binomial NLL is a proper score for the counts, so our setting is not the one they criticise. We still make no epistemic claim.
    - Ahdritz et al. 2024 ([arXiv 2412.18808](https://arxiv.org/abs/2412.18808)): higher-order calibration with k-snapshots. **Used as an evaluation** (P(split) reliability, §4.4), not only cited.
-7. **Calibration under ambiguity.** Tao et al. 2026 ([arXiv 2603.22879](https://arxiv.org/abs/2603.22879)) propose **first-order** post-hoc calibrators (Dirichlet-Soft, MCTS, LS-TS) fitted against annotator distributions, on CIFAR-10H, ChaosNLI, and ISIC 2019 / DermaMNIST with *synthetic* annotations. r0 overstated their closeness. Global-S, S\*(m) and c are the **second-order** analogue (they fit the spread, not the first-order probabilities), and are positioned that way.
+7. **Calibration under ambiguity.** Tao et al. 2026 ([arXiv 2603.22879](https://arxiv.org/abs/2603.22879)) propose **first-order** post-hoc calibrators (Dirichlet-Soft, MCTS, LS-TS) fitted against annotator distributions, on CIFAR-10H, ChaosNLI, and ISIC 2019 / DermaMNIST with *synthetic* annotations. r0 overstated their closeness. Global-S, S\*(m) and c are the **second-order** analogue (they fit the concentration, not the first-order probabilities), and are positioned that way.
 8. **Medical multi-rater uncertainty** exists mainly for segmentation (e.g. [arXiv 2202.07550](https://arxiv.org/pdf/2202.07550)). The searches found no CVS work that predicts the panel's vote distribution (not exhaustive).
 
 **What remains novel**
 1. The diagnosis of **three implementation traps** in second-order heads trained on vote counts, with single-factor ablations and measured effects.
-2. A **controlled real-data identifiability study of a per-sample spread** against the number of raters, judged against a mean-conditional spread (distinct from first-order saturation studies), on natural and, if MHIST is used, pathology images.
+2. A **controlled real-data identifiability study of a per-sample concentration** against the number of raters, judged against a mean-conditional concentration (distinct from first-order saturation studies), on natural and, if MHIST is used, pathology images.
 3. The **decision analysis**: S changes decisions only through per-sample variation at fixed m, mostly at low thresholds, with the effect growing with panel size, tested with an S-aware FCR at the operating threshold.
 4. The **encoder-regime analysis** (frozen against fine-tuned, with a memorisation check and a held-out re-head).
 5. **The CVS application** with equally tuned, equally weighted baselines, including S\*(m) and a direct disagreement predictor.
@@ -409,7 +409,7 @@ Enough for TMLR. Enough for MedIA under outcome A or B+.
 
 **Where I still differ from a critic**
 - **MHIST vs CVS Challenge as the third dataset.** I follow the orchestrator's rule (CVS Challenge if cleared). My view is that MHIST is worth more to this paper even if the CVS Challenge clears. It is the only medical dataset with n > 3, it tests H4's growth in n on medical data, it costs ½ day instead of 2, and it is the route to MedIA under the most likely outcome. If the user agrees, make MHIST the third dataset outright and keep the CVS Challenge as future work.
-- **Held-out spread arm.** The scope critic would cut it and the science critic would move it. I kept it on CIFAR-10H only, built from existing parts (≈ ¼ day, ≈ 1.5 GPU-h), because without it H5's mechanism claim cannot be tested where an effect is predicted.
+- **Held-out concentration arm.** The scope critic would cut it and the science critic would move it. I kept it on CIFAR-10H only, built from existing parts (≈ ¼ day, ≈ 1.5 GPU-h), because without it H5's mechanism claim cannot be tested where an effect is predicted.
 - **Fallback ladder.** The science critic would keep the mean–precision head; I dropped it on time grounds. The risk is that HT-floor becomes "not testable" if ε = 0.1 also saturates. I judge that unlikely, given |∂L/∂f| ≲ 1 and clipping.
 - **Cross-fitted S-head** (science): rejected as new code. The linear-head arm and the train/val S ratio answer the same memorisation question at no cost.
 - **Seeds** (scope: 5): 10 in the frozen regime, because it costs minutes of GPU and no user time, and the equivalence tests need it.

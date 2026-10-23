@@ -12,7 +12,7 @@ One row per image: `k, n` float `[N, K]`, `cluster` (bootstrap unit), `split`, `
 - Majority prevalence train 0.156/0.112/0.179 (= MICCAI PI values), val 0.163/0.125/0.167, test 0.235/0.168/0.278.
 - Split frames (0<k<3) per criterion: train 1899/1094/2103, val 544/307/530, test 701/374/613 → U2 feasible (≥ 30) for all three criteria.
 - Images `{split}/{vid}_{frame}.jpg`; centre-crop 480 (as MICCAI) → 384², ImageNet normalisation, no augmentation.
-- Per-rater table (`endoscapes_rater_table`, train+val): positive rates C1 0.033/0.160/0.279, C2 0.096/0.119/0.151, C3 0.269/0.112/0.237; pairwise κ 0.15–0.65. **Strong systematic rater effects** (fixed panel) → limitation paragraph: part of the "spread" on Endoscapes is rater bias, not image ambiguity.
+- Per-rater table (`endoscapes_rater_table`, train+val): positive rates C1 0.033/0.160/0.279, C2 0.096/0.119/0.151, C3 0.269/0.112/0.237; pairwise κ 0.15–0.65. **Strong systematic rater effects** (fixed panel) → limitation paragraph: part of the disagreement on Endoscapes is rater bias, not image ambiguity.
 
 ## CIFAR-10H
 - Input `counts [10000, 10]` (`cifar10h-counts.npy`) + CIFAR-10 test labels for stratification. K = 10 one-vs-rest heads, k_c = votes for c, n = image total (47–63). Cluster = image.
