@@ -11,6 +11,12 @@ Jobs (cluster at b9cbb72; old tuning outputs moved to `results/journal/tune_2026
 - **7550711 `tune2`**: tuning grid rerun (54 runs) + `pilot choose` → `tune/chosen.json`, `tune_report.md`, `tune/curves_<ds>.png`.
 - **7550712 `r1`** (array 1–4, `-hold_jid 7550711`): block `r1`, 280 frozen runs → `results/journal/r1/`. Logs `jobs/logs/`.
 
+## Current step (2026-10-23, later): R2 validation summarised; waiting for the user's R3 lock decisions
+- r2an 7593051 DONE 02:08, no errors. Outputs: `r2/tables_val/{tables.md,d8_report.md,*_long.csv}`, `r2/figures_val/` (F1, F3, F4, F5). Skipped figures are expected (R2 has no subsampled-n or training-fraction runs). `r1/verdicts_val.md` now has S5c (CIFAR-10H, frozen − fine-tuned advantage = +0.0010 [+0.0008, +0.0012], success).
+- R2 val headlines: discrimination flat (Endoscapes mAP soft BCE 0.580 / B²-r 0.571 / B²-rba 0.578); ordered NLL B²-rba − B²-r −0.019 [−0.030, −0.011] but soft BCE-ba − soft BCE −0.021 (gain = rater biases, as stated in advance); per-image S no evidence (as predicted); count-NLL advantage soft BCE (Global-S) − B²-rba +0.006 [−0.003, +0.015] no evidence; CIFAR-10H advantage frozen +0.0012 → fine-tuned ≈ +0.0002.
+- Proposed R3 lock (sent to the user, awaiting answer): (1) checkpoints A/B as pre-registered, same rule for R2; (2) failed runs: none (R1/R2 complete) — rule: no reruns after test opened, missing seeds reported; (3) seeds: two-level bootstrap (seed × image), ensembles descriptive only; (4) Global-S under fine-tuning = one S per label fitted on validation on the fine-tuned soft-BCE m (amendment #6, unchanged); (5) NLL per vote on every dataset (Endoscapes tables currently per image = 3 × per vote; verdicts unaffected); (6) rename B²-final endpoints F0–F5 → E0–E5 (label only, avoids clash with figures F1–F6).
+- **Exact next action:** on the user's answer, write a dated 05_plan amendment "R3 lock" with the 6 decisions, switch Endoscapes T2 to per-vote NLL, commit + tag `r3-lock-2026-10-23`, then write the R3 test-analysis scripts (tables/figures/verdicts on test) and submit them; test predictions opened only by that job.
+
 ## Current step (2026-10-23): R2 finished; R2 validation analysis running
 - r2 7591568: 40/40 ok, 0 failed (4 tasks, all ended 21:05–21:24 on 2026-10-22).
 - Code c0d452e: `analysis.main_runs` takes the block's own regime (R2 = finetune; mixed blocks stay frozen); `analysis.collect` skips rater-aware variants (scored by `b2j.d8`, which needs β); `d8.contrasts` adds the §5 F5 count-NLL advantage soft BCE (Global-S) − B²-rba. 184 tests pass.
