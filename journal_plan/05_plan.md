@@ -48,6 +48,15 @@
 >    - (c) **Training-set-size sweep: added to R1.** Soft BCE and B²-r, frozen, 5 seeds, 10% and 30% of the training clusters (nested; the 100% point is the main block), Endoscapes + CIFAR-10H = 40 runs. One supplementary figure: Δ (B²-r − soft BCE) on mAP and BACC against the training fraction, with two-level bootstrap 95% CIs; one sentence in the discussion. Descriptive: no endpoint, no claim.
 >    - (d) **Pre-registration:** the rewritten §5 (with (a)) is committed and dated when R0 closes, before any R1 job.
 
+> **Amendments, 2026-10-23 (R3 lock; user decisions after the R2 validation summary, before any test prediction is opened; git tag `r3-lock-2026-10-23`).**
+> 1. **Checkpoints:** A (discrimination) and B (panel endpoints and every within-model comparison) exactly as pre-registered; the R2 fine-tuned runs use the same rule.
+> 2. **Failed runs:** R1 (280 runs) and R2 (40 runs) are complete. No run is re-run after the test predictions are opened; a missing seed would be reported, not replaced.
+> 3. **Seeds:** every CI is the two-level bootstrap (test clusters × seeds). Seed ensembles are descriptive rows (no CI, no claim).
+> 4. **Global-S under fine-tuning:** one S per label, fitted on validation on the fine-tuned soft-BCE m of the same regime (confirms 2026-10-16 #6(a)).
+> 5. **Vote NLL per vote on every dataset** (was: per vote on CIFAR-10H, per image elsewhere). With a fixed panel (Endoscapes, AMi-Br, MHIST) per image = n × per vote, so no reading changes; on FER+ (4–10 votes) per vote weights each image's NLL by 1/n.
+> 6. **B²-final endpoints renamed F0–F5 → E0–E5** (label only; §5 table updated) so they do not clash with figures F1–F6.
+> 7. **What R3 opens** (one job, `jobs/r3.qsub.sh`): §5.1 readings of `r1` with S5c from `r2`; §5.1 readings of `d_base` (AMi-Br, FER+; confirmatory); B²-final E0–E4 from block `d8` (Endoscapes + AMi-Br; E0 on CIFAR-10H = S0) and E5 from block `r2`; tables T1–T3 and figures for `r1`, `r2`, `d_base`. Round-D blocks other than `d8` and `d_base` are not opened (supplement reports their validation outcomes).
+
 ## 1. Summary (one page)
 
 **Paper.** *Predicting the expert panel: when does a Beta-Binomial head add to soft labels? An analysis with application to the Critical View of Safety.* The paper is a substantial departure from MICCAI: one common single-image model, no spatiotemporal model, no majority-vote encoder adaptation, no video-level evaluation, and no MICCAI numbers reused.
@@ -317,16 +326,16 @@ Verdicts are three-way (success / fail / inconclusive; §5.1). Margins δ = 2h c
 
 | ID | Endpoint | Reading | Datasets |
 |---|---|---|---|
-| F0 | S0 with B²-final in place of B²-r (Δ BACC, Δ mAP vs soft BCE, checkpoint A) | difference | Endoscapes (B²-rba) + CIFAR-10H (= B²-r) |
-| F1 | ordered-vote NLL per vote, B²-rba − B²-r | superiority (< 0) | Endoscapes + AMi-Br |
-| F1c | same, soft BCE-ba − soft BCE (is the gain the biases, or B²?) | difference | Endoscapes + AMi-Br |
-| F2 | per-image S vs one S per label (ordered NLL), within B²-rba | difference | Endoscapes + AMi-Br |
-| F3 | interaction (soft BCE-ba − B²-rba) − (soft BCE − B²-r), ordered NLL | difference | Endoscapes + AMi-Br |
-| F4 | count NLL (raters interchangeable), B²-rba − B²-r; mAP, split AP | difference | Endoscapes + AMi-Br |
-| F5 | under fine-tuning (R2): F1, F2 and the count-NLL advantage over soft BCE + Global-S | difference | Endoscapes |
+| E0 | S0 with B²-final in place of B²-r (Δ BACC, Δ mAP vs soft BCE, checkpoint A) | difference | Endoscapes (B²-rba) + CIFAR-10H (= B²-r) |
+| E1 | ordered-vote NLL per vote, B²-rba − B²-r | superiority (< 0) | Endoscapes + AMi-Br |
+| E1c | same, soft BCE-ba − soft BCE (is the gain the biases, or B²?) | difference | Endoscapes + AMi-Br |
+| E2 | per-image S vs one S per label (ordered NLL), within B²-rba | difference | Endoscapes + AMi-Br |
+| E3 | interaction (soft BCE-ba − B²-rba) − (soft BCE − B²-r), ordered NLL | difference | Endoscapes + AMi-Br |
+| E4 | count NLL (raters interchangeable), B²-rba − B²-r; mAP, split AP | difference | Endoscapes + AMi-Br |
+| E5 | under fine-tuning (R2): E1, E2 and the count-NLL advantage over soft BCE + Global-S | difference | Endoscapes |
 
-- **Claim rule for F1–F4:** the predicted reading on both Endoscapes and AMi-Br (the two datasets with rater identities). On CIFAR-10H B²-final is B²-r, so S0/S4/S5c/S6 are unchanged.
-- **Stated in advance (from validation, not claims):** the F1 gain is expected to come mostly from the rater biases (F1c of similar size); F2 is expected to show no evidence of a difference with 3 votes (synthetic D7b: only strong spread variation is detectable with 3 votes); S at extreme m is not identified and is not interpreted as ambiguity.
+- **Claim rule for E1–E4:** the predicted reading on both Endoscapes and AMi-Br (the two datasets with rater identities). On CIFAR-10H B²-final is B²-r, so S0/S4/S5c/S6 are unchanged.
+- **Stated in advance (from validation, not claims):** the E1 gain is expected to come mostly from the rater biases (E1c of similar size); E2 is expected to show no evidence of a difference with 3 votes (synthetic D7b: only strong spread variation is detectable with 3 votes); S at extreme m is not identified and is not interpreted as ambiguity.
 - **R2 additions:** B²-rba and soft BCE-ba fine-tuned on Endoscapes with the same 2-encoder-lr tuning as the other losses (§4.4 R2: 16 tuning runs, 40 main runs).
 
 ### 5.1 Readings

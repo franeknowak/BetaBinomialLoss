@@ -155,6 +155,16 @@ def test_d8_block_and_report_on_fake_runs(tmp_path, monkeypatch):
             T.run(T.TrainConfig(var, seed=seed, lr=1e-2, epochs=2, num_workers=0), sp(tr, X[:160]), sp(va, X[160:200]),
                   sp(te, X[200:], False), out, device="cpu", verbose=False)
     text = D8.report("fake", root=tmp_path, datasets=("endoscapes",), B=30).read_text()
-    assert "B²-rba" in text and "P1 ordered NLL" in text and "P3 interaction" in text and "nan" not in text.split("Rater")[0]
+    assert "B²-rba" in text and "E1 (P1) ordered NLL" in text and "E3 (P3) interaction" in text
+    assert "E0 Δ BACC" in text and "nan" not in text.split("Rater")[0]
     rows = text.split("Rater biases")[1]
     assert rows.count("| 0 | ") == 3                     # one line per rater of label 0
+    # R3: the same report on test needs --open-test; threshold and P2's single S stay fitted on validation
+    with pytest.raises(PermissionError):
+        D8.report("fake", "test", root=tmp_path, datasets=("endoscapes",), B=30)
+    tt = D8.report("fake", "test", root=tmp_path, open_test=True, datasets=("endoscapes",), B=30)
+    assert tt.parent.name == "tables_test" and "E1 (P1)" in tt.read_text() and "nan" not in tt.read_text().split("Rater")[0]
+    val = table.take("val")
+    d = next(RunSpec("endoscapes", "b2r", seed=0, block="fake", lr=1e-2).out_dir(tmp_path).parent.glob("b2r__*seed0"))
+    rv, rt = D8.run_arrays("b2r", d, val), D8.run_arrays("b2r", d, val, "test", table.take("test"))
+    assert np.array_equal(rv["thr"], rt["thr"]) and rt["onll"].shape == (40, K)

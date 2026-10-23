@@ -32,7 +32,7 @@ class Block:
         self.full = load_table(dataset)
         self.ev = self.full.take(split)
         self.y = M.majority(self.ev.k, self.ev.n)
-        self.per_vote = dataset == "cifar10h"
+        self.per_vote = True                # R3 lock (05_plan 2026-10-23 #5): per vote on every dataset
         self.strata = boot_strata(dataset, self.ev)
         self._cache = {}
 
@@ -61,7 +61,7 @@ class Block:
         return self._cache[key]
 
     def nll(self, variant, n_sub=None, regime="frozen", noc=False):
-        """Per seed [N, K] vote NLL (per vote on CIFAR-10H)."""
+        """Per seed [N, K] vote NLL (per vote)."""
         ps = self.preds(variant, n_sub, regime)
         return [nll_rows({"pmf": p["pmf_noc" if noc else "pmf"]}, self.ev, self.per_vote) for p in ps]
 

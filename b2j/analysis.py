@@ -114,7 +114,7 @@ def ensemble_row(dirs, split, ev, val, variant="soft_bce", spread=False):
 
 # ---------------------------------------------------------------- metrics per row
 def nll_rows(p, ev, per_vote):
-    """Vote NLL of each test row [N, K] from the row's pmf (divided by n when per vote, as on CIFAR-10H)."""
+    """Vote NLL of each test row [N, K] from the row's pmf (divided by n when per vote: every dataset since the R3 lock)."""
     lik = np.take_along_axis(p["pmf"], ev.k.astype(int)[..., None], -1)[..., 0]
     nll = -np.log(np.clip(lik, 1e-300, None))
     return nll / ev.n if per_vote else nll
@@ -145,7 +145,7 @@ def collect(block, dataset, split="val", root=RESULTS, open_test=False):
     guard(split, open_test)
     full = load_table(dataset)
     ev, val = full.take(split), full.take("val")
-    per_vote = dataset == "cifar10h"
+    per_vote = True                     # R3 lock (05_plan 2026-10-23 #5): NLL per vote on every dataset
     recs = []
     runs = main_runs(block, dataset, root)
     # rater-aware variants (soft BCE-ba, B²-rba) need β for their count pmf: scored by b2j.d8, not here
@@ -357,8 +357,8 @@ def fig5_pr_and_risk(block, dataset, split, outdir, root=RESULTS, open_test=Fals
 
 
 def fig2_advantage_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=False, B=St.B_DEFAULT):
-    """F2: H4 advantage = vote NLL of soft BCE + Global-S minus that of B²-r (positive = B²-r better; per vote on
-    CIFAR-10H), checkpoint B, against the training raters n. Different runs: the bootstrap shares the test clusters
+    """F2: H4 advantage = vote NLL of soft BCE + Global-S minus that of B²-r (positive = B²-r better; per vote),
+    checkpoint B, against the training raters n. Different runs: the bootstrap shares the test clusters
     and resamples seeds per model. Global-S sits on soft BCE's m, so the advantage mixes mean quality and spread.
     The numbers go to F2_advantage_<dataset>.json beside the figure."""
     import matplotlib.pyplot as plt
@@ -366,7 +366,7 @@ def fig2_advantage_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=F
     guard(split, open_test)
     full = load_table(dataset)
     ev = full.take(split)
-    per_vote = dataset == "cifar10h"
+    per_vote = True                     # R3 lock (05_plan 2026-10-23 #5): NLL per vote on every dataset
     nll = {}                                            # (variant, n) -> per-seed [N, K] NLL
     for f in sorted((Path(root) / block / dataset).glob("*/spec.json")):
         s = json.loads(f.read_text())
