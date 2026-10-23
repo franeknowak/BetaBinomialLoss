@@ -2,9 +2,9 @@
 
 *Written 2026-10-09 by the planning session (cloud); updated 2026-10-16 after the user's plan review (cloud). Read this, then `STATE.md`, then `05_plan.md`. Do not redo the planning.*
 
-**Terminology (2026-10-23).** S = α₀ + α₁ is the Beta **concentration** (precision): Var θ = m(1−m)/(S+1), P(split, n = 3) = 3m(1−m)·S/(S+1), between-rater correlation ρ = 1/(S+1). Larger S = θ closer to m and more split panels at a given m. The docs say "concentration" (formerly "spread"); code identifiers keep the old name (`mean_spread`, `spread_rule`, `fit_spread`, `diag.spread_ablation`, figure files `F3_spread_vs_m_*`, `F4_spread_over_training_*`).
-
 **2026-10-16 review (read first).** The user reviewed the plan and agreed three changes, recorded as the 2026-10-16 amendments at the top of `05_plan.md` (§5 rewritten to match): (1) no equivalence margins δ — every comparison is a difference with its bootstrap 95% CI; (2) the operating point stays FCR at recall 0.90, and F5 gains P_maj-vs-m precision–recall curves; (3) S\*(m) and S\*(m_B²) are dropped — concentrations are compared as plug-in → Global-S (on soft BCE's m) → B²-r. The code was brought in line by module h (2026-10-16, `specs/h_review_2026-10-16.md`); the next step is the user questions in `STATE.md` → Exact next action.
+
+**Terminology (2026-10-23).** S = α₀ + α₁ is the Beta **concentration** (precision): Var θ = m(1−m)/(S+1), P(split, n = 3) = 3m(1−m)·S/(S+1), between-rater correlation ρ = 1/(S+1). Larger S = θ closer to m and more split panels at a given m. The docs say "concentration" (formerly "spread"); code identifiers keep the old name (`mean_spread`, `spread_rule`, `fit_spread`, `diag.spread_ablation`, figure files `F3_spread_vs_m_*`, `F4_spread_over_training_*`).
 
 ## What exists
 - `05_plan.md`: **the plan to execute**. The dated amendments at the top (2026-10-09, 2026-10-14, 2026-10-16) override anything below them; the latest wins where they differ.
