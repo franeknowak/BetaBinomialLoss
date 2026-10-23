@@ -1,7 +1,8 @@
 # Journal plan — STATE
 
-## Note (2026-10-23, cloud session): progress slide deck made
-A 20-slide progress deck (method changes, evaluation point by point, conclusions so far) was published as a private Claude artifact "B² journal extension — progress". It uses VALIDATION results only: the cluster was unreachable from that session (ssh name resolution failed; not retried), so the R3 test verdicts (job 7594355) are not in it. Exact next action unchanged (see below).
+## Terminology change (2026-10-23): "spread" → "concentration"
+- S = α₀ + α₁ is the Beta concentration (precision; Var θ = m(1−m)/(S+1)), formerly called "spread". Renamed in docs (cc12abb, a7d4903) and code (7003fa9, c1ab819): e.g. `mean_spread` → `mean_concentration`, `spread_rule` → `concentration_rule`, `fit_spread` → `fit_concentration`, `diag.spread_ablation` → `diag.concentration_ablation`, `d_onll_spread` → `d_onll_concentration`, `d_nll_spread_n3` → `d_nll_concentration_n3`, figures `F3_spread_vs_m_*` → `F3_concentration_vs_m_*`, `F4_spread_over_training_*` → `F4_concentration_over_training_*`. Behaviour unchanged (184 tests pass; two independent reviews).
+- **For future reviews:** results written before the rename keep the OLD names and wording, deliberately not cleaned up: `results/journal/*/figures_val/F3_spread_vs_m_*` / `F4_spread_over_training_*`, the `d_onll_spread` column and "spread" text in `d8_report.md` / `d8_long.csv`, "Spread ablation" in `diag_d0_val.md` and `synth/synth_report.md`, and ALL outputs of the R3 job 7594355 (runs at tag `r3-lock-2026-10-23`, pre-rename code). Re-running a figures step adds the new `F3_concentration_*` / `F4_concentration_*` files beside the old ones; old and new files with the same F-number show the same quantity. The cluster checkout stays at the tag until R3 ends.
 
 ## Current step (2026-10-16 evening)
 **R0 closed; R1 submitted.** User decisions on the open items, now 05_plan amendment 2026-10-16 #6:
