@@ -84,7 +84,7 @@ def module_e_check(block_dir: Path, B=500):
         d = block_dir / "endoscapes" / f"{v}__frozen__lr0.0003_wd0.01__seed0"
         a, b = np.load(d / "val_A.npz"), np.load(d / "val_B.npz")
         assert (a["ids"] == val.ids).all()
-        mA = P.mean_spread(v, a["out"])[0]
+        mA = P.mean_concentration(v, a["out"])[0]
         mB, SB = P.panel(v, b["out"], b["scale"])
         thr = P.threshold_max_bacc(mA, y)
         pmaj = P.p_majority(P.vote_pmf(mB, SB, val.n), val.n)

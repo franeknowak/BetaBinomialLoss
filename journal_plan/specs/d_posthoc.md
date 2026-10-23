@@ -6,7 +6,7 @@ Code: `b2j/posthoc.py` (its concentration step was started in module c). Tests: 
 Everything here is fitted on validation and applied unchanged to test; nothing is resampled in the bootstrap (plan §4.3).
 
 ## From a model's output to a panel prediction
-- `mean_spread(variant, out, eps)` → m (predicted share of "yes" votes) and the raw concentration S0 (B²: α₀+α₁; BCE: ∞).
+- `mean_concentration(variant, out, eps)` → m (predicted share of "yes" votes) and the raw concentration S0 (B²: α₀+α₁; BCE: ∞).
 - `panel(variant, out, scale)` applies the variant's concentration step (module c, plan amendment 2026-10-14 #5): B² → S = c·S0; hard/soft BCE → Global-S (one S\* per criterion); B²-M native. The independent-raters plug-in is `S = ∞` (supplementary row).
 
 ## Panel probabilities (from the vote distribution)

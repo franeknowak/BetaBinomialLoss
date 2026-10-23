@@ -6,13 +6,13 @@
 
 1. Gain by ambiguity: per (image, head), NLL of soft BCE + Global-S minus NLL of B²-r (positive = B²-r better),
    seed s against seed s, binned by the observed minority share min(k, n - k) / n of the full panel.
-2. Spread beyond the mean: within deciles of m, the Spearman correlation between B²-r's intra-image correlation
+2. Concentration beyond the mean: within deciles of m, the Spearman correlation between B²-r's intra-image correlation
    rho = 1 / (S + 1) and the observed split indicator (any disagreement); averaged over deciles and seeds.
    Sign: at fixed m a smaller S (larger rho) puts more mass on unanimous panels, so an informative S gives a
    NEGATIVE correlation (until 2026-10-20 read the other way round; iterations.md D0b). Confounded by m within
    a decile, hence also:
-2b. Spread ablation: each B² model's own m with its per-image S replaced by one S per head (fitted on the same
-   validation votes, as the models' own spread step is). Vote NLL and split AUROC (score = 1 − P(unanimous))
+2b. Concentration ablation: each B² model's own m with its per-image S replaced by one S per head (fitted on the same
+   validation votes, as the models' own concentration step is). Vote NLL and split AUROC (score = 1 − P(unanimous))
    with and without the per-image S; a better score with it = S carries information beyond m.
 3. Ceiling (CIFAR-10H only, ≈50 raters per image): a fresh panel of 3 validation votes per image, drawn from the
    full panel; the reference is the empirical-Bayes posterior predictive from the image's other ≈47 votes (per-class
@@ -60,7 +60,7 @@ def gain_by_ambiguity(runs, ev, variant="b2r"):
     return rows
 
 
-def spread_beyond_mean(runs, ev, variant="b2r"):
+def concentration_beyond_mean(runs, ev, variant="b2r"):
     split = ((ev.k > 0) & (ev.k < ev.n)).astype(float)
     out = []
     for d in runs[variant]:
@@ -77,7 +77,7 @@ def spread_beyond_mean(runs, ev, variant="b2r"):
     return out
 
 
-def spread_ablation(runs, ev, variant="b2r"):
+def concentration_ablation(runs, ev, variant="b2r"):
     """Per seed: vote NLL per (image, head) and mean split AUROC over heads, per-image S vs one S per head."""
     split = ((ev.k > 0) & (ev.k < ev.n)).astype(float)
     out = []
@@ -155,20 +155,20 @@ def report(block, root=RESULTS, datasets=("cifar10h", "mhist", "endoscapes", "am
                 r = [x for x in rows if x["bin"] == name]
                 md.append(f"| {name} | {np.mean([x['share'] for x in r]):.3f} | "
                           f"{np.nanmean([x['gain_mean'] for x in r]):+.4f} | {np.mean([x['gain_sum'] / x['total'] for x in r]):+.2f} |")
-            sb = spread_beyond_mean(runs, ev, v)
-            md += ["", f"Spread beyond the mean ({v}): Spearman(ρ = 1/(S+1), observed split) within deciles of m, "
+            sb = concentration_beyond_mean(runs, ev, v)
+            md += ["", f"Concentration beyond the mean ({v}): Spearman(ρ = 1/(S+1), observed split) within deciles of m, "
                    "and the spread of S across images (10th–90th percentile of log10 S).", "",
                    "| head | Spearman within m deciles | log10 S p10 | log10 S p90 |", "|---|---|---|---|"]
             for j in sorted({x["head"] for x in sb}):
                 r = [x for x in sb if x["head"] == j]
                 md.append(f"| {j} | {np.nanmean([x['spearman_within_m_deciles'] for x in r]):+.3f} | "
                           f"{np.mean([x['log10S_p10'] for x in r]):.2f} | {np.mean([x['log10S_p90'] for x in r]):.2f} |")
-        md += ["", "Spread ablation: own m, per-image S vs one S per head (validation; mean ± sd over seeds). "
+        md += ["", "Concentration ablation: own m, per-image S vs one S per head (validation; mean ± sd over seeds). "
                "ΔNLL = NLL(one S) − NLL(per-image S) per (image, head), ΔAUROC = AUROC(per-image) − AUROC(one S); "
                "positive = the per-image S carries information beyond m.", "",
                "| variant | NLL per-image S | ΔNLL | split AUROC per-image S | ΔAUROC |", "|---|---|---|---|---|"]
         for v in [v for v in runs if VARIANTS[v].loss.kind == "b2" and not VARIANTS[v].loss.plus_one]:
-            r = spread_ablation(runs, ev, v)
+            r = concentration_ablation(runs, ev, v)
             dn = [x["nll_const"] - x["nll_own"] for x in r]
             da = [x["auroc_own"] - x["auroc_const"] for x in r]
             md.append(f"| {v} | {np.mean([x['nll_own'] for x in r]):.4f} | {np.mean(dn):+.4f} ± {np.std(dn):.4f} | "
@@ -214,7 +214,7 @@ def mean_recovery(block, dataset, root=RESULTS, B=2000):
         for ck in ("A", "B"):
             z = np.load(f.parent / f"val_{ck}.npz")
             assert (z["ids"] == ev.ids).all()
-            m = P.mean_spread(s["variant"], z["out"])[0]
+            m = P.mean_concentration(s["variant"], z["out"])[0]
             se.setdefault((ck, s["variant"], n), []).append((m - share) ** 2)
     out = {}
     for ck, v, n in sorted(se, key=lambda t: (t[0], str(t[2]))):

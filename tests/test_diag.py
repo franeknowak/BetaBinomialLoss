@@ -43,17 +43,17 @@ def test_report_runs_and_bins_cover_everything(tmp_path, monkeypatch):
     assert np.isfinite(ref) and set(res) >= {("soft_bce", 3), ("b2r", "all"), ("soft_bce plug-in", 3)}
     text = diag.report("blk", tmp_path, datasets=("cifar10h",)).read_text()
     assert "Ceiling" in text and "unanimous" in text and "### b2ms_shrink0.3" in text
-    assert "b2ms_shrink0.3 closes" in text and "Spread ablation" in text
+    assert "b2ms_shrink0.3 closes" in text and "Concentration ablation" in text
 
 
-def test_spread_ablation_is_zero_for_a_constant_spread(tmp_path, monkeypatch):
+def test_concentration_ablation_is_zero_for_a_constant_concentration(tmp_path, monkeypatch):
     t = _fake(tmp_path, monkeypatch)
     runs = diag.main_runs("blk", "cifar10h", tmp_path)
     ev = t.take("val")
-    r = diag.spread_ablation(runs, ev, "b2r")
+    r = diag.concentration_ablation(runs, ev, "b2r")
     assert len(r) == 2 and all(np.isfinite(list(x.values())).all() for x in r)
     monkeypatch.setattr(diag, "_panel", lambda v, d: (np.full(ev.k.shape, 0.1), np.full(ev.k.shape, 5.0)))
-    r = diag.spread_ablation(runs, ev, "b2r")
+    r = diag.concentration_ablation(runs, ev, "b2r")
     for x in r:                                   # a per-head constant S: the fitted one can only be as good or better
         assert x["nll_const"] <= x["nll_own"] + 1e-9 and abs(x["auroc_own"] - x["auroc_const"]) < 1e-12
 

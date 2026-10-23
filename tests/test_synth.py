@@ -61,9 +61,9 @@ def test_train_score_report_tiny(tmp_path, monkeypatch):
     rows = Y.score(tiny[0], 0, root=tmp_path)
     assert {r["model"] for r in rows} == {"soft_bce", "b2r", "ref200"} and len(rows) == 6
     assert all(np.isfinite(r["mse_nu"]) and np.isfinite(r["excess_nll_n50"]) for r in rows)
-    assert all(np.isfinite(r["d_nll_spread_n3"]) for r in rows if r["model"] == "b2r")
+    assert all(np.isfinite(r["d_nll_concentration_n3"]) for r in rows if r["model"] == "b2r")
     rows = Y.score(tiny[1], 0, root=tmp_path)
-    assert all(np.isfinite(r["d_nll_spread_n3"]) for r in rows if r["model"] in ("b2r", "b2rba"))
+    assert all(np.isfinite(r["d_nll_concentration_n3"]) for r in rows if r["model"] in ("b2r", "b2rba"))
     text = Y.report(root=tmp_path).read_text()
     assert "S1_tiny" in text and "S4_raters_tiny" in text and "paired B²-rba − B²-r" in text
 
@@ -113,11 +113,11 @@ def test_oracles_match_monte_carlo():
                                atol=0.01)
 
 
-def test_spread_ablation_sign():
+def test_concentration_ablation_sign():
     """Per-image S equal to the truth beats one S on Beta-Binomial panels (> 0); a constant S cannot (≤ 0)."""
     rng = np.random.default_rng(0)
     m = rng.uniform(0.2, 0.8, 20000)
     S = np.where(rng.random(20000) < 0.5, 1.0, 100.0)
     k = rng.binomial(3, rng.beta(m * S, (1 - m) * S)).astype(float)
-    assert Y.spread_ablation(m, S, k=k) > 0.02
-    assert Y.spread_ablation(m, np.full_like(m, 5.0), k=k) <= 1e-9     # the fitted single S is at least as good
+    assert Y.concentration_ablation(m, S, k=k) > 0.02
+    assert Y.concentration_ablation(m, np.full_like(m, 5.0), k=k) <= 1e-9     # the fitted single S is at least as good

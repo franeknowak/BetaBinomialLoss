@@ -173,7 +173,7 @@ def test_fig2_and_fig5_on_fake_block(tmp_path, monkeypatch):
     d = sorted((tmp_path / "fake" / "mhist").glob("b2r__frozen__lr*seed0"))[0]
     ev = table.take("val")
     one = A.run_rows("b2r", d, "val", ev, ev)["b2r"]
-    two = A.ensemble_row([d, d], "val", ev, ev, "b2r", spread=True)               # identical members = the member
+    two = A.ensemble_row([d, d], "val", ev, ev, "b2r", concentration=True)               # identical members = the member
     assert np.allclose(one["pmf"], two["pmf"]) and np.allclose(one["m"], two["m"])
 
 

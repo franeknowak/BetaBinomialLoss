@@ -6,7 +6,7 @@
 split="test" raises unless --open-test is given: that flag belongs to R3 only (CLAUDE.md, HANDOFF rule 3).
 Every quantity fitted post hoc (thresholds, c, Global-S) comes from validation and is applied unchanged.
 Rows per dataset: every trained variant (checkpoint A for discrimination, B for panel and use-case endpoints),
-plus post-hoc rows: <variant>:plugin (S = inf; step 1 of the spread ladder plug-in -> Global-S -> B²-r) and the
+plus post-hoc rows: <variant>:plugin (S = inf; step 1 of the concentration ladder plug-in -> Global-S -> B²-r) and the
 soft-BCE ensemble (mean m; mixture of the members' Binomial vote distributions). Seeds: mean ± sd.
 Comparisons carry a two-level bootstrap 95% CI; there are no margins (05_plan amendment 2026-10-16 #1).
 See journal_plan/specs/f_launcher.md.
@@ -84,8 +84,8 @@ def run_rows(variant, d, split, ev, val):
     yv = M.majority(val.k, val.n)
     if variant == "dup":
         return {"dup": _pred(None, None, None, None, expit(zb["out"][..., 0].astype(np.float64)))}
-    thr = P.threshold_max_bacc(P.mean_spread(variant, va["out"])[0], yv)
-    mA = P.mean_spread(variant, za["out"])[0]
+    thr = P.threshold_max_bacc(P.mean_concentration(variant, va["out"])[0], yv)
+    mA = P.mean_concentration(variant, za["out"])[0]
     mB, SB = P.panel(variant, zb["out"], zb["scale"])
     rows = {variant: _pred(mA, thr, mB, P.vote_pmf(mB, SB, ev.n), P.p_split3(mB, SB))}
     if variant in PLUGIN_ROWS:
@@ -94,19 +94,19 @@ def run_rows(variant, d, split, ev, val):
     return rows
 
 
-def ensemble_row(dirs, split, ev, val, variant="soft_bce", spread=False):
+def ensemble_row(dirs, split, ev, val, variant="soft_bce", concentration=False):
     """Seed ensemble: mean m (threshold from the validation mean m); mixture of the members' vote pmfs.
 
-    spread=False (the pre-registered soft-BCE ensemble): Binomial members (S = inf). spread=True (round D, D3): each
-    member keeps its own post-hoc spread (Global-S for soft BCE, c-scaled S for B²), i.e. a mixture of Beta-Binomials.
+    concentration=False (the pre-registered soft-BCE ensemble): Binomial members (S = inf). concentration=True (round D, D3): each
+    member keeps its own post-hoc concentration (Global-S for soft BCE, c-scaled S for B²), i.e. a mixture of Beta-Binomials.
     """
     yv = M.majority(val.k, val.n)
-    mA = np.mean([P.mean_spread(variant, np.load(d / f"{split}_A.npz")["out"])[0] for d in dirs], 0)
-    vmA = np.mean([P.mean_spread(variant, np.load(d / "val_A.npz")["out"])[0] for d in dirs], 0)
-    if spread:
+    mA = np.mean([P.mean_concentration(variant, np.load(d / f"{split}_A.npz")["out"])[0] for d in dirs], 0)
+    vmA = np.mean([P.mean_concentration(variant, np.load(d / "val_A.npz")["out"])[0] for d in dirs], 0)
+    if concentration:
         members = [P.panel(variant, z["out"], z["scale"]) for z in (np.load(d / f"{split}_B.npz") for d in dirs)]
     else:
-        members = [(P.mean_spread(variant, np.load(d / f"{split}_B.npz")["out"])[0], None) for d in dirs]
+        members = [(P.mean_concentration(variant, np.load(d / f"{split}_B.npz")["out"])[0], None) for d in dirs]
         members = [(m, np.full_like(m, np.inf)) for m, _ in members]
     return _pred(mA, P.threshold_max_bacc(vmA, yv), np.mean([m for m, _ in members], 0),
                  P.mixture_pmf(members, ev.n), P.mixture_p_split3(members))
@@ -157,11 +157,11 @@ def collect(block, dataset, split="val", root=RESULTS, open_test=False):
     if len(runs.get("soft_bce", [])) > 1:
         recs.append({"row": "ensemble", "seed": 0, **row_metrics(ensemble_row(runs["soft_bce"], split, ev, val), ev, per_vote)})
         recs.append({"row": "ensemble_gs", "seed": 0,
-                     **row_metrics(ensemble_row(runs["soft_bce"], split, ev, val, spread=True), ev, per_vote)})
+                     **row_metrics(ensemble_row(runs["soft_bce"], split, ev, val, concentration=True), ev, per_vote)})
     for v in ENSEMBLE_B2:
         if len(runs.get(v, [])) > 1:
             recs.append({"row": f"ensemble_{v}", "seed": 0,
-                         **row_metrics(ensemble_row(runs[v], split, ev, val, v, spread=True), ev, per_vote)})
+                         **row_metrics(ensemble_row(runs[v], split, ev, val, v, concentration=True), ev, per_vote)})
     return pd.DataFrame(recs)
 
 
@@ -250,7 +250,7 @@ def fig1_theory(outdir):
     for c, n in zip(COLORS, (3, 11, 51)):
         pm = P.p_majority(P.vote_pmf(np.full((80, 1), 0.3), Ss[:, None], np.full((80, 1), n)), n)[:, 0]
         ax[1].plot(Ss, pm, color=c, lw=1.5, label=f"n = {n}")
-    ax[1].set(xscale="log", xlabel="spread S", ylabel="P_maj at m = 0.3")
+    ax[1].set(xscale="log", xlabel="concentration S", ylabel="P_maj at m = 0.3")
     ax[1].legend(frameon=False, fontsize=7)
     for a in ax:
         _style(a)
@@ -258,7 +258,7 @@ def fig1_theory(outdir):
     return _save(fig, outdir, "F1_theory")
 
 
-def fig3_spread_vs_m(block, dataset, split, outdir, root=RESULTS):
+def fig3_concentration_vs_m(block, dataset, split, outdir, root=RESULTS):
     """F3: S against m per B² variant (seed 0, all heads pooled), log S."""
     import matplotlib.pyplot as plt
     ev = load_table(dataset).take(split)
@@ -275,10 +275,10 @@ def fig3_spread_vs_m(block, dataset, split, outdir, root=RESULTS):
         _plain_log(a)
     ax[0][0].set_ylabel(f"S ({dataset}, {split})")
     fig.tight_layout()
-    return _save(fig, outdir, f"F3_spread_vs_m_{dataset}")
+    return _save(fig, outdir, f"F3_concentration_vs_m_{dataset}")
 
 
-def fig4_spread_over_training(block, dataset, outdir, root=RESULTS):
+def fig4_concentration_over_training(block, dataset, outdir, root=RESULTS):
     """F4: validation median S (mean over heads) per evaluation, B²-r frozen vs fine-tuned; fitted c per evaluation."""
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(1, 2, figsize=(8, 3))
@@ -296,7 +296,7 @@ def fig4_spread_over_training(block, dataset, outdir, root=RESULTS):
         _style(a)
     fig.suptitle(f"B²-r, {dataset} (validation)", fontsize=9)
     fig.tight_layout()
-    return _save(fig, outdir, f"F4_spread_over_training_{dataset}")
+    return _save(fig, outdir, f"F4_concentration_over_training_{dataset}")
 
 
 def fig5_pr_and_risk(block, dataset, split, outdir, root=RESULTS, open_test=False, B=St.B_DEFAULT):
@@ -359,7 +359,7 @@ def fig5_pr_and_risk(block, dataset, split, outdir, root=RESULTS, open_test=Fals
 def fig2_advantage_vs_n(block, dataset, split, outdir, root=RESULTS, open_test=False, B=St.B_DEFAULT):
     """F2: H4 advantage = vote NLL of soft BCE + Global-S minus that of B²-r (positive = B²-r better; per vote),
     checkpoint B, against the training raters n. Different runs: the bootstrap shares the test clusters
-    and resamples seeds per model. Global-S sits on soft BCE's m, so the advantage mixes mean quality and spread.
+    and resamples seeds per model. Global-S sits on soft BCE's m, so the advantage mixes mean quality and concentration.
     The numbers go to F2_advantage_<dataset>.json beside the figure."""
     import matplotlib.pyplot as plt
     from b2j.runs import RunSpec, tables as run_tables
@@ -479,9 +479,9 @@ def figures(block, split="val", root=RESULTS, open_test=False):
     for ds in ("endoscapes", "cifar10h", "mhist", "amibr", "ferplus"):
         if not (Path(root) / block / ds).exists():
             continue
-        for f in (lambda: fig3_spread_vs_m(block, ds, split, out, root),
+        for f in (lambda: fig3_concentration_vs_m(block, ds, split, out, root),
                   lambda: fig5_pr_and_risk(block, ds, split, out, root, open_test),
-                  lambda: fig4_spread_over_training(block, ds, out, root),
+                  lambda: fig4_concentration_over_training(block, ds, out, root),
                   lambda: fig2_advantage_vs_n(block, ds, split, out, root, open_test)):
             try:
                 made.append(f())

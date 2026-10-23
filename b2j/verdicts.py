@@ -4,7 +4,7 @@
 
 Every endpoint is a difference with its two-level bootstrap 95% CI (stats.two_level_bootstrap) read by
 stats.verdict: 'superiority' (predicted direction) or 'difference' (no margins). On validation the output is a
-preview only (thresholds and spreads are fitted on the same rows); the verdicts are the test readings of R3,
+preview only (thresholds and concentrations are fitted on the same rows); the verdicts are the test readings of R3,
 which need --open-test. Output: <block>/verdicts_<split>.md and .json.
 See journal_plan/specs/f_launcher.md.
 """
@@ -46,15 +46,15 @@ class Block:
         return out
 
     def preds(self, variant, n_sub=None, regime="frozen"):
-        """Per seed: the variant's row of analysis.run_rows (validation-fitted threshold and spread), plus 'noc':
+        """Per seed: the variant's row of analysis.run_rows (validation-fitted threshold and concentration), plus 'noc':
         the B² vote pmf without the scale c."""
         key = (variant, n_sub, regime)
         if key not in self._cache:
             out = []
             for spec, d in self.runs(variant, n_sub, regime):
                 p = dict(run_rows(variant, d, self.split, self.ev, run_tables(spec, self.full)[1])[variant])
-                if P.spread_rule(variant) == "c":
-                    m, S0 = P.mean_spread(variant, np.load(d / f"{self.split}_B.npz")["out"])
+                if P.concentration_rule(variant) == "c":
+                    m, S0 = P.mean_concentration(variant, np.load(d / f"{self.split}_B.npz")["out"])
                     p["pmf_noc"] = P.vote_pmf(m, S0, self.ev.n)
                 out.append(p)
             self._cache[key] = out
@@ -176,7 +176,7 @@ def read(block, split="val", root=RESULTS, open_test=False, ft_block=None, B=St.
     pred = {(+1, "superiority"): "> 0", (-1, "superiority"): "< 0", (+1, "difference"): "+ = better",
             (-1, "difference"): "− = better"}
     md = [f"# §5.1 readings ({block}, {split})", "",
-          "Validation preview only: thresholds and spreads are fitted on these rows; the verdicts are read on test in R3."
+          "Validation preview only: thresholds and concentrations are fitted on these rows; the verdicts are read on test in R3."
           if split == "val" else "Test readings (R3).", "",
           "| ID | dataset | contrast | reading | prediction / sign | estimate | 95% CI |", "|---|---|---|---|---|---|---|"]
     for r in rows:

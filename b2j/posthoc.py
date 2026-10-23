@@ -1,17 +1,17 @@
-"""Module d: post-hoc quantities, all fitted on validation only (plan §2 "Post-hoc steps"); the spread step was
+"""Module d: post-hoc quantities, all fitted on validation only (plan §2 "Post-hoc steps"); the concentration step was
 started in module c because the trainer needs it at every evaluation. See journal_plan/specs/d_posthoc.md.
 
 Every variant's raw head output [N, K, d] maps to a panel prediction (m, S): mean vote fraction m and
-Beta spread S (S = inf is the Binomial plug-in). The spread step fits one scale per head on validation
+Beta concentration S (S = inf is the Binomial plug-in). The concentration step fits one scale per head on validation
 by vote likelihood:
   - B² variants (except legacy B²-M): S = c · (α₀ + α₁)   (c, plan §2)
   - soft and hard BCE:                S = S*              (Global-S, one value per head; the plug-in
                                                           S = inf is a supplementary row, module d)
-  - B²-M:                             no fit (native spread, legacy row)
+  - B²-M:                             no fit (native concentration, legacy row)
 DUP has no panel prediction; its score is P(split).
 
 Also here: the panel probabilities P_maj, P(split), P(unanimous) from the vote pmf, the soft-BCE ensemble
-mixture, and the validation thresholds (max BACC; recall 0.90). (S*(m), a spread that depends only on m, was
+mixture, and the validation thresholds (max BACC; recall 0.90). (S*(m), a concentration that depends only on m, was
 dropped by 05_plan amendment 2026-10-16 #3.)
 """
 import numpy as np
@@ -23,16 +23,16 @@ from b2j.variants import VARIANTS
 LOG_SCALE_BOUNDS = (-9.0, 9.0)
 
 
-def spread_rule(name: str) -> str:
-    """'c' (scale the B² spread) | 'global' (fit S* on a plug-in mean) | 'none' | 'dup'."""
+def concentration_rule(name: str) -> str:
+    """'c' (scale the B² concentration) | 'global' (fit S* on a plug-in mean) | 'none' | 'dup'."""
     cfg = VARIANTS[name].loss
     if cfg.kind == "b2":
         return "none" if cfg.plus_one else "c"          # B²-rba too: S = c · (α₀ + α₁), fitted on the ordered votes
     return {"soft_bce": "global", "hard_bce": "global", "dup": "dup", "dm": "c", "soft_ce": "global"}[cfg.kind]
 
 
-def mean_spread(name: str, out: np.ndarray, eps: float | None = None):
-    """Raw head output [N, K, d] -> (m, S0) [N, K]. S0 is the unscaled spread (inf for BCE heads).
+def mean_concentration(name: str, out: np.ndarray, eps: float | None = None):
+    """Raw head output [N, K, d] -> (m, S0) [N, K]. S0 is the unscaled concentration (inf for BCE heads).
 
     eps: the run's B²-r positivity override (R0 fallback), as in variants.build; never applied to B²-M.
     """
@@ -99,9 +99,9 @@ def fit_scale(m, S0, k, n):
 
 
 def panel(name: str, out, scale=None, eps=None):
-    """(m, S) after the spread step with a given per-head scale [K] (None for rules 'none' / 'dup')."""
-    m, S0 = mean_spread(name, out, eps)
-    rule = spread_rule(name)
+    """(m, S) after the concentration step with a given per-head scale [K] (None for rules 'none' / 'dup')."""
+    m, S0 = mean_concentration(name, out, eps)
+    rule = concentration_rule(name)
     if rule == "c":
         return m, S0 * scale
     if rule == "global":
@@ -109,13 +109,13 @@ def panel(name: str, out, scale=None, eps=None):
     return m, S0
 
 
-def fit_spread(name: str, out, k, n, eps=None, v=None):
-    """Fit the variant's spread scale on (validation) labels. Returns [K] or None.
+def fit_concentration(name: str, out, k, n, eps=None, v=None):
+    """Fit the variant's concentration scale on (validation) labels. Returns [K] or None.
     Rater-aware variants (D8) fit it on the ordered votes v [N, R, K] with their learned rater biases."""
-    rule = spread_rule(name)
+    rule = concentration_rule(name)
     if rule in ("none", "dup"):
         return None
-    m, S0 = mean_spread(name, out, eps)
+    m, S0 = mean_concentration(name, out, eps)
     S0 = S0 if rule == "c" else np.ones_like(m)
     if VARIANTS[name].loss.rater:
         return fit_scale_rater(m, S0, rater_offsets(name, out), v)

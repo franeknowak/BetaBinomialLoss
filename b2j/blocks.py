@@ -72,7 +72,7 @@ D12 = ("soft_bce", "b2r", "b2ms") + tuple(f"b2ms_var{lam:g}" for lam in S_SHRINK
 
 
 def d12(root=None):
-    """Round D, D1 + D2b (journal_plan/iterations.md): the mean-spread head without and with spread shrinkage
+    """Round D, D1 + D2b (journal_plan/iterations.md): the mean-concentration head without and with concentration shrinkage
     (towards the batch-mean log S) at every λ, plus soft BCE and B²-r as baselines in the same block; frozen, full panels, 5 seeds (150 runs)."""
     from b2j.pilot import hyper
     kw = {} if root is None else {"root": root}
@@ -114,7 +114,7 @@ D8_DATASETS = ("endoscapes", "amibr")   # the same 3 raters label every image, r
 
 
 def d8(root=None):
-    """Round D, D8 (journal_plan/iterations.md): the 2 × 2 {rater bias no / yes} × {per-image spread no / yes} = soft
+    """Round D, D8 (journal_plan/iterations.md): the 2 × 2 {rater bias no / yes} × {per-image concentration no / yes} = soft
     BCE, B²-r, soft BCE-ba, B²-rba on the datasets with rater identities; frozen, full panels, 5 seeds (40 runs).
     B²-rba / soft BCE-ba lr and wd from block tune_ba."""
     from b2j.pilot import hyper

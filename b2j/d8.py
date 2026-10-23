@@ -1,5 +1,5 @@
 """Round D, D8 (journal_plan/iterations.md): B²-rba against B²-r in the 2 × 2 {rater bias no / yes} × {per-image
-spread no / yes} (soft BCE, B²-r, soft BCE-ba, B²-rba); since the R3 lock also the B²-final endpoints E0–E5 of 05_plan
+concentration no / yes} (soft BCE, B²-r, soft BCE-ba, B²-rba); since the R3 lock also the B²-final endpoints E0–E5 of 05_plan
 §5 (renamed from F0–F5, amendment 2026-10-23 #6): E0–E4 from the frozen block d8, E5 = E1, E2 and the count-NLL
 advantage from the fine-tuned block r2.
 
@@ -9,11 +9,11 @@ split="test" needs --open-test (R3 only). The threshold and P2's single S are fi
 unchanged; c and β are the run's own (fitted on validation by the trainer).
 
 Per run: checkpoint A for discrimination (m against the panel majority, threshold max-BACC on validation), checkpoint
-B for the panel endpoints after the spread step. Panel endpoints for every variant on one footing:
+B for the panel endpoints after the concentration step. Panel endpoints for every variant on one footing:
   - ordered-vote NLL per vote (P1; interchangeable models: count NLL + log C(n, k));
   - count NLL per vote, P_maj ECE / Brier, split AUROC / AP / catch-20 from the count pmf of the known panel
     (rater-aware: summed over the 2^R vote patterns);
-  - spread ablation (P2): per-image S against one S per label refitted on validation with m (and β) fixed.
+  - concentration ablation (P2): per-image S against one S per label refitted on validation with m (and β) fixed.
 Differences carry the two-level bootstrap 95% CI (videos / slides, seeds).
 """
 import argparse
@@ -32,7 +32,7 @@ from b2j.variants import VARIANTS
 
 LABEL = {**LABEL, "soft_bce_ba": "soft BCE-ba (Global-S)", "b2rba": "B²-rba"}
 D8 = ("soft_bce", "b2r", "soft_bce_ba", "b2rba")
-SPREAD = ("b2r", "b2rba")                  # the variants with a per-image spread (P2 ablation)
+CONCENTRATION = ("b2r", "b2rba")                  # the variants with a per-image concentration (P2 ablation)
 
 
 def _rater(v):
@@ -46,8 +46,8 @@ def run_arrays(variant, d, val, split="val", ev=None):
     za, zb = np.load(d / f"{split}_A.npz"), np.load(d / f"{split}_B.npz")
     va, vb = np.load(d / "val_A.npz"), np.load(d / "val_B.npz")
     assert (za["ids"] == ev.ids).all() and (zb["ids"] == ev.ids).all() and (va["ids"] == val.ids).all()
-    mA = P.mean_spread(variant, za["out"])[0]
-    thr = P.threshold_max_bacc(P.mean_spread(variant, va["out"])[0], M.majority(val.k, val.n))
+    mA = P.mean_concentration(variant, za["out"])[0]
+    thr = P.threshold_max_bacc(P.mean_concentration(variant, va["out"])[0], M.majority(val.k, val.n))
     m, S = P.panel(variant, zb["out"], zb["scale"])
     beta = P.rater_offsets(variant, zb["out"]) if _rater(variant) else None
     pmf = P.rater_count_pmf(m, S, beta, ev.votes) if _rater(variant) else P.vote_pmf(m, S, ev.n)
@@ -55,7 +55,7 @@ def run_arrays(variant, d, val, split="val", ev=None):
          "onll": P.ordered_nll(m, S, beta, ev.votes) / ev.n,
          "cnll": -np.log(np.clip(np.take_along_axis(pmf, ev.k.astype(int)[..., None], -1)[..., 0], 1e-300, None)) / ev.n,
          "psplit": 1 - P.p_unanimous(pmf, ev.n), "beta": beta}
-    if variant in SPREAD:                  # P2 / E2: one S per label instead of the per-image S (same m, same β)
+    if variant in CONCENTRATION:                  # P2 / E2: one S per label instead of the per-image S (same m, same β)
         vm = P.panel(variant, vb["out"], vb["scale"])[0]
         vbeta = P.rater_offsets(variant, vb["out"]) if beta is not None else None
         S0 = np.ones_like(vm)
@@ -82,7 +82,7 @@ def scores(r, val, rows=None):
            "split_auroc": tr["auroc"], "split_ap": tr["ap"], "split_catch20": tr["catch"]}
     if "onll_const" in r:
         out["onll_const"] = float(r["onll_const"][rows].mean())
-        out["d_onll_spread"] = out["onll"] - out["onll_const"]       # < 0: the per-image S is informative
+        out["d_onll_concentration"] = out["onll"] - out["onll_const"]       # < 0: the per-image S is informative
         out["split_auroc_const"] = M.triage(r["psplit_const"][rows], t)["auroc"]
     return out
 
@@ -116,7 +116,7 @@ def contrasts(runs, val, B=St.B_DEFAULT):
         add("E4 count NLL/vote: B²-rba − B²-r", "cnll", g("b2r", "b2rba"), lambda x: x["b2rba"] - x["b2r"], -1)
         add("E4 mAP: B²-rba − B²-r", "map", g("b2r", "b2rba"), lambda x: x["b2rba"] - x["b2r"], +1)
         add("E4 split AP: B²-rba − B²-r", "split_ap", g("b2r", "b2rba"), lambda x: x["b2rba"] - x["b2r"], +1)
-        # P2: the spread ablation within each model; same runs scored two ways -> paired
+        # P2: the concentration ablation within each model; same runs scored two ways -> paired
         both = {f"{v}:{t}": [dict(r, onll=r["onll" if t == "own" else "onll_const"]) for r in runs[v]]
                 for v in ("b2r", "b2rba") for t in ("own", "const")}
         add("E2 (P2) per-image S − one S per label, ordered NLL/vote, within B²-rba", "onll", both,
@@ -143,9 +143,9 @@ def report(block="d8", split="val", root=RESULTS, open_test=False, datasets=("en
     outdir = Path(root) / block / f"tables_{split}"
     outdir.mkdir(parents=True, exist_ok=True)
     md = [f"# D8 / E0–E5 — B²-rba ({split}; block {block})", "",
-          "Checkpoint A: discrimination of m against the panel majority. Checkpoint B: panel endpoints after the spread "
+          "Checkpoint A: discrimination of m against the panel majority. Checkpoint B: panel endpoints after the concentration "
           "step. onll = NLL per vote of the ORDERED votes (who voted what); cnll = NLL per vote of the count k. "
-          "d_onll_spread = per-image S − one S per label (same m, β), < 0 means the per-image spread is informative. "
+          "d_onll_concentration = per-image S − one S per label (same m, β), < 0 means the per-image concentration is informative. "
           "Mean ± sd over seeds.", ""]
     long = []
     for ds in datasets:
@@ -160,7 +160,7 @@ def report(block="d8", split="val", root=RESULTS, open_test=False, datasets=("en
                 long.append({"dataset": ds, "variant": v, "seed": s, **scores(r, ev)})
         df = pd.DataFrame([x for x in long if x["dataset"] == ds])
         cols = ["map", "auroc", "bacc", "f1", "acc", "onll", "cnll", "ece_pmaj", "brier_pmaj", "split_auroc", "split_ap",
-                "split_catch20", "d_onll_spread", "split_auroc_const"]
+                "split_catch20", "d_onll_concentration", "split_auroc_const"]
         md += [f"## {ds}", "", "| | seeds | " + " | ".join(cols) + " |", "|---|---|" + "---|" * len(cols)]
         for v in D8:
             t = df[df.variant == v]

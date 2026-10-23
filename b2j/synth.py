@@ -1,9 +1,9 @@
-"""Round D, D7: synthetic study (journal_plan/iterations.md). When does B² beat soft BCE, on the mean and on the spread?
+"""Round D, D7: synthetic study (journal_plan/iterations.md). When does B² beat soft BCE, on the mean and on the concentration?
 
 World (adapted from the user's earlier test-bench generator): a latent concept u ~ N(0, I_16); features
 z = U u + σ_z ε (D = 768, the DINOv3 ViT-B width), what the head sees; a score direction a and an orthogonal clarity
-direction d. Mean vote share μ(u) = sigmoid((aᵀu + b) / τ). Clarity drives the per-image spread:
-log S(u) = log S̄ + γ dᵀu (γ = 0: one spread for every image). Each image's true vote share θ_i (the part the features
+direction d. Mean vote share μ(u) = sigmoid((aᵀu + b) / τ). Clarity drives the per-image concentration:
+log S(u) = log S̄ + γ dᵀu (γ = 0: one concentration for every image). Each image's true vote share θ_i (the part the features
 do not explain) and its votes:
   beta         θ_i ~ Beta(μ S, (1 − μ) S), k ~ Binomial(n_i, θ_i)              (B²'s model, correctly specified)
   logitnormal  θ_i = sigmoid(c + σ ε), (c, σ) per image such that E θ = μ and Var θ = μ(1 − μ)/(S + 1)
@@ -18,10 +18,10 @@ n_i is fixed or drawn uniformly per image. The real trainer (train.run, frozen-h
 vote-count weighted soft BCE and a reference soft BCE trained on 200 votes per image (≈ the hidden θ_i).
 
 Scored against the truth on held-out images ("eval"; synthetic, so the real-data test rule does not apply):
-mean — MSE(m, ν(u)), ν(u) = E[k/n | u] (≈ the floor from features; z is noisy, so the exact floor is E[ν | z]), and MSE(m, θ_i); spread — Spearman
+mean — MSE(m, ν(u)), ν(u) = E[k/n | u] (≈ the floor from features; z is noisy, so the exact floor is E[ν | z]), and MSE(m, θ_i); concentration — Spearman
 of the predicted S with the clarity dᵀu; vote NLL on fresh panels (n_eval = 3, 10, 50; the 3 raters in the raters
 world: fresh panels of 3 and 10 pool raters; the 3 raters in raters_fixed) minus the oracle's (true distribution of k given u; exact or quadrature except the pool world's count oracle, Monte
-Carlo over θ and panels with N_DRAWS_POOL draws); spread ablation — vote NLL with one S fitted on the evaluation panels
+Carlo over θ and panels with N_DRAWS_POOL draws); concentration ablation — vote NLL with one S fitted on the evaluation panels
 minus with the per-image S (the D0b test on real data); AUROC of m for θ_i > 0.5.
 In the rater worlds θ_i above is the pool-average rater's share, mean_r sigmoid(logit θ_i + β_r).
 
@@ -66,7 +66,7 @@ class Setting:
     n: int = 3                         # votes per training / validation image (fixed)
     n_range: tuple | None = None       # (lo, hi): n_i uniform on lo..hi instead
     n_train: int = 6000
-    gamma: float = 1.0                 # clarity -> log S slope; 0 = one spread for every image
+    gamma: float = 1.0                 # clarity -> log S slope; 0 = one concentration for every image
     world: str = "beta"                # beta | logitnormal | raters | raters_fixed
     b: float = -0.5
     tau: float = 0.4                   # with S̄ = 5: 29% split 3-vote panels, as Endoscapes (27%) and AMi-Br (22%)
@@ -366,16 +366,16 @@ def score(s: Setting, seed, root=OUT):
                 r["beta_mae"] = float(np.abs(beta[0] - true_beta).mean())
             for ne, (v, o) in ordered.items():               # D8: who voted what, on fresh panels of known raters
                 r[f"excess_onll_n{ne}"] = float((P.ordered_nll(m[:, None], S[:, None], beta, v)[:, 0] - o).mean())
-            if model in ("b2r", "b2rba"):                    # spread ablation (D0b on real data), 3-vote panels
-                r["d_nll_spread_n3"] = spread_ablation(m, S, beta, *((ordered[3][0], None) if model == "b2rba"
+            if model in ("b2r", "b2rba"):                    # concentration ablation (D0b on real data), 3-vote panels
+                r["d_nll_concentration_n3"] = concentration_ablation(m, S, beta, *((ordered[3][0], None) if model == "b2rba"
                                                                      else (None, panels[3])))
             rows.append(r)
     return rows
 
 
-def spread_ablation(m, S, beta=None, v=None, k=None):
+def concentration_ablation(m, S, beta=None, v=None, k=None):
     """NLL per panel with one S (fitted on these panels, as on real data) minus with the per-image S: > 0 = the
-    per-image spread is informative. Ordered votes v with rater biases β (B²-rba), else the 3-vote counts k."""
+    per-image concentration is informative. Ordered votes v with rater biases β (B²-rba), else the 3-vote counts k."""
     from scipy.optimize import minimize_scalar
     nll = ((lambda SS: P.ordered_nll(m[:, None], np.broadcast_to(SS, m.shape)[:, None], beta, v)[:, 0]) if v is not None
            else (lambda SS: P.vote_nll(m, np.broadcast_to(SS, m.shape), k, np.full_like(k, 3.0))))
@@ -399,15 +399,15 @@ def report(root=OUT):
     df.to_csv(Path(root) / "synth_long.csv", index=False)
     md = ["# D7 — synthetic study (validation-free: scored against the known truth)", "",
           "Mean recovery: MSE(m, ν) with ν = E[k/n | latent]; Δ = MSE(soft BCE) − MSE(B²-r) (positive = B²-r closer). "
-          "All ± are sd over 5 seeds; differences are paired (same data per seed). Spread: Spearman of B²-r's S with "
-          "the true clarity (which drives S when γ > 0), and the spread ablation (NLL per 3-vote panel with one S "
+          "All ± are sd over 5 seeds; differences are paired (same data per seed). Concentration: Spearman of B²-r's S with "
+          "the true clarity (which drives S when γ > 0), and the concentration ablation (NLL per 3-vote panel with one S "
           "fitted on the evaluation panels minus with the per-image S; > 0 = per-image S informative; the D0b test on "
           "real data). Vote NLL: excess over the oracle on fresh panels, Global-S / B²-r, and Δ = Global-S − B²-r.", ""]
     for ck in ("B", "A"):
         t = df[df.checkpoint == ck]
         md += [f"## checkpoint {ck}", "",
                "| setting | MSE soft BCE | MSE B²-r | Δ MSE | B² better (seeds) | MSE 200-vote ref | Spearman S~clarity | "
-               "spread ablation n=3 | excess NLL n=3 GS / B² (Δ) | n=10 | n=50 | AUROC soft / B² | MSE vote-weighted |",
+               "concentration ablation n=3 | excess NLL n=3 GS / B² (Δ) | n=10 | n=50 | AUROC soft / B² | MSE vote-weighted |",
                "|" + "---|" * 13]
         for s in settings():
             g = t[t.setting == s.name].pivot(index="seed", columns="model")
@@ -421,18 +421,18 @@ def report(root=OUT):
                 return "–" if not b.notna().any() else f"{a.mean():.4f} / {b.mean():.4f} ({_ms(a - b)})"
             md.append(f"| {s.name} | {_ms(col('mse_nu', 'soft_bce'), '.5f')} | {_ms(col('mse_nu', 'b2r'), '.5f')} | "
                       f"{_ms(dlt, '+.5f')} | {(dlt > 0).sum()}/{len(dlt)} | {_ms(col('mse_nu', 'ref200'), '.5f')} | "
-                      f"{_ms(col('spearman_S_clarity', 'b2r'), '+.2f')} | {_ms(col('d_nll_spread_n3', 'b2r'), '+.4f')} | "
+                      f"{_ms(col('spearman_S_clarity', 'b2r'), '+.2f')} | {_ms(col('d_nll_concentration_n3', 'b2r'), '+.4f')} | "
                       f"{nll(3)} | {nll(10)} | {nll(50)} | "
                       f"{_ms(col('auroc', 'soft_bce'), '.3f')} / {_ms(col('auroc', 'b2r'), '.3f')} | "
                       f"{_ms(col('mse_nu', 'soft_bce_n'), '.5f')} |")
         md.append("")
     tb = df[df.checkpoint == "B"]
-    md += ["## S5 — how strongly must the spread vary to be seen? (checkpoint B)", "",
+    md += ["## S5 — how strongly must the concentration vary to be seen? (checkpoint B)", "",
            "γ = slope of log S on clarity (log S sd = γ; γ = 1: S from ≈ 1.4 to 18, p10–p90). Real-data reference "
            "(D0b, B²-r, ΔNLL per image and label): Endoscapes +0.001 ± 0.000, AMi-Br −0.001 ± 0.001 (3 votes), "
            "MHIST +0.046 ± 0.003 (7 votes). Rater rows: the fixed 3-rater panel with biases (−1, 0, 1); B²-rba's "
            "ablation uses its ordered-vote likelihood.", "",
-           "| setting | γ | model | Spearman S~clarity | spread ablation n=3 | Δ excess NLL n=3 (GS − B²) | n=10 |",
+           "| setting | γ | model | Spearman S~clarity | concentration ablation n=3 | Δ excess NLL n=3 (GS − B²) | n=10 |",
            "|---|---|---|---|---|---|---|"]
     by = {x.name: x for x in settings()}
     for grp in SWEEP_ROWS:
@@ -447,7 +447,7 @@ def report(root=OUT):
                                  if mdl == "b2r" and f"excess_nll_n{ne}" in g and g[f"excess_nll_n{ne}"]["b2r"].notna().any()
                                  else "–")
                 md.append(f"| {name} | {by[name].gamma:g} | {mdl} | {_ms(g['spearman_S_clarity'][mdl], '+.2f')} | "
-                          f"{_ms(g['d_nll_spread_n3'][mdl], '+.4f')} | {dn(3)} | {dn(10)} |")
+                          f"{_ms(g['d_nll_concentration_n3'][mdl], '+.4f')} | {dn(3)} | {dn(10)} |")
     md.append("")
     rt = df[df.setting.isin([x.name for x in settings() if x.world in ("raters", "raters_fixed")])]
     if not rt.empty and "beta_mae" in rt:
@@ -457,7 +457,7 @@ def report(root=OUT):
                "learned rater biases. MSE(m, μ): μ = the typical (unbiased) rater's mean share. Spearman S~|logit m|: does "
                "S track how extreme the mean is (where bias-driven dispersion would sit) rather than clarity.", "",
                "| setting | model | excess ordered NLL n=3 | n=10 | excess count NLL n=3 | Spearman S~clarity | "
-               "Spearman S~abs logit m | spread ablation n=3 | mean abs(β̂ − β) | MSE(m, μ) | MSE(m, ν) | AUROC |",
+               "Spearman S~abs logit m | concentration ablation n=3 | mean abs(β̂ − β) | MSE(m, μ) | MSE(m, ν) | AUROC |",
                "|" + "---|" * 12]
         for name in dict.fromkeys(rt.setting):
             for model in ("soft_bce", "b2r", "soft_bce_ba", "b2rba"):
@@ -467,14 +467,14 @@ def report(root=OUT):
                 c = lambda col, f=".4f": "–" if col not in g else _ms(g[col], f)
                 md.append(f"| {name} | {model} | {c('excess_onll_n3')} | {c('excess_onll_n10')} | {c('excess_nll_n3')} | "
                           f"{c('spearman_S_clarity', '+.2f')} | {c('spearman_S_absm', '+.2f')} | "
-                          f"{c('d_nll_spread_n3', '+.4f')} | {c('beta_mae', '.3f')} | "
+                          f"{c('d_nll_concentration_n3', '+.4f')} | {c('beta_mae', '.3f')} | "
                           f"{c('mse_mu', '.5f')} | {c('mse_nu', '.5f')} | {c('auroc', '.3f')} |")
             g = rt[(rt.setting == name) & (rt.checkpoint == "B")].pivot(index="seed", columns="model")
             if "b2rba" in g["mse_nu"] and "b2r" in g["mse_nu"]:
                 d = lambda col, f: _ms(g[col]["b2rba"] - g[col]["b2r"], f)
                 md.append(f"| {name} | paired B²-rba − B²-r | {d('excess_onll_n3', '+.4f')} | – | {d('excess_nll_n3', '+.4f')} | "
                           f"{d('spearman_S_clarity', '+.2f')} | {d('spearman_S_absm', '+.2f')} | "
-                          f"{d('d_nll_spread_n3', '+.4f')} | – | {d('mse_mu', '+.5f')} | – | – |")
+                          f"{d('d_nll_concentration_n3', '+.4f')} | – | {d('mse_mu', '+.5f')} | – | – |")
         md.append("")
     out = Path(root) / "synth_report.md"
     out.write_text("\n".join(md))
@@ -482,7 +482,7 @@ def report(root=OUT):
 
 
 def describe(s: Setting, N=20000, seed=0):
-    """Vote histogram and spread of the world at the setting's n (for calibration against real datasets)."""
+    """Vote histogram and concentration of the world at the setting's n (for calibration against real datasets)."""
     x = sample(s, N, np.random.default_rng(seed))
     n = x["n"].astype(int)
     split = ((x["k"] > 0) & (x["k"] < n)).mean()

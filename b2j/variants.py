@@ -40,15 +40,15 @@ VARIANTS["dm"] = Variant(LossConfig("dm"), head_type="joint")
 VARIANTS["soft_ce"] = Variant(LossConfig("soft_ce"), head_type="joint")
 VARIANTS["b2r_joint"] = Variant(LossConfig("b2"), head_type="joint")
 SINGLE_LABEL = ("dm", "soft_ce")    # need mutually exclusive votes: Σ_c k_c = n for every image
-# D2 (2026-10-20, INVALID design: shrinks towards the across-image prior spread; kept to reproduce the record)
+# D2 (2026-10-20, INVALID design: shrinks towards the across-image prior concentration; kept to reproduce the record)
 VARIANTS.update({f"b2ms_shrink{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam), prior="moment")
                  for lam in S_SHRINK})
-# D2b: shrink log S towards the batch mean (λ -> inf = B² with one learned spread per head)
+# D2b: shrink log S towards the batch mean (λ -> inf = B² with one learned concentration per head)
 VARIANTS.update({f"b2ms_var{lam:g}": Variant(LossConfig("b2", param="ms", s_shrink=lam, s_shrink_target="batch"))
                  for lam in S_SHRINK})
 
 # D8: rater bias adjustment (needs the rater of each vote: Endoscapes, AMi-Br). B²-rba = B²-r + one bias per rater;
-# soft BCE-ba = soft BCE + one bias per rater (no per-image spread): with soft BCE and B²-r a 2 × 2
+# soft BCE-ba = soft BCE + one bias per rater (no per-image concentration): with soft BCE and B²-r a 2 × 2
 VARIANTS["b2rba"] = Variant(LossConfig("b2", rater=True))
 VARIANTS["soft_bce_ba"] = Variant(LossConfig("soft_bce", rater=True))
 
@@ -74,7 +74,7 @@ def build(name: str, in_dim: int, k_train, n_train, eps: float | None = None, dr
     if cfg.kind in ("dm", "soft_ce") and not bool((k_train.sum(1) == n_train[:, 0]).all() and (n_train == n_train[:, :1]).all()):
         raise ValueError(f"variant {name} needs single-label votes (Σ_c k_c = n per image)")
     if variant.head_type == "joint":
-        head = JointHead(in_dim, k_train.shape[1], cfg.out_dim, shared_spread=cfg.kind == "dm", dropout=dropout)
+        head = JointHead(in_dim, k_train.shape[1], cfg.out_dim, shared_concentration=cfg.kind == "dm", dropout=dropout)
     else:
         head = MultiHead(in_dim, k_train.shape[1], cfg.out_dim, variant.head_type, dropout=dropout)
     if cfg.rater:

@@ -176,7 +176,7 @@ def test_loss_stays_on_gpu():
     assert loss.cuda().per_sample(out, k, n).is_cuda
 
 
-def test_float32_inputs_are_exact_at_large_spread():
+def test_float32_inputs_are_exact_at_large_concentration():
     """The loss is computed in float64 inside PanelLoss, so float32 logits with S ~ 1e4 still match scipy."""
     logits = torch.tensor([[[7000.0, 3000.0]], [[6999.0, 3001.0]]])      # softplus(x) = x here
     k, n = torch.tensor([[1.0], [1.0]]), torch.tensor([[3.0], [3.0]])

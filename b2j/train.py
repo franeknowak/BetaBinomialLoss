@@ -1,15 +1,15 @@
 """Module c: one trainer for every model variant, on cached embeddings (frozen encoder) or on images (fine-tuning).
 
 The trainer evaluates on validation only, evals_per_epoch times per epoch, over a short fixed budget with no
-early stopping (plan amendment 2026-10-14 #5). At each evaluation it fits the variant's spread scale
-(posthoc.fit_spread) and records two selection criteria:
+early stopping (plan amendment 2026-10-14 #5). At each evaluation it fits the variant's concentration scale
+(posthoc.fit_concentration) and records two selection criteria:
   A = validation mAP of the discrimination score m against the majority vote;
-  B = validation vote NLL per vote after the spread step (Global-S for hard and soft BCE, c for B²).
+  B = validation vote NLL per vote after the concentration step (Global-S for hard and soft BCE, c for B²).
   DUP has no panel prediction: A and B are both its validation loss.
 Each checkpoint is the evaluation with the best centred moving average (window cfg.smooth) of its criterion;
 the kept weights are the real state at that evaluation.
 At each evaluation it also scores a fixed subset of training images (as many as validation; eval mode, dropout
-off) with the same metrics and the spread fitted on validation at that evaluation (train_map,
+off) with the same metrics and the concentration fitted on validation at that evaluation (train_map,
 train_nll_per_vote / train_dup_bce): train and validation curves on one footing (05_plan amendment 2026-10-16 #6).
 The subset is drawn with its own generator, so training is unchanged.
 After the last epoch it writes, for A and B: validation and test raw head outputs, the fitted scale and the head
@@ -124,9 +124,9 @@ def predict(model, split: Split, device, batch_size=1024, num_workers=4) -> np.n
 
 # ---------------------------------------------------------------- validation scoring
 def score_split(name, out, k, n, scale, eps=None, prefix="val", v=None) -> dict:
-    """mAP of m against the majority vote and vote NLL per vote with a given spread scale (DUP: its BCE).
+    """mAP of m against the majority vote and vote NLL per vote with a given concentration scale (DUP: its BCE).
     Rater-aware variants (D8): NLL of the ordered votes v with their learned rater biases."""
-    if posthoc.spread_rule(name) == "dup":
+    if posthoc.concentration_rule(name) == "dup":
         t = split_target(torch.as_tensor(k), torch.as_tensor(n)).numpy()
         p = np.clip(expit(out[..., 0].astype(np.float64)), 1e-12, 1 - 1e-12)
         return {f"{prefix}_dup_bce": float(-(t * np.log(p) + (1 - t) * np.log1p(-p)).mean())}
@@ -143,9 +143,9 @@ def score_split(name, out, k, n, scale, eps=None, prefix="val", v=None) -> dict:
 
 def score_val(name, out, k, n, eps=None, v=None) -> dict:
     """Validation selection quantities for one evaluation. Uses validation labels only."""
-    scale = posthoc.fit_spread(name, out, k, n, eps, v)
+    scale = posthoc.fit_concentration(name, out, k, n, eps, v)
     sc = score_split(name, out, k, n, scale, eps, v=v)
-    if posthoc.spread_rule(name) == "dup":
+    if posthoc.concentration_rule(name) == "dup":
         return {**sc, "sel_A": -sc["val_dup_bce"], "sel_B": sc["val_dup_bce"], "scale": None}
     return {**sc, "sel_A": sc["val_map"], "sel_B": sc["val_nll_per_vote"],
             "scale": None if scale is None else scale.tolist()}

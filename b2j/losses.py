@@ -72,12 +72,12 @@ def alphas(logits: torch.Tensor, eps: float, plus_one: bool = False):
     return a[..., 0], a[..., 1]
 
 
-LOG_S_BOUNDS = (-10.0, 15.0)        # mean-spread heads: log S clamp (S from 4.5e-5 to 3.3e6)
+LOG_S_BOUNDS = (-10.0, 15.0)        # mean-concentration heads: log S clamp (S from 4.5e-5 to 3.3e6)
 LOGIT_M_BOUND = 30.0                 # |logit m| clamp: m in [1e-13, 1 - 1e-13], logs stay finite in float64
 
 
 def ms_alphas(out: torch.Tensor):
-    """Mean-spread head (round D, D1): [..., 2] = (logit m, log S) -> (a0, a1, log S) with a1 = m S, a0 = (1 - m) S.
+    """Mean-concentration head (round D, D1): [..., 2] = (logit m, log S) -> (a0, a1, log S) with a1 = m S, a0 = (1 - m) S.
 
     Built in log space (log a1 = log sigmoid(l) + log S) so neither alpha underflows to 0.
     """
@@ -213,9 +213,9 @@ class LossConfig:
     kl_lambda: float = 0.0          # 0 = no KL
     param: str = "alpha"            # B² head output: 'alpha' (two softplus alphas) | 'ms' (logit m, log S; round D)
     s_shrink: float = 0.0           # 'ms' only: lambda * (log S - target)^2 (round D, D2)
-    s_shrink_target: str = "prior"  # 'prior': log S of the moment-matched prior = spread ACROSS images (D2, invalid:
+    s_shrink_target: str = "prior"  # 'prior': log S of the moment-matched prior = concentration ACROSS images (D2, invalid:
                                     #   ignores x, ~0.5 on CIFAR-10H); 'batch': the batch mean of log S (D2b), i.e. a
-                                    #   penalty on the spread's variation between images; its level is learned
+                                    #   penalty on the concentration's variation between images; its level is learned
     n_weight: bool = False          # soft BCE only (round D, D5): per-sample weight n / batch mean of n, i.e. the
                                     #   Binomial NLL (= n × soft BCE + const) rescaled to the soft-BCE loss level
     rater: bool = False             # round D, D8: one learned bias per rater (head outputs carry them after the
@@ -233,7 +233,7 @@ class LossConfig:
         if self.param not in ("alpha", "ms") or (self.param == "ms" and (self.kind != "b2" or self.plus_one)):
             raise ValueError("param 'ms' is a B²-r head option (not B²-M, not BCE)")
         if self.s_shrink and self.param != "ms":
-            raise ValueError("s_shrink needs the mean-spread head")
+            raise ValueError("s_shrink needs the mean-concentration head")
         if self.n_weight and self.kind != "soft_bce":
             raise ValueError("n_weight is a soft-BCE option")
         if self.rater and (self.kind not in ("soft_bce", "b2") or self.weighted or self.kl_lambda or self.plus_one
@@ -260,7 +260,7 @@ class PanelLoss(nn.Module):
         if cfg.weighted and weights is None:
             raise ValueError("weighted loss needs class weights")
         if (cfg.kl_lambda or (cfg.s_shrink and cfg.s_shrink_target == "prior")) and prior is None:
-            raise ValueError("KL and spread shrinkage need a prior")
+            raise ValueError("KL and concentration shrinkage need a prior")
         self.register_buffer("weights", None if weights is None else torch.as_tensor(weights, dtype=torch.float32))
         self.register_buffer("prior", None if prior is None else torch.as_tensor(prior, dtype=torch.float32))
 

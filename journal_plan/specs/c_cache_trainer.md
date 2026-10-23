@@ -16,7 +16,7 @@ Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the concentration fi
 - AdamW (head lr, encoder lr if fine-tuning, one weight decay), linear warm-up then cosine to 0, gradient clipping 1.0. Short fixed budgets, **4 validation evaluations per epoch**, no early stopping: stopping is separated from selection (user: Endoscapes overfits by epoch 2–3), and the full curve gives H5 its validation-S drift. A non-finite loss skips the step and is counted (input to the ε fallback rule).
 - Seeded: same seed and data → bit-identical outputs on CPU.
 - **At every evaluation, validation only:** raw outputs → `score_val`:
-  - concentration step (`posthoc.fit_spread`): B²-r-family c; soft and hard BCE Global-S*; none for B²-M;
+  - concentration step (`posthoc.fit_concentration`): B²-r-family c; soft and hard BCE Global-S*; none for B²-M;
   - `val_map` = mean over heads of AP of m against the majority vote (heads with one class skipped);
   - `val_nll_per_vote` = mean over images and heads of vote NLL / n after the concentration step;
   - median validation S per head; B² variants also log the training stuck share (accumulated over the epoch's batches).
@@ -26,7 +26,7 @@ Code: `b2j/embed.py`, `b2j/train.py`, and `b2j/posthoc.py` (the concentration fi
 - **Test discipline:** test outputs are produced once per checkpoint from the in-memory state after training, saved, never scored or printed. A unit test asserts that no logged, saved or printed key mentions test.
 
 ## Post-hoc concentration (`posthoc.py`, start of module d)
-- `mean_spread(variant, out, eps)` → (m, S0): B² m = α₁/(α₀+α₁), S0 = α₀+α₁ (honours the run's ε override, never for B²-M); BCE heads m = sigmoid, S0 = ∞.
+- `mean_concentration(variant, out, eps)` → (m, S0): B² m = α₁/(α₀+α₁), S0 = α₀+α₁ (honours the run's ε override, never for B²-M); BCE heads m = sigmoid, S0 = ∞.
 - `vote_nll(m, S, k, n)`: Beta-Binomial via finite products over integer votes (exact at any S; S = ∞ is the Binomial). Matches scipy.
 - `fit_scale`: per head, bounded 1-D search on log scale ∈ [−9, 9]; n = 1 everywhere → scale = ∞ (plan tie-break). Recovers a simulated S within 15% (N = 20k).
 

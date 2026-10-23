@@ -1,4 +1,4 @@
-"""Round D candidates (journal_plan/iterations.md): mean-spread head (D1) and spread shrinkage (D2)."""
+"""Round D candidates (journal_plan/iterations.md): mean-concentration head (D1) and concentration shrinkage (D2)."""
 import numpy as np
 import pytest
 import torch
@@ -10,10 +10,10 @@ from b2j.blocks import smoke
 from b2j.variants import MAIN, build
 
 
-def test_ms_alphas_match_mean_and_spread_and_posthoc():
+def test_ms_alphas_match_mean_and_concentration_and_posthoc():
     out = torch.tensor([[[0.3, 1.2], [-4.0, 6.0], [50.0, -20.0]]], dtype=torch.float64)    # last: clamped
     a0, a1, log_s = L.ms_alphas(out)
-    m, S = P.mean_spread("b2ms", out.numpy())
+    m, S = P.mean_concentration("b2ms", out.numpy())
     np.testing.assert_allclose((a1 / (a0 + a1)).numpy(), m, rtol=1e-10)
     np.testing.assert_allclose((a0 + a1).numpy(), S, rtol=1e-10)
     assert torch.isfinite(torch.log(a1)).all() and torch.isfinite(torch.log(a0)).all()
@@ -46,8 +46,9 @@ def test_shrink_pulls_log_s_to_the_prior():
     assert pen(log_s0 + 2) == pytest.approx(0.3 * 4, rel=1e-4)
 
 
-def test_ms_head_learns_a_spread_that_depends_on_x():
-    """x0 sets the mean, x1 the spread: S = 1 where x1 > 0 (votes split), 100 elsewhere (votes follow m)."""
+def test_ms_head_learns_a_concentration_that_depends_on_x():
+    """x0 sets the mean, x1 the concentration: S = 1 where x1 > 0 (θ widely spread: panels lean hard one way), 100 elsewhere
+    (votes follow m)."""
     g = torch.Generator().manual_seed(0)
     N = 4000
     x = torch.randn(N, 4, generator=g)
@@ -62,7 +63,7 @@ def test_ms_head_learns_a_spread_that_depends_on_x():
         opt.zero_grad()
         loss(head(x), k, n).backward()
         opt.step()
-    _, S_hat = P.mean_spread("b2ms", head(x).detach().numpy())
+    _, S_hat = P.mean_concentration("b2ms", head(x).detach().numpy())
     lo, hi = np.median(S_hat[x[:, 1].numpy() > 0]), np.median(S_hat[x[:, 1].numpy() <= 0])
     assert lo < 3 and hi > 20
 
@@ -140,7 +141,7 @@ def test_dm_head_shares_one_concentration_and_marginals_are_beta_binomial():
     head, loss = build("dm", 8, k, n)
     out = head(torch.randn(16, 8)).detach()
     assert out.shape == (16, 4, 2) and torch.equal(out[..., 1], out[:, :1, 1].expand(-1, 4))
-    m, S = P.mean_spread("dm", out.numpy())
+    m, S = P.mean_concentration("dm", out.numpy())
     assert np.allclose(m.sum(1), 1) and np.allclose(S, S[:, :1])
     value = loss(out.requires_grad_(), k, n)                     # = batch mean of the per-image DM NLL
     from b2j.losses import dm_nll

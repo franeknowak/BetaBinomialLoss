@@ -1,4 +1,4 @@
-"""Unit tests for module c (embedding cache, trainer) and the post-hoc spread fit it uses.
+"""Unit tests for module c (embedding cache, trainer) and the post-hoc concentration fit it uses.
 
 Run: python -m pytest tests/test_module_c.py -q   (CPU; synthetic data; a stub encoder replaces DINOv3)
 """
@@ -26,7 +26,7 @@ def test_vote_nll_matches_scipy():
     np.testing.assert_allclose(P.vote_nll(m, 1e9, k, n), P.vote_nll(m, np.inf, k, n), rtol=1e-6)
 
 
-def test_fit_scale_recovers_spread():
+def test_fit_scale_recovers_concentration():
     rng = np.random.default_rng(0)
     N, S = 20000, 4.0
     m = rng.uniform(0.1, 0.9, (N, 2))
@@ -39,16 +39,16 @@ def test_fit_scale_recovers_spread():
     assert np.isinf(P.fit_scale(m, np.ones_like(m), k[:, :] * 0, np.ones_like(k))).all()   # n = 1: tie-break inf
 
 
-def test_spread_rules_and_eps():
-    assert {v: P.spread_rule(v) for v in VARIANTS} == {
+def test_concentration_rules_and_eps():
+    assert {v: P.concentration_rule(v) for v in VARIANTS} == {
         "hard_bce": "global", "hard_bce_w": "global", "soft_bce": "global", "b2r": "c", "b2r_w": "c",
         "b2r_kl": "c", "b2m": "none", "b2r_linear": "c", "dup": "dup", "b2ms": "c", "b2ms_shrink0.03": "c", "b2ms_shrink0.3": "c", "b2ms_shrink3": "c",
         "b2ms_var0.03": "c", "b2ms_var0.3": "c", "b2ms_var3": "c", "soft_bce_n": "global",
             "dm": "c", "soft_ce": "global", "b2r_joint": "c", "b2rba": "c", "soft_bce_ba": "global"}
     out = np.full((1, 1, 2), -50.0)
-    assert P.mean_spread("b2r", out)[1][0, 0] == pytest.approx(2e-3)
-    assert P.mean_spread("b2r", out, eps=0.1)[1][0, 0] == pytest.approx(0.2)
-    assert P.mean_spread("b2m", out, eps=0.1)[1][0, 0] == pytest.approx(2 + 2e-6)     # B²-M ignores the override
+    assert P.mean_concentration("b2r", out)[1][0, 0] == pytest.approx(2e-3)
+    assert P.mean_concentration("b2r", out, eps=0.1)[1][0, 0] == pytest.approx(0.2)
+    assert P.mean_concentration("b2m", out, eps=0.1)[1][0, 0] == pytest.approx(2 + 2e-6)     # B²-M ignores the override
     m, S = P.panel("soft_bce", np.zeros((4, 2, 1)), scale=np.array([3.0, 5.0]))
     assert (m == 0.5).all() and (S == [3.0, 5.0]).all()
 
