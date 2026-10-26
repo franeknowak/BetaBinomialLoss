@@ -1,11 +1,13 @@
 *.DS_Store
 *.pyc
 /.vscode
-/weights/*.pt
-/results/*.json
-/results/*/
 *.qsub.sh
+!jobs/*.qsub.sh
+/jobs/logs/
 *.o*
 .hf_cache/
 /dataset/
-/.claude
+/cache/
+/results/
+/weights/
+/dino_env/
