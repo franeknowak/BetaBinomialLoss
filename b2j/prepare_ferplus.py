@@ -2,7 +2,7 @@
 
   python -m b2j.prepare_ferplus <zip> [<dataset dir>]     (cluster job: jobs/download_datasets.qsub.sh ferplus)
 
-Nothing is unpacked (cluster file limit, user 2026-10-19). Reports what the zip holds, then writes
+Nothing is unpacked here (jobs/unpack_ferplus.qsub.sh unpacks the zip afterwards). Reports what the zip holds, then writes
 <dataset dir>/zip_index.csv (id, archive, member) for the originals named in fer2013new.csv (the faces kept by
 b2j.data.ferplus_labels); b2j.data reads them inside the zip. Augmented copies are ignored. A name that maps to
 several different files in the zip is ambiguous and left out.

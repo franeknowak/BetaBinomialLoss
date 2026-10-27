@@ -149,8 +149,9 @@ def ferplus_labels(root) -> LabelTable:
     one of each pair, so all 8 rows are dropped) whose plurality vote is an emotion (drops faces the crowd
     called unknown / not a face). One-vs-rest heads over the 8 emotions; n = the image's emotion votes (unknown / NF
     votes are not part of the panel), so n varies (mostly 6-10). Cluster = image.
-    Images: read inside the Kaggle zip via zip_index.csv (b2j.prepare_ferplus; faces without an unambiguous original
-    in the zip are dropped); without the index (Mac), images/<name>.png.
+    Images: located via zip_index.csv (b2j.prepare_ferplus; faces without an unambiguous original in the zip are
+    dropped): read inside the zip while it is present, else from the unpacked copy <root>/<member> (cluster, unpacked
+    2026-10-27); without the index (Mac), images/<name>.png.
     """
     root = Path(root)
     d = pd.read_csv(root / "fer2013new.csv")
@@ -170,7 +171,9 @@ def ferplus_labels(root) -> LabelTable:
     if (root / "zip_index.csv").exists():
         idx = pd.read_csv(root / "zip_index.csv", dtype=str).set_index("id")
         t = t.subset(np.isin(t.ids, idx.index.values))
-        t.paths = np.array([f"{root / idx.at[i, 'archive']}{ZIP_SEP}{idx.at[i, 'member']}" for i in t.ids])
+        t.paths = np.array([f"{root / idx.at[i, 'archive']}{ZIP_SEP}{idx.at[i, 'member']}"
+                            if (root / idx.at[i, "archive"]).exists() else str(root / idx.at[i, "member"])
+                            for i in t.ids])
     return t
 
 
@@ -189,7 +192,7 @@ def transform(dataset: str):
     return T.Compose(steps)
 
 
-ZIP_SEP = "::"      # an image inside an archive: "<archive>::<member>"; read in place (cluster file limit, 2026-10-19)
+ZIP_SEP = "::"      # an image inside an archive: "<archive>::<member>"; read in place
 _ZIPS: dict = {}
 
 

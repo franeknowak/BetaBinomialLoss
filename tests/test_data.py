@@ -199,3 +199,23 @@ def test_prepare_ferplus_keeps_only_unambiguous_originals(tmp_path, capsys):
     assert t.ids.tolist() == ["fer0000000"] and D.image_exists(t.paths[0])
     assert np.asarray(D.open_image(t.paths[0])).max() == 1             # the original, not the augmented copy
     assert not D.image_exists(f"{tmp_path / 'ferplus.zip'}{D.ZIP_SEP}missing.png")
+
+
+def test_ferplus_reads_unpacked_copy_once_zip_is_gone(tmp_path):
+    import zipfile
+    from PIL import Image
+    _fake_ferplus(tmp_path)
+    with zipfile.ZipFile(tmp_path / "ferplus.zip", "w") as z:
+        z.writestr("train/neutral/fer0000000.png", b"")
+        z.writestr("test/surprise/fer0000006.png", b"")
+    pd.DataFrame({"id": ["fer0000000", "fer0000006"], "archive": "ferplus.zip",
+                   "member": ["train/neutral/fer0000000.png", "test/surprise/fer0000006.png"]}).to_csv(
+        tmp_path / "zip_index.csv", index=False)
+    assert D.ZIP_SEP in D.ferplus_labels(tmp_path).paths[0]            # zip present: read inside it
+    for m, v in (("train/neutral/fer0000000.png", 1), ("test/surprise/fer0000006.png", 2)):
+        (tmp_path / m).parent.mkdir(parents=True, exist_ok=True)
+        Image.new("L", (112, 112), v).save(tmp_path / m)
+    (tmp_path / "ferplus.zip").unlink()
+    t = D.ferplus_labels(tmp_path)
+    assert t.paths.tolist() == [str(tmp_path / "train/neutral/fer0000000.png"), str(tmp_path / "test/surprise/fer0000006.png")]
+    assert all(D.image_exists(p) for p in t.paths) and np.asarray(D.open_image(t.paths[1])).max() == 2
