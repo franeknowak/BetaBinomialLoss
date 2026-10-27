@@ -171,8 +171,9 @@ def ferplus_labels(root) -> LabelTable:
     if (root / "zip_index.csv").exists():
         idx = pd.read_csv(root / "zip_index.csv", dtype=str).set_index("id")
         t = t.subset(np.isin(t.ids, idx.index.values))
+        zipped = {a: (root / a).exists() for a in idx["archive"].unique()}      # one check per archive, not per face
         t.paths = np.array([f"{root / idx.at[i, 'archive']}{ZIP_SEP}{idx.at[i, 'member']}"
-                            if (root / idx.at[i, "archive"]).exists() else str(root / idx.at[i, "member"])
+                            if zipped[idx.at[i, "archive"]] else str(root / idx.at[i, "member"])
                             for i in t.ids])
     return t
 
