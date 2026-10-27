@@ -11,7 +11,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ENDO_SPLIT = {"train": (1, 120), "val": (121, 161), "test": (162, 201)}   # official video ranges
+ENDO_SPLIT = {"train": (1, 120), "val": (121, 161), "test": (162, 201)}   # official video ranges (= image folders)
+ENDO_RESPLIT = Path(__file__).resolve().parent / "splits" / "endoscapes_resplit.csv"   # b2j.resplit_endoscapes
 DATA_ROOT = Path(__file__).resolve().parents[2] / "datasets"   # same on Mac and cluster: <repo>/../datasets/<name>
 
 
@@ -35,8 +36,12 @@ class LabelTable:
 
 
 # ---------------------------------------------------------------- Endoscapes2023 (CVS201)
-def endoscapes_labels(root) -> LabelTable:
-    """Exact k per criterion = sum of the 3 raters' binary votes, from all_metadata.csv (keyframes only)."""
+def endoscapes_labels(root, split="resplit") -> LabelTable:
+    """Exact k per criterion = sum of the 3 raters' binary votes, from all_metadata.csv (keyframes only).
+
+    split="resplit" (default): our balanced video split (ENDO_RESPLIT, 121 / 40 / 40 videos); "official": the
+    published 120 / 41 / 40. Images stay in their official folders either way.
+    """
     root = Path(root)
     d = pd.read_csv(root / "all_metadata.csv")
     d = d[d["is_ds_keyframe"]].reset_index(drop=True)
@@ -44,11 +49,18 @@ def endoscapes_labels(root) -> LabelTable:
     k = votes.sum(1).astype(np.float64)                                       # [N, 3]
     if np.abs(k / 3 - d[["C1", "C2", "C3"]].values).max() > 1e-9:
         raise ValueError("rater votes disagree with the averaged C1-C3 columns")
-    split = np.full(len(d), "", dtype=object)
+    folder = np.full(len(d), "", dtype=object)
     for s, (lo, hi) in ENDO_SPLIT.items():
-        split[(d["vid"] >= lo) & (d["vid"] <= hi)] = s
+        folder[(d["vid"] >= lo) & (d["vid"] <= hi)] = s
+    if split == "official":
+        split = folder.copy()
+    elif split == "resplit":
+        by_vid = pd.read_csv(ENDO_RESPLIT).set_index("video")["split"]
+        split = d["vid"].map(by_vid).values.astype(object)
+    else:
+        raise ValueError(f"unknown Endoscapes split {split!r}")
     ids = (d["vid"].astype(str) + "_" + d["frame"].astype(str)).values.astype(str)   # str, not object: np.load needs no pickle
-    paths = np.array([str(root / s / f"{i}.jpg") for s, i in zip(split, ids)])
+    paths = np.array([str(root / f / f"{i}.jpg") for f, i in zip(folder, ids)])
     return LabelTable(ids, k, np.full_like(k, 3.0), d["vid"].values, split.astype(str), paths,
                       votes=votes.astype(np.float64))
 

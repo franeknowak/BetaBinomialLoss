@@ -15,12 +15,22 @@ ENDO = D.DATA_ROOT / "endoscapes"
 
 @pytest.mark.skipif(not (ENDO / "all_metadata.csv").exists(), reason="Endoscapes metadata not present")
 def test_endoscapes_real_counts():
-    t = D.endoscapes_labels(ENDO)
+    t = D.endoscapes_labels(ENDO, split="official")
     assert {s: (t.split == s).sum() for s in ("train", "val", "test")} == {"train": 6960, "val": 2331, "test": 1799}
     assert set(np.unique(t.k)) <= {0, 1, 2, 3} and (t.n == 3).all()
     tr = t.take("train")
     np.testing.assert_allclose((2 * tr.k > 3).mean(0), [0.1563, 0.1121, 0.1789], atol=5e-4)   # MICCAI PI values
     assert len(np.intersect1d(t.take("train").cluster, t.take("test").cluster)) == 0
+
+
+@pytest.mark.skipif(not (ENDO / "all_metadata.csv").exists(), reason="Endoscapes metadata not present")
+def test_endoscapes_resplit():
+    t, off = D.endoscapes_labels(ENDO), D.endoscapes_labels(ENDO, split="official")
+    assert {s: (t.split == s).sum() for s in ("train", "val", "test")} == {"train": 6701, "val": 2268, "test": 2121}
+    assert {s: len(np.unique(t.take(s).cluster)) for s in ("train", "val", "test")} == {"train": 121, "val": 40, "test": 40}
+    for a, b in (("train", "val"), ("train", "test"), ("val", "test")):
+        assert len(np.intersect1d(t.take(a).cluster, t.take(b).cluster)) == 0
+    assert (t.ids == off.ids).all() and (t.paths == off.paths).all()          # images stay in their official folders
 
 
 def _fake_cifar(N=1000, seed=0):
