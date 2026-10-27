@@ -74,11 +74,21 @@ def test_imageset_shapes(tmp_path):
     from PIL import Image
     Image.new("RGB", (854, 480)).save(tmp_path / "x.jpg")
     Image.new("RGB", (32, 32)).save(tmp_path / "y.png")
-    for name, p, size in (("endoscapes", "x.jpg", 384), ("cifar10h", "y.png", 224)):
+    for name, p, size in (("endoscapes", "x.jpg", 256), ("cifar10h", "y.png", 256)):
         t = D.LabelTable(np.array(["x"]), np.array([[1.0]]), np.array([[3.0]]), np.array([0]),
                          np.array(["train"]), np.array([str(tmp_path / p)]))
         img, k, n, i = D.ImageSet(t, name)[0]
         assert img.shape == (3, size, size) and k.item() == 1 and n.item() == 3 and i == 0
+
+
+def test_endoscapes_crop_is_central_480():
+    """854×480 frame: the 480×480 centre is kept before resizing (left/right borders dropped)."""
+    from PIL import Image
+    im = Image.new("RGB", (854, 480), (255, 0, 0))
+    im.paste((0, 0, 255), (187, 0, 667, 480))                         # exact centre 480 columns blue
+    x = D.transform("endoscapes")(im)
+    blue = (x[2] > x[0]).float().mean().item()
+    assert blue == 1.0
 
 
 MHIST = D.DATA_ROOT / "mhist" / "annotations.csv"

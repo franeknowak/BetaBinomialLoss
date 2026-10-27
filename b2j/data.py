@@ -191,13 +191,13 @@ def ferplus_labels(root) -> LabelTable:
 
 
 # ---------------------------------------------------------------- images
-INPUT_SIZE = {"endoscapes": 384, "cifar10h": 224, "mhist": 224, "amibr": 224, "ferplus": 224}
-IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)
+INPUT_SIZE = {"endoscapes": 256, "cifar10h": 256, "mhist": 256, "amibr": 256, "ferplus": 256}   # agreed 2026-10-27
+IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)                      # = DINOv3 timm cfg
 
 
 def transform(dataset: str):
-    """No augmentation. Endoscapes: centre-crop 480 (as MICCAI) then 384². CIFAR-10H: 32 → 224 bicubic. MHIST: native 224.
-    AMi-Br: 128 → 224 bicubic. FER+: grayscale (48 px, or 112 px upscaled in the Kaggle copy) → RGB → 224 bicubic."""
+    """No augmentation; every dataset resized to 256² (bicubic, antialiased). Endoscapes (854×480) is first centre-cropped
+    to 480×480. CIFAR-10H 32², MHIST 224², AMi-Br 128², FER+ 112² grayscale (→ RGB at loading) are resized directly."""
     from torchvision import transforms as T
     steps = [T.CenterCrop(480)] if dataset == "endoscapes" else []
     steps += [T.Resize((INPUT_SIZE[dataset],) * 2, interpolation=T.InterpolationMode.BICUBIC, antialias=True),

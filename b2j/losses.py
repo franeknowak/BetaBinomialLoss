@@ -71,3 +71,56 @@ class B2Loss(nn.Module):
 
     def forward(self, out, k, n):
         return self.per_sample(out, k, n).mean(0).sum()
+
+
+# ---------------------------------------------------------------- BCE losses (one logit per head)
+def binomial_nll(z, k, n):
+    """Binomial NLL of k positives out of n with p = sigmoid(z), from the logit (finite for any z), incl. log C(n, k)."""
+    log_comb = torch.lgamma(n + 1) - torch.lgamma(k + 1) - torch.lgamma(n - k + 1)
+    return -(log_comb + k * F.logsigmoid(z) + (n - k) * F.logsigmoid(-z))
+
+
+class HardBCELoss(nn.Module):
+    """BCE against the majority vote 1[k > n/2]; sum over heads of the batch mean. Head outputs [B, K, 1]."""
+
+    def per_sample(self, out, k, n):
+        return F.binary_cross_entropy_with_logits(out[..., 0], (k > n / 2).to(out.dtype), reduction="none")
+
+    def forward(self, out, k, n):
+        return self.per_sample(out, k, n).mean(0).sum()
+
+
+class SoftBCELoss(nn.Module):
+    """BCE against the vote fraction k/n; sum over heads of the batch mean. Head outputs [B, K, 1]."""
+
+    def per_sample(self, out, k, n):
+        return F.binary_cross_entropy_with_logits(out[..., 0], (k / n).to(out.dtype), reduction="none")
+
+    def forward(self, out, k, n):
+        return self.per_sample(out, k, n).mean(0).sum()
+
+
+LOSSES = {"hard_bce": (HardBCELoss, 1), "soft_bce": (SoftBCELoss, 1), "b2": (B2Loss, 2)}     # name -> (class, outputs/head)
+
+
+def make_loss(name):
+    """(loss module, head output width) for a loss name."""
+    cls, width = LOSSES[name]
+    return cls(), width
+
+
+def predicted_fraction(name, out, eps: float = 1e-3):
+    """The model's single number per head: sigmoid(logit) for the BCE losses, m = a1 / (a0 + a1) for B²."""
+    if name == "b2":
+        a0, a1 = alphas(out.double(), eps)
+        return a1 / (a0 + a1)
+    return torch.sigmoid(out[..., 0].double())
+
+
+def vote_nll(name, out, k, n, eps: float = 1e-3):
+    """-log P(observed k of n): Beta-Binomial (B², raw alphas) or Binomial with p = sigmoid(logit). [B, K] float64."""
+    k, n = k.double(), n.double()
+    if name == "b2":
+        a0, a1 = alphas(out.double(), eps)
+        return beta_binomial_nll(a0, a1, k, n)
+    return _on_cpu(binomial_nll, out[..., 0].double(), k, n)
