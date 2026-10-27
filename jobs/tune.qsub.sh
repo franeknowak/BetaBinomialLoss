@@ -10,7 +10,8 @@
 #$ -R y
 #$ -l h_rt=24:00:00
 # Tuning grid of one dataset (36 runs, seed 0), then selection: qsub -N tune_<dataset> [-hold_jid embed_<dataset>] jobs/tune.qsub.sh <dataset>
-# Grid extension: qsub -v EXTRA_LRS=5e-3 ... runs only the extra learning rate(s), then selects again.
+# Grid extension: qsub -v EXTRA_LRS=5e-3,EXTRA_LOSSES=b2 ... runs only the extra learning rate for the loss at the
+# edge (all three weight-decay levels), then selects again; one job per loss (qsub -v splits on commas).
 set -eo pipefail
 DATASET=$1
 [ -n "$DATASET" ] || { echo "usage: qsub jobs/tune.qsub.sh <dataset>"; exit 1; }
@@ -23,6 +24,6 @@ source ./dino_env/bin/activate
 git log --oneline -1
 nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv
 python3 -m b2j.cluster preflight
-python3 -m b2j.experiment tune "$DATASET" ${EXTRA_LRS:+--lrs $EXTRA_LRS}
+python3 -m b2j.experiment tune "$DATASET" ${EXTRA_LRS:+--lrs $EXTRA_LRS --losses $EXTRA_LOSSES}
 python3 -m b2j.experiment select "$DATASET"
 date

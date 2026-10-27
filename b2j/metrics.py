@@ -38,7 +38,8 @@ def binary_metrics(p, y, frac, nll):
 
 
 def top1_accuracy(p, k):
-    """p, k: [N, K]. Correct if argmax_j p is among the classes with the most votes."""
+    """p, k: [N, K]. Correct if argmax_j p is among the classes with the most votes. Tied vote counts: any of the tied
+    classes counts as correct. Tied predicted probabilities (practically impossible): the first class is predicted."""
     pred = p.argmax(1)
     return float((k[np.arange(len(k)), pred] == k.max(1)).mean())
 

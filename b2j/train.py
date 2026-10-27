@@ -3,7 +3,8 @@
 AdamW, batch 64 (shuffled by the seed), 25 epochs, cosine decay per step from the learning rate to 0, no warmup,
 no gradient clipping, no early stopping. At each of the 100 evaluations (4 per epoch): a full pass over train and
 val in eval mode (dropout off) gives train loss, val loss and val BACC (macro), plus the gradient norm of the last
-step and the learning rate. A NaN/inf loss or gradient stops the run.
+step and the learning rate. A NaN/inf loss or gradient stops the run: it is returned with status "diverged", the curve
+up to that point and no checkpoints (agreed: diverged settings are excluded from selection).
 
 Checkpoints (raw best evaluation, ties -> the earlier one): "bacc" = highest val BACC (every loss); "nll" = lowest
 val loss for B² (its Beta-Binomial NLL); "softbce" = lowest val loss for soft BCE. `best_val_loss` (lowest val loss,
@@ -54,7 +55,7 @@ def _commit():
 
 
 def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu", epochs=EPOCHS):
-    """Train one head. Returns (run dict, {checkpoint: head state_dict on CPU})."""
+    """Train one head. Returns (run dict, {checkpoint: head state_dict on CPU}); run["status"] is "ok" or "diverged"."""
     torch.backends.cuda.matmul.allow_tf32 = False
     Xtr, ktr, ntr, _ = data["train"]
     Xva, kva, nva, _ = data["val"]
@@ -71,49 +72,64 @@ def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu"
     ckpt_names = ["bacc"] + ([EXTRA_CKPT[loss_name]] if loss_name in EXTRA_CKPT else [])
     best = {c: None for c in ckpt_names}                    # (value, eval index)
     states, curve = {}, []
-    best_loss = (float("inf"), None)
-    step, t0 = 0, time.time()
-    for epoch in range(epochs):
-        perm = torch.randperm(N, generator=gen).to(device)
-        for b in range(spe):
-            idx = perm[b * BATCH:(b + 1) * BATCH]
-            lr_t = lr * float(factors[step])
-            for g in opt.param_groups:
-                g["lr"] = lr_t
-            model.train()
-            loss = loss_fn(model(Xtr[idx]), ktr[idx], ntr[idx])
-            if not torch.isfinite(loss):
-                raise FloatingPointError(f"non-finite training loss at step {step}")
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            gnorm = torch.sqrt(sum((p.grad.double() ** 2).sum() for p in model.parameters())).item()
-            if not np.isfinite(gnorm):
-                raise FloatingPointError(f"non-finite gradient at step {step}")
-            opt.step()
-            step += 1
-            if len(curve) < len(evals) and step == evals[len(curve)]:
-                with torch.no_grad():
-                    out_tr, out_va = _outputs(model, Xtr), _outputs(model, Xva)
-                    tr_loss, va_loss = loss_fn(out_tr, ktr, ntr).item(), loss_fn(out_va, kva, nva).item()
-                va_bacc = M.macro_bacc(loss_name, out_va, kva, nva)
-                e = len(curve)
-                curve.append({"eval": e + 1, "epoch": (e + 1) / EVALS_PER_EPOCH, "step": step, "lr": lr_t,
-                              "train_loss": tr_loss, "val_loss": va_loss, "val_bacc": va_bacc, "grad_norm": gnorm})
-                if not (np.isfinite(tr_loss) and np.isfinite(va_loss)):
-                    raise FloatingPointError(f"non-finite evaluation loss at evaluation {e + 1}")
-                if va_loss < best_loss[0]:
-                    best_loss = (va_loss, e + 1)
-                for c in ckpt_names:
-                    v = va_bacc if c == "bacc" else -va_loss            # higher is better; strict -> earlier wins ties
-                    if best[c] is None or v > best[c][0]:
-                        best[c] = (v, e + 1)
-                        states[c] = {kk: vv.detach().cpu().clone() for kk, vv in model.state_dict().items()}
+    best_loss = [float("inf"), None]
+    t0 = time.time()
+
+    def optimise():
+        step = 0
+        for epoch in range(epochs):
+            perm = torch.randperm(N, generator=gen).to(device)
+            for b in range(spe):
+                idx = perm[b * BATCH:(b + 1) * BATCH]
+                lr_t = lr * float(factors[step])
+                for g in opt.param_groups:
+                    g["lr"] = lr_t
+                model.train()
+                loss = loss_fn(model(Xtr[idx]), ktr[idx], ntr[idx])
+                if not torch.isfinite(loss):
+                    raise FloatingPointError(f"non-finite training loss at step {step}")
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                gnorm = torch.sqrt(sum((p.grad.double() ** 2).sum() for p in model.parameters())).item()
+                if not np.isfinite(gnorm):
+                    raise FloatingPointError(f"non-finite gradient at step {step}")
+                opt.step()
+                step += 1
+                if len(curve) < len(evals) and step == evals[len(curve)]:
+                    evaluate(step, lr_t, gnorm)
+
+    def evaluate(step, lr_t, gnorm):
+        with torch.no_grad():
+            out_tr, out_va = _outputs(model, Xtr), _outputs(model, Xva)
+            tr_loss, va_loss = loss_fn(out_tr, ktr, ntr).item(), loss_fn(out_va, kva, nva).item()
+        va_bacc = M.macro_bacc(loss_name, out_va, kva, nva)
+        e = len(curve) + 1
+        curve.append({"eval": e, "epoch": e / EVALS_PER_EPOCH, "step": step, "lr": lr_t,
+                      "train_loss": tr_loss, "val_loss": va_loss, "val_bacc": va_bacc, "grad_norm": gnorm})
+        if not (np.isfinite(tr_loss) and np.isfinite(va_loss)):
+            raise FloatingPointError(f"non-finite evaluation loss at evaluation {e}")
+        if not np.isfinite(va_bacc):
+            raise FloatingPointError(f"validation BACC is not finite at evaluation {e}")
+        if va_loss < best_loss[0]:
+            best_loss[:] = [va_loss, e]
+        for c in ckpt_names:
+            v = va_bacc if c == "bacc" else -va_loss                # higher is better; strict -> earlier wins ties
+            if best[c] is None or v > best[c][0]:
+                best[c] = (v, e)
+                states[c] = {kk: vv.detach().cpu().clone() for kk, vv in model.state_dict().items()}
+
+    status, error = "ok", None
+    try:
+        optimise()
+    except FloatingPointError as err:
+        status, error = "diverged", str(err)
+        best, states, best_loss = {c: None for c in ckpt_names}, {}, [None, None]
     run = {"dataset": dataset, "loss": loss_name, "seed": seed, "labels": labels, "lr": lr, "wd_level": wd_level,
            "wd": wd, "epochs": epochs, "batch": BATCH, "steps_per_epoch": spe, "evals_per_epoch": EVALS_PER_EPOCH,
-           "n_train": N, "commit": _commit(), "seconds": round(time.time() - t0, 1),
+           "n_train": N, "commit": _commit(), "seconds": round(time.time() - t0, 1), "status": status, "error": error,
            "best_val_loss": best_loss[0], "best_val_loss_eval": best_loss[1],
-           "checkpoints": {c: {"eval": best[c][1], "epoch": best[c][1] / EVALS_PER_EPOCH,
-                               "step": evals[best[c][1] - 1]} for c in ckpt_names},
+           "checkpoints": {c: {"eval": best[c][1], "epoch": best[c][1] / EVALS_PER_EPOCH, "step": evals[best[c][1] - 1]}
+                           for c in ckpt_names if best[c] is not None},
            "curve": curve}
     return run, states
 

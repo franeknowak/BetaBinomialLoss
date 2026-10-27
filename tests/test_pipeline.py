@@ -158,20 +158,28 @@ def test_train_run_checkpoints_and_curve(tmp_path):
     assert set(run3["checkpoints"]) == {"bacc"} and run3["wd"] == 0.0
 
 
-def test_train_loss_at_eval_is_eval_mode_full_pass(tmp_path):
+def test_train_and_val_loss_at_eval_are_eval_mode_full_passes(tmp_path):
     from b2j.heads import MultiHead
     from b2j.train import load_embeddings, train_run
     data, labels = load_embeddings("toy", cache=_fake_cache(tmp_path))
     run, states = train_run("toy", data, labels, "soft_bce", 1e-3, 1.0, seed=0, epochs=1)
-    last = run["curve"][-1]
-    # the softbce checkpoint is the lowest val loss; recompute its val loss in eval mode
+    e = run["checkpoints"]["softbce"]["eval"]
     m = MultiHead(768, 3, 1)
     m.load_state_dict(states["softbce"])
     m.eval()
-    X, k, n, _ = data["val"]
     with torch.no_grad():
-        v = L.SoftBCELoss()(m(X), k, n).item()
-    assert v == pytest.approx(run["best_val_loss"], rel=1e-6) and np.isfinite(last["train_loss"])
+        tr = L.SoftBCELoss()(m(data["train"][0]), data["train"][1], data["train"][2]).item()   # all 300 train images
+        va = L.SoftBCELoss()(m(data["val"][0]), data["val"][1], data["val"][2]).item()
+    assert tr == pytest.approx(run["curve"][e - 1]["train_loss"], rel=1e-6)
+    assert va == pytest.approx(run["curve"][e - 1]["val_loss"], rel=1e-6) == pytest.approx(run["best_val_loss"], rel=1e-6)
+
+
+def test_vote_nll_hard_bce_is_binomial():
+    z = torch.tensor([[[0.4], [-1.0]]])
+    k, n = torch.tensor([[1.0, 5.0]]), torch.tensor([[3.0, 9.0]])
+    p = torch.sigmoid(z[..., 0].double()).numpy()[0]
+    np.testing.assert_allclose(L.vote_nll("hard_bce", z, k, n).numpy()[0], -stats.binom.logpmf([1, 5], [3, 9], p),
+                               rtol=1e-9)
 
 
 def test_experiment_tune_select_final(tmp_path, monkeypatch):
@@ -188,7 +196,9 @@ def test_experiment_tune_select_final(tmp_path, monkeypatch):
         runs = [json.loads(p.read_text()) for p in (root / "tuning" / "toy" / loss).glob("*/run.json")]
         assert s["best_val_loss"] == min(r["best_val_loss"] for r in runs)
         assert s["lr_at_edge"] in ("low", "high")                                # only two lrs tried
-    E.final("toy", seeds=(1,), root=root, epochs=1)
+    with pytest.raises(SystemExit):                                                      # lr at the edge: refused
+        E.final("toy", seeds=(1,), root=root, epochs=1)
+    E.final("toy", seeds=(1,), root=root, epochs=1, allow_edge=True)
     d = root / "final" / "toy" / "b2" / "seed1"
     run = json.loads((d / "run.json").read_text())
     assert set(run["checkpoints"]) == {"bacc", "nll"} and (d / "head_nll.pt").exists()
@@ -200,6 +210,80 @@ def test_experiment_tune_select_final(tmp_path, monkeypatch):
     assert set((root / "final" / "toy").iterdir()) == {root / "final" / "toy" / x for x in ("b2", "hard_bce", "soft_bce")}
     assert set(json.loads((root / "final" / "toy" / "soft_bce" / "seed1" / "run.json").read_text())["checkpoints"]) \
         == {"bacc", "softbce"}
+    h = json.loads((root / "final" / "toy" / "hard_bce" / "seed1" / "outputs_bacc.json").read_text())
+    assert h["outputs"] == ["logit"] and len(h["images"][0]["out"]) == 3 and len(h["images"][0]["out"][0]) == 1
+    assert sorted(p.name for p in (root / "final" / "toy" / "hard_bce" / "seed1").iterdir()) == \
+        ["head_bacc.pt", "outputs_bacc.json", "run.json"]
+
+
+def test_resubmitted_tuning_skips_finished_runs(tmp_path, monkeypatch, capsys):
+    from b2j import experiment as E
+    from b2j import train as T
+    cache = _fake_cache(tmp_path)
+    monkeypatch.setattr(E, "load_embeddings", lambda ds, device="cpu": T.load_embeddings(ds, cache=cache, device=device))
+    root = tmp_path / "results"
+    E.tune("toy", lrs=(1e-3,), levels=(1.0,), losses=("hard_bce",), root=root, epochs=1)
+    f = E.tuning_dir("toy", "hard_bce", 1e-3, 1.0, root) / "run.json"
+    before = f.read_text()
+    E.tune("toy", lrs=(1e-3,), levels=(1.0,), losses=("hard_bce",), root=root, epochs=1)
+    assert "skip" in capsys.readouterr().out and f.read_text() == before
+
+
+def test_grid_extension_only_for_the_given_loss(tmp_path, monkeypatch):
+    from b2j import experiment as E
+    from b2j import train as T
+    cache = _fake_cache(tmp_path)
+    monkeypatch.setattr(E, "load_embeddings", lambda ds, device="cpu": T.load_embeddings(ds, cache=cache, device=device))
+    root = tmp_path / "results"
+    E.tune("toy", lrs=(1e-4, 1e-3), levels=(1.0,), root=root, epochs=1)
+    E.tune("toy", lrs=(5e-3,), levels=(1.0, 0.75, 0.25), losses=("b2",), root=root, epochs=1)
+    tried = {loss: sorted(p.parent.name for p in (root / "tuning" / "toy" / loss).glob("*/run.json"))
+             for loss in ("hard_bce", "soft_bce", "b2")}
+    assert tried["hard_bce"] == tried["soft_bce"] == ["lr0.0001_wd1", "lr0.001_wd1"]
+    assert tried["b2"] == ["lr0.0001_wd1", "lr0.001_wd1", "lr0.005_wd0.25", "lr0.005_wd0.75", "lr0.005_wd1"]
+    sel = E.select("toy", root=root)
+    assert sel["b2"]["lrs_tried"] == [1e-4, 1e-3, 5e-3] and sel["hard_bce"]["lrs_tried"] == [1e-4, 1e-3]
+
+
+def test_diverged_run_is_saved_and_excluded(tmp_path, monkeypatch):
+    from b2j import experiment as E
+    from b2j import train as T
+    cache = _fake_cache(tmp_path)
+    monkeypatch.setattr(E, "load_embeddings", lambda ds, device="cpu": T.load_embeddings(ds, cache=cache, device=device))
+    real = T.make_loss
+
+    def exploding(name):                                     # the lr-1e-3 run's loss turns NaN after 3 calls
+        fn, w = real(name)
+        calls = {"n": 0}
+
+        def f(out, k, n):
+            calls["n"] += 1
+            v = fn(out, k, n)
+            return v * float("nan") if exploding.on and calls["n"] > 3 else v
+        return f, w
+    monkeypatch.setattr(T, "make_loss", exploding)
+    root = tmp_path / "results"
+    exploding.on = False
+    E.tune("toy", lrs=(1e-4,), levels=(1.0,), losses=("soft_bce",), root=root, epochs=1)
+    exploding.on = True
+    E.tune("toy", lrs=(1e-3,), levels=(1.0,), losses=("soft_bce",), root=root, epochs=1)    # job carries on
+    bad = json.loads((E.tuning_dir("toy", "soft_bce", 1e-3, 1.0, root) / "run.json").read_text())
+    assert bad["status"] == "diverged" and "non-finite training loss" in bad["error"] and bad["checkpoints"] == {}
+    assert bad["best_val_loss"] is None and len(bad["curve"]) >= 1                      # partial curve kept
+    sel = E.select("toy", root=root)["soft_bce"]
+    assert sel["lr"] == 1e-4 and sel["n_diverged"] == 1
+
+
+def test_adamw_leaves_the_planned_fraction_of_a_weight():
+    """Real torch AdamW with zero gradients under our cosine schedule: only decay acts."""
+    n, lr, level = 1740, 1e-3, 0.25
+    w = torch.nn.Parameter(torch.ones(3))
+    opt = torch.optim.AdamW([w], lr=lr, weight_decay=S.wd_for_level(level, lr, n))
+    for f in S.lr_factors(S.EPOCHS * S.steps_per_epoch(n)):
+        opt.param_groups[0]["lr"] = lr * float(f)
+        w.grad = torch.zeros(3)
+        opt.step()
+    assert w.detach().numpy() == pytest.approx(level, abs=1e-4)
 
 
 # ---------------------------------------------------------------- embedding
