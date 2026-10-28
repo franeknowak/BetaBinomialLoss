@@ -1,14 +1,16 @@
 """Tuning, selection and final runs for one dataset (PLAN §1.7-1.8).
 
   python -m b2j.experiment tune <dataset> [--lrs 5e-3 --losses b2]   tuning grid (seed 0); results/tuning/<dataset>/
-  python -m b2j.experiment select <dataset>                          per loss: lowest val loss; edge flags
+  python -m b2j.experiment select <dataset>                          per loss: lowest smoothed val loss; edge flags
   python -m b2j.experiment final <dataset> [--seeds 1 2 3 4 5] [--allow-edge]
 
 Tuning: every loss x learning rate x weight-decay level (3 x 4 x 3 = 36 runs), one seed (0); only run.json is kept.
 A run whose run.json exists is skipped, so a job can be resubmitted. A diverged run is saved with status "diverged"
 and the job carries on. Grid extension (learning rate only, agreed): --lrs with --losses runs the extra learning
-rate(s) at all three weight-decay levels for the loss(es) at the edge only. Selection: lowest best_val_loss over the
-loss's runs that did not diverge (ties -> smaller lr, then the level order; the chosen settings are reviewed by hand);
+rate(s) at all three weight-decay levels for the loss(es) at the edge only. Selection: each run's validation-loss curve
+is smoothed by a centred moving average over SMOOTH_WINDOW evaluations (fewer at the ends of the curve), and the run
+with the lowest smoothed minimum wins among the loss's runs that did not diverge (ties -> smaller lr, then the level
+order; the chosen settings are reviewed by hand);
 flags a chosen learning rate at the edge of the learning rates tried and reports where the best evaluation fell (the
 25-epoch budget check). Final: the selected setting x seeds 1-5, saving outputs, heads and metrics; refuses to start
 while a learning rate is still at the grid edge unless --allow-edge.
@@ -26,6 +28,7 @@ from b2j.train import load_embeddings, save_final, train_run
 REPO = Path(__file__).resolve().parents[1]
 RESULTS = REPO / "results"
 TUNING_SEED, FINAL_SEEDS = 0, (1, 2, 3, 4, 5)
+SMOOTH_WINDOW = 5
 
 
 def _device():
@@ -56,6 +59,15 @@ def tune(dataset, lrs=LRS, levels=WD_LEVELS, losses=tuple(LOSSES), root=RESULTS,
                       f"{run['best_val_loss']:.5f} at eval {run['best_val_loss_eval']} ({run['seconds']} s)", flush=True)
 
 
+def smoothed_min(curve, window=SMOOTH_WINDOW):
+    """Lowest value of the centred moving average of the val loss, and its evaluation number (1-based)."""
+    v = [e["val_loss"] for e in curve]
+    h = window // 2
+    s = [sum(v[max(0, i - h):i + h + 1]) / len(v[max(0, i - h):i + h + 1]) for i in range(len(v))]
+    i = min(range(len(s)), key=s.__getitem__)
+    return s[i], curve[i]["eval"]
+
+
 def select(dataset, root=RESULTS):
     sel = {}
     for loss in LOSSES:
@@ -64,15 +76,20 @@ def select(dataset, root=RESULTS):
         if not runs:
             continue
         order = {lv: i for i, lv in enumerate(WD_LEVELS)}
-        runs.sort(key=lambda r: (r["best_val_loss"], r["lr"], order.get(r["wd_level"], 99)))
+        for x in runs:
+            x["smoothed_val_loss"], x["smoothed_eval"] = smoothed_min(x["curve"])
+        runs.sort(key=lambda r: (r["smoothed_val_loss"], r["lr"], order.get(r["wd_level"], 99)))
         r = runs[0]
         lrs_tried = sorted({x["lr"] for x in runs})
-        sel[loss] = {"lr": r["lr"], "wd_level": r["wd_level"], "wd": r["wd"], "best_val_loss": r["best_val_loss"],
+        sel[loss] = {"lr": r["lr"], "wd_level": r["wd_level"], "wd": r["wd"], "smooth_window": SMOOTH_WINDOW,
+                     "smoothed_val_loss": r["smoothed_val_loss"], "smoothed_eval": r["smoothed_eval"],
+                     "smoothed_epoch": r["smoothed_eval"] / r["evals_per_epoch"], "best_val_loss": r["best_val_loss"],
                      "best_eval": r["best_val_loss_eval"], "best_epoch": r["best_val_loss_eval"] / r["evals_per_epoch"],
                      "lr_at_edge": "low" if r["lr"] == lrs_tried[0] else "high" if r["lr"] == lrs_tried[-1] else None,
                      "lrs_tried": lrs_tried, "n_runs": len(runs), "n_diverged": len(every) - len(runs)}
-        print(f"{dataset} {loss}: lr {r['lr']:g}, level {r['wd_level']:g} (wd {r['wd']:.4g}), best val loss "
-              f"{r['best_val_loss']:.5f} at epoch {sel[loss]['best_epoch']:g}/{r['epochs']}"
+        print(f"{dataset} {loss}: lr {r['lr']:g}, level {r['wd_level']:g} (wd {r['wd']:.4g}), smoothed val loss "
+              f"{r['smoothed_val_loss']:.5f} at epoch {sel[loss]['smoothed_epoch']:g}/{r['epochs']} (raw best "
+              f"{r['best_val_loss']:.5f} at epoch {sel[loss]['best_epoch']:g})"
               + (f"  ** lr at {sel[loss]['lr_at_edge']} edge **" if sel[loss]["lr_at_edge"] else ""), flush=True)
     out = Path(root) / "tuning" / dataset / "selection.json"
     out.write_text(json.dumps(sel, indent=1))

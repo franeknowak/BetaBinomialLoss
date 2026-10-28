@@ -194,7 +194,7 @@ def test_experiment_tune_select_final(tmp_path, monkeypatch):
     sel = E.select("toy", root=root)
     for loss, s in sel.items():
         runs = [json.loads(p.read_text()) for p in (root / "tuning" / "toy" / loss).glob("*/run.json")]
-        assert s["best_val_loss"] == min(r["best_val_loss"] for r in runs)
+        assert s["smoothed_val_loss"] == min(E.smoothed_min(r["curve"])[0] for r in runs)
         assert s["lr_at_edge"] in ("low", "high")                                # only two lrs tried
     with pytest.raises(SystemExit):                                                      # lr at the edge: refused
         E.final("toy", seeds=(1,), root=root, epochs=1)
@@ -243,6 +243,24 @@ def test_grid_extension_only_for_the_given_loss(tmp_path, monkeypatch):
     assert tried["b2"] == ["lr0.0001_wd1", "lr0.001_wd1", "lr0.005_wd0.25", "lr0.005_wd0.75", "lr0.005_wd1"]
     sel = E.select("toy", root=root)
     assert sel["b2"]["lrs_tried"] == [1e-4, 1e-3, 5e-3] and sel["hard_bce"]["lrs_tried"] == [1e-4, 1e-3]
+
+
+def test_smoothed_selection_ignores_a_single_low_evaluation(tmp_path):
+    from b2j import experiment as E
+    root = tmp_path / "results"
+
+    def write(lr, vals):
+        d = E.tuning_dir("toy", "b2", lr, 1.0, root)
+        d.mkdir(parents=True)
+        curve = [{"eval": i + 1, "val_loss": v} for i, v in enumerate(vals)]
+        (d / "run.json").write_text(json.dumps({"lr": lr, "wd_level": 1.0, "wd": 0.0, "status": "ok", "epochs": 25,
+                                                "evals_per_epoch": 4, "best_val_loss": min(vals),
+                                                "best_val_loss_eval": vals.index(min(vals)) + 1, "curve": curve}))
+    write(1e-3, [1.0, 1.0, 0.5, 1.0, 1.0, 1.0, 1.0])          # one lucky dip: raw minimum 0.5
+    write(1e-4, [1.0, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8])          # steady lower curve
+    assert E.smoothed_min([{"eval": i + 1, "val_loss": v} for i, v in enumerate([3, 1, 2])], window=5) == (2.0, 1)
+    s = E.select("toy", root=root)["b2"]
+    assert s["lr"] == 1e-4 and s["smoothed_val_loss"] == pytest.approx(0.8) and s["best_val_loss"] == 0.8
 
 
 def test_diverged_run_is_saved_and_excluded(tmp_path, monkeypatch):
