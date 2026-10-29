@@ -51,7 +51,8 @@ def test_scores_match_the_definitions():
     np.testing.assert_allclose(e1.score("soft_bce", np.array([[0.0], [2.0]]), n[:2]), [0.5, 1 / (1 + np.exp(-2))])
 
 
-def test_end_to_end_on_fake_outputs(tmp_path):
+def fake_outputs(tmp_path):
+    """Fake outputs_<ckpt>.json for every loss, seed and checkpoint: 2 labels, 80 val + 80 test frames, n = 3."""
     rng = np.random.default_rng(1)
     labels = ["C1", "C2"]
     for loss, ckpts in {"hard_bce": ("bacc", "hardbce"), "soft_bce": ("bacc", "softbce"), "b2": ("bacc", "nll")}.items():
@@ -67,6 +68,10 @@ def test_end_to_end_on_fake_outputs(tmp_path):
                                [float(rng.uniform(0.1, 5)), float(rng.uniform(0.1, 5) + kk)] for kk in k]
                         images.append({"id": f"{split}{i}", "split": split, "out": out, "k": k, "n": [3, 3]})
                 (d / f"outputs_{c}.json").write_text(json.dumps({"labels": labels, "images": images}))
+
+
+def test_end_to_end_on_fake_outputs(tmp_path):
+    fake_outputs(tmp_path)
     e1.main("toy", root=tmp_path)
     res = json.loads((tmp_path / "phase2" / "toy" / "e1.json").read_text())
     assert len(res["rows"]) == 2 * 5 * 5 * 2                            # exps x methods x seeds x labels
