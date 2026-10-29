@@ -155,7 +155,8 @@ def test_train_run_checkpoints_and_curve(tmp_path):
     run2, _ = train_run("toy", data, labels, "b2", 1e-3, 0.25, seed=0, epochs=2)
     assert [x["val_loss"] for x in run2["curve"]] == [x["val_loss"] for x in c]   # same seed, same run
     run3, _ = train_run("toy", data, labels, "hard_bce", 1e-3, 1.0, seed=0, epochs=1)
-    assert set(run3["checkpoints"]) == {"bacc"} and run3["wd"] == 0.0
+    assert set(run3["checkpoints"]) == {"bacc", "hardbce"} and run3["wd"] == 0.0
+    assert run3["checkpoints"]["hardbce"]["eval"] == run3["best_val_loss_eval"]
 
 
 def test_train_and_val_loss_at_eval_are_eval_mode_full_passes(tmp_path):
@@ -213,7 +214,9 @@ def test_experiment_tune_select_final(tmp_path, monkeypatch):
     h = json.loads((root / "final" / "toy" / "hard_bce" / "seed1" / "outputs_bacc.json").read_text())
     assert h["outputs"] == ["logit"] and len(h["images"][0]["out"]) == 3 and len(h["images"][0]["out"][0]) == 1
     assert sorted(p.name for p in (root / "final" / "toy" / "hard_bce" / "seed1").iterdir()) == \
-        ["head_bacc.pt", "outputs_bacc.json", "run.json"]
+        ["head_bacc.pt", "head_hardbce.pt", "outputs_bacc.json", "outputs_hardbce.json", "run.json"]
+    E.final("toy", seeds=(2,), root=root, epochs=1, allow_edge=True, losses=("hard_bce",), out="rerun")
+    assert [p.relative_to(root / "rerun").as_posix() for p in (root / "rerun").glob("*/*/*")] == ["toy/hard_bce/seed2"]
 
 
 def test_resubmitted_tuning_skips_finished_runs(tmp_path, monkeypatch, capsys):

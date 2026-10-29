@@ -7,7 +7,8 @@ step and the learning rate. A NaN/inf loss or gradient stops the run: it is retu
 up to that point and no checkpoints (agreed: diverged settings are excluded from selection).
 
 Checkpoints (raw best evaluation, ties -> the earlier one): "bacc" = highest val BACC (every loss); "nll" = lowest
-val loss for B² (its Beta-Binomial NLL); "softbce" = lowest val loss for soft BCE. `best_val_loss` (lowest val loss,
+val loss for B² (its Beta-Binomial NLL); "softbce" = lowest val loss for soft BCE; "hardbce" = lowest val loss for
+hard BCE. `best_val_loss` (lowest val loss,
 any loss) is what tuning selects on.
 
 Tuning mode returns run.json content only. Final mode also writes, per checkpoint: head_<ckpt>.pt (head weights),
@@ -28,7 +29,7 @@ from b2j.schedule import BATCH, EPOCHS, EVALS_PER_EPOCH, eval_steps, lr_factors,
 
 REPO = Path(__file__).resolve().parents[1]
 CACHE = REPO / "cache" / "embeddings"
-EXTRA_CKPT = {"b2": "nll", "soft_bce": "softbce"}          # second checkpoint (lowest val loss); hard BCE has none
+EXTRA_CKPT = {"b2": "nll", "soft_bce": "softbce", "hard_bce": "hardbce"}   # second checkpoint (lowest val loss)
 OUTPUT_NAMES = {"hard_bce": ["logit"], "soft_bce": ["logit"], "b2": ["alpha0", "alpha1"]}   # saved per label
 
 
@@ -69,7 +70,7 @@ def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu"
     spe = steps_per_epoch(N)
     factors = lr_factors(epochs * spe)
     evals = eval_steps(N, epochs)
-    ckpt_names = ["bacc"] + ([EXTRA_CKPT[loss_name]] if loss_name in EXTRA_CKPT else [])
+    ckpt_names = ["bacc", EXTRA_CKPT[loss_name]]
     best = {c: None for c in ckpt_names}                    # (value, eval index)
     states, curve = {}, []
     best_loss = [float("inf"), None]

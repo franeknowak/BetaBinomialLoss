@@ -2,7 +2,7 @@
 
   python -m b2j.experiment tune <dataset> [--lrs 5e-3 --losses b2]   tuning grid (seed 0); results/tuning/<dataset>/
   python -m b2j.experiment select <dataset>                          per loss: lowest smoothed val loss; edge flags
-  python -m b2j.experiment final <dataset> [--seeds 1 2 3 4 5] [--allow-edge]
+  python -m b2j.experiment final <dataset> [--seeds 1 2 3 4 5] [--allow-edge] [--losses hard_bce --out <dir>]
 
 Tuning: every loss x learning rate x weight-decay level (3 x 4 x 3 = 36 runs), one seed (0); only run.json is kept.
 A run whose run.json exists is skipped, so a job can be resubmitted. A diverged run is saved with status "diverged"
@@ -96,7 +96,7 @@ def select(dataset, root=RESULTS):
     return sel
 
 
-def final(dataset, seeds=FINAL_SEEDS, root=RESULTS, epochs=25, allow_edge=False):
+def final(dataset, seeds=FINAL_SEEDS, root=RESULTS, epochs=25, allow_edge=False, losses=None, out="final"):
     sel = json.loads((Path(root) / "tuning" / dataset / "selection.json").read_text())
     edge = {loss: s["lr_at_edge"] for loss, s in sel.items() if s["lr_at_edge"]}
     if edge and not allow_edge:
@@ -105,8 +105,10 @@ def final(dataset, seeds=FINAL_SEEDS, root=RESULTS, epochs=25, allow_edge=False)
     dev = _device()
     data, labels = load_embeddings(dataset, device=dev)
     for loss, s in sel.items():
+        if losses and loss not in losses:
+            continue
         for seed in seeds:
-            d = Path(root) / "final" / dataset / loss / f"seed{seed}"
+            d = Path(root) / out / dataset / loss / f"seed{seed}"
             if (d / "run.json").exists():
                 print(f"skip {d} (done)", flush=True)
                 continue
@@ -130,6 +132,7 @@ if __name__ == "__main__":
     ap.add_argument("--losses", nargs="+", choices=list(LOSSES), default=None)
     ap.add_argument("--seeds", type=int, nargs="+", default=list(FINAL_SEEDS))
     ap.add_argument("--allow-edge", action="store_true")
+    ap.add_argument("--out", default="final", help="final: results sub-directory to write to")
     a = ap.parse_args()
     if a.stage == "tune":
         if a.lrs and not a.losses:
@@ -138,4 +141,4 @@ if __name__ == "__main__":
     elif a.stage == "select":
         select(a.dataset)
     else:
-        final(a.dataset, seeds=tuple(a.seeds), allow_edge=a.allow_edge)
+        final(a.dataset, seeds=tuple(a.seeds), allow_edge=a.allow_edge, losses=a.losses, out=a.out)

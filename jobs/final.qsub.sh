@@ -10,6 +10,7 @@
 #$ -R y
 #$ -l h_rt=24:00:00
 # Final runs of one dataset (3 losses x seeds 1-5, settings from selection.json): qsub -N final_<dataset> jobs/final.qsub.sh <dataset>
+# Extra options are passed on, e.g. <dataset> --losses hard_bce --out final_hardbce
 set -eo pipefail
 DATASET=$1
 [ -n "$DATASET" ] || { echo "usage: qsub jobs/final.qsub.sh <dataset>"; exit 1; }
@@ -22,5 +23,5 @@ source ./dino_env/bin/activate
 git log --oneline -1
 nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv
 python3 -m b2j.cluster preflight
-python3 -m b2j.experiment final "$DATASET"
+python3 -m b2j.experiment final "$@"
 date
