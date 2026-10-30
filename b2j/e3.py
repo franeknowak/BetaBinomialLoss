@@ -11,12 +11,12 @@ Each method has q = its probability that the majority of n raters says yes, and 
   b2_b1, b2_b2         q = the E1 score                                        c_q = c
 Risk = the distance from the cut-off divided by the room on that side, taken from 1:
   called yes (q >= c_q): (1 - q) / (1 - c_q)        called no: q / c_q        (1 at the cut-off, 0 at q = 1 or 0)
-b2_b3: decision as b2_b0 (mean against b2_b0's E1 cut-off c); risk = the mass of Beta(a1, a0) on the other side of c,
-  P(theta < c) if called yes, P(theta > c) if called no.
 q and 1 - q are both computed directly (no 1 - q subtraction), so confident frames keep distinct risks.
 At each coverage, the round(coverage * N) test frames with the lowest risk are kept (ties at the boundary broken by
 frame order; their number is recorded). Reported on the kept frames: BACC, sensitivity, specificity, kept positives
-(majority yes); on the set-aside frames: the share that is disputed (0 < k < n). Plus the mean BACC over coverage
+(majority yes); on the set-aside frames: the share that is disputed (0 < k < n) and their counts by call and truth
+(TP, FP, TN, FN) and by vote pattern k/n. Coverage stops at 50%: below it every method sets aside nearly all its
+"yes" calls (none is confident of "yes"), so the kept frames no longer test the classifier. Plus the mean BACC over coverage
 50–100% in 1% steps (trapezoid rule; the area under the curve divided by its width).
 Checkpoint sets: E3a = best val BACC, E3b = own loss (same mapping as E1a / E1b).
 """
@@ -29,11 +29,9 @@ from scipy import special, stats
 
 from b2j.e1 import CKPTS as E1_CKPTS, RESULTS, SEEDS, _div, fit_cutoff, load_outputs, score
 
-METHODS = {"hard_bce": "hard_bce", "soft_bce": "soft_bce", "b2_b0": "b2", "b2_b1": "b2", "b2_b2": "b2",
-           "b2_b3": "b2"}                                                     # -> loss
-E1_SCORE = {"b2_b3": "b2_b0"}                                                 # B3 decides as B0
+METHODS = {"hard_bce": "hard_bce", "soft_bce": "soft_bce", "b2_b0": "b2", "b2_b1": "b2", "b2_b2": "b2"}  # -> loss
 CKPTS = {"E3a": E1_CKPTS["E1a"], "E3b": E1_CKPTS["E1b"]}
-COVERAGES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2)
+COVERAGES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
 AUC_GRID = np.round(np.arange(0.50, 1.0001, 0.01), 2)
 METRICS = ("bacc", "sensitivity", "specificity", "n_pos_kept", "disputed_share_aside")
 
@@ -79,12 +77,9 @@ def q_and_cut(method, out, n, c):
 
 
 def risk(method, out, n, c):
-    """(risk [N], called yes [N]); c = the method's E1 cut-off (for b2_b3 the one of b2_b0)."""
+    """(risk [N], called yes [N]); c = the method's E1 cut-off."""
     out, n = np.asarray(out, dtype=np.float64), np.asarray(n, dtype=np.float64)
-    yes = score(E1_SCORE.get(method, method), out, n) >= c                    # E1 decision
-    if method == "b2_b3":
-        a0, a1 = out[:, 0], out[:, 1]
-        return np.where(yes, stats.beta.cdf(c, a1, a0), stats.beta.sf(c, a1, a0)), yes
+    yes = score(method, out, n) >= c                                          # E1 decision
     q, qc, cq = q_and_cut(method, out, n, c)
     with np.errstate(divide="ignore", invalid="ignore"):                     # a side with no room has no frames
         return np.where(yes, qc / (1 - cq), q / cq), yes
@@ -95,7 +90,7 @@ def keep_order(r):
     return np.argsort(r, kind="stable")
 
 
-def at_coverage(r, yes, y, disputed, cov):
+def at_coverage(r, yes, y, disputed, cov, pattern=None):
     N = len(r)
     n_keep = int(round(cov * N))
     order = keep_order(r)
@@ -110,7 +105,11 @@ def at_coverage(r, yes, y, disputed, cov):
             n_tied = int((r == b).sum())
     return {"bacc": (sens + spec) / 2, "sensitivity": sens, "specificity": spec, "n_kept": n_keep,
             "n_pos_kept": int(yk.sum()), "disputed_share_aside": _div(disputed[aside].sum(), len(aside)),
-            "n_tied_at_boundary": n_tied}
+            "n_tied_at_boundary": n_tied,
+            "aside": {"tp": int((yes[aside] & (y[aside] == 1)).sum()), "fp": int((yes[aside] & (y[aside] == 0)).sum()),
+                      "tn": int((~yes[aside] & (y[aside] == 0)).sum()), "fn": int((~yes[aside] & (y[aside] == 1)).sum()),
+                      **({} if pattern is None else
+                         {"by_pattern": {p: int((pattern[aside] == p).sum()) for p in sorted(set(pattern))}})}}
 
 
 def mean_bacc(r, yes, y, disputed):
@@ -127,14 +126,14 @@ def run(dataset, root=RESULTS, seeds=SEEDS):
                 for j, lab in enumerate(labels):
                     (ov, kv, nv), (ot, kt, nt) = ((o[:, j], k[:, j], n[:, j]) for o, k, n in
                                                   (data["val"], data["test"]))
-                    e1m = E1_SCORE.get(method, method)
-                    c, _, _ = fit_cutoff(score(e1m, ov, nv), (kv > nv / 2).astype(int))
+                    c, _, _ = fit_cutoff(score(method, ov, nv), (kv > nv / 2).astype(int))
                     r, yes = risk(method, ot, nt, c)
                     y = (kt > nt / 2).astype(int)
                     disputed = (kt > 0) & (kt < nt)
+                    pattern = np.array([f"{int(a)}/{int(b)}" for a, b in zip(kt, nt)])
                     rows.append({"exp": exp, "method": method, "checkpoint": ck[loss], "seed": seed, "label": lab,
                                  "cutoff": c, "n_pos": int(y.sum()),
-                                 "coverage": {f"{cov:.2f}": at_coverage(r, yes, y, disputed, cov)
+                                 "coverage": {f"{cov:.2f}": at_coverage(r, yes, y, disputed, cov, pattern)
                                               for cov in COVERAGES},
                                  "mean_bacc_50_100": mean_bacc(r, yes, y, disputed)})
     return rows, labels

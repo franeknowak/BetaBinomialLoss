@@ -3,7 +3,6 @@ import json
 
 import numpy as np
 import pytest
-from scipy import stats
 
 from b2j import e1, e3
 from tests.test_e1 import fake_outputs
@@ -34,17 +33,9 @@ def test_majority_maps_and_decisions_match_e1():
     for method in ("hard_bce", "soft_bce"):
         _, yes = e3.risk(method, z, n, 0.2)
         assert (yes == (e1.score(method, z, n) >= 0.2)).all()
-    for method in ("b2_b0", "b2_b1", "b2_b2", "b2_b3"):
+    for method in ("b2_b0", "b2_b1", "b2_b2"):
         _, yes = e3.risk(method, out, np.full(4, 3.0), 0.3)
-        assert (yes == (e1.score(e3.E1_SCORE.get(method, method), out, np.full(4, 3.0)) >= 0.3)).all()
-
-
-def test_b3_is_beta_mass_on_the_other_side():
-    out = np.array([[85.0, 15.0], [17.0, 3.0], [4.25, 0.75], [9.0, 0.5]])  # means .15, .15, .15, .053
-    r, yes = e3.risk("b2_b3", out, np.full(4, 3.0), 0.10)
-    np.testing.assert_allclose(r[:3], [0.068, 0.295, 0.488], atol=1e-3)
-    assert list(yes) == [True, True, True, False]
-    assert r[3] == pytest.approx(stats.beta.sf(0.10, 0.5, 9.0))
+        assert (yes == (e1.score(method, out, np.full(4, 3.0)) >= 0.3)).all()
 
 
 def test_coverage_keeps_lowest_risk_and_counts_ties():
@@ -56,6 +47,7 @@ def test_coverage_keeps_lowest_risk_and_counts_ties():
     assert v["n_kept"] == 3 and v["n_pos_kept"] == 2 and v["n_tied_at_boundary"] == 2
     assert v["sensitivity"] == 1 and v["specificity"] == 1
     assert v["disputed_share_aside"] == 1.0                                  # aside: frames 3 and 0
+    assert v["aside"] == {"tp": 0, "fp": 1, "tn": 1, "fn": 0}
 
 
 def test_end_to_end_full_coverage_equals_e1(tmp_path):
@@ -64,11 +56,13 @@ def test_end_to_end_full_coverage_equals_e1(tmp_path):
     e3.main("toy", root=tmp_path)
     r1 = json.loads((tmp_path / "phase2" / "toy" / "e1.json").read_text())["rows"]
     r3 = json.loads((tmp_path / "phase2" / "toy" / "e3.json").read_text())["rows"]
-    assert len(r3) == 2 * 6 * 5 * 2                                          # exps x methods x seeds x labels
+    assert len(r3) == 2 * 5 * 5 * 2                                          # exps x methods x seeds x labels
     key = lambda x, m: (x["exp"][-1], m, x["seed"], x["label"])
     e1_bacc = {key(x, x["method"]): x["test"]["all"]["bacc"] for x in r1}
     for x in r3:
         full = x["coverage"]["1.00"]
-        assert full["bacc"] == pytest.approx(e1_bacc[key(x, e3.E1_SCORE.get(x["method"], x["method"]))])
+        assert full["bacc"] == pytest.approx(e1_bacc[key(x, x["method"])])
         assert full["n_pos_kept"] == x["n_pos"] and full["n_kept"] == 80
         assert x["coverage"]["0.50"]["n_kept"] == 40
+        a = x["coverage"]["0.50"]["aside"]
+        assert a["tp"] + a["fp"] + a["tn"] + a["fn"] == 40 == sum(a["by_pattern"].values())
