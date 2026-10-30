@@ -33,7 +33,7 @@ METHODS = {"hard_bce": "hard_bce", "soft_bce": "soft_bce", "b2_b0": "b2", "b2_b1
            "b2_b3": "b2"}                                                     # -> loss
 E1_SCORE = {"b2_b3": "b2_b0"}                                                 # B3 decides as B0
 CKPTS = {"E3a": E1_CKPTS["E1a"], "E3b": E1_CKPTS["E1b"]}
-COVERAGES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5)
+COVERAGES = (1.0, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2)
 AUC_GRID = np.round(np.arange(0.50, 1.0001, 0.01), 2)
 METRICS = ("bacc", "sensitivity", "specificity", "n_pos_kept", "disputed_share_aside")
 
