@@ -1,0 +1,25 @@
+#$ -S /bin/bash
+#$ -l tmem=32G
+#$ -l hostname=!arbuckle*
+#$ -wd /cluster/project7/FranekLapChole/BetaBinomialLoss
+#$ -o /cluster/project7/FranekLapChole/BetaBinomialLoss/jobs/logs/
+#$ -j y
+#$ -l gpu=true
+#$ -l gpu_type=a6000
+#$ -pe gpu 1
+#$ -R y
+#$ -l h_rt=24:00:00
+#$ -N explore_sub
+# Final runs with m raters per image, then their E1-E3 + spread: qsub -N sub_<ds>_<m> jobs/explore_sub.qsub.sh <ds> <m>
+set -eo pipefail
+hostname; date
+source /share/apps/source_files/python/python-3.11.9.source
+source /share/apps/source_files/cuda/cuda-11.8.source
+export HF_HOME=/cluster/project7/FranekLapChole/BetaBinomialLoss/.hf_cache
+export HF_HUB_OFFLINE=1
+source ./dino_env/bin/activate
+git log --oneline -1
+nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv
+python3 -m explore.subsample "$1" "$2"
+python3 -m explore.run sub "$1" "$2"
+date

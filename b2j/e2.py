@@ -79,7 +79,7 @@ def summary(rows, labels):
                 vals = {m: _ms([np.mean([x["test"][m] for x in sel(s)]) for s in seeds]) for m in METRICS}
                 vals["cutoff"] = _ms([np.mean([x["cutoff"] for x in sel(s)]) for s in seeds])
                 if lab != "macro":
-                    pats = r[0]["by_pattern"].keys() if r else []
+                    pats = sel(seeds[0])[0]["by_pattern"].keys()                     # per label: n may differ
                     vals["by_pattern"] = {p: _ms([sel(s)[0]["by_pattern"][p]["share_flagged"] for s in seeds])
                                           for p in pats}
                 out[f"{exp}|{method}|{lab}"] = vals

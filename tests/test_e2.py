@@ -37,3 +37,16 @@ def test_end_to_end_on_fake_outputs(tmp_path):
     assert r["test"]["sensitivity"] == pytest.approx(flagged / disputed)
     assert {x["checkpoint"] for x in res["rows"] if x["exp"] == "E2b"} == {"hardbce", "softbce", "nll"}
     assert "by_pattern" in res["summary"]["E2a|b2|C1"] and "by_pattern" not in res["summary"]["E2a|b2|macro"]
+
+
+def test_summary_with_label_specific_vote_patterns(tmp_path):
+    fake_outputs(tmp_path)
+    for f in tmp_path.glob("final*/toy/*/seed*/outputs_*.json"):            # label C2 gets 4 raters, C1 keeps 3
+        d = json.loads(f.read_text())
+        for im in d["images"]:
+            im["n"] = [3, 4]
+        f.write_text(json.dumps(d))
+    e2.main("toy", root=tmp_path)
+    res = json.loads((tmp_path / "phase2" / "toy" / "e2.json").read_text())
+    assert all(p.endswith("/4") for p in res["summary"]["E2a|b2|C2"]["by_pattern"])
+    assert all(p.endswith("/3") for p in res["summary"]["E2a|b2|C1"]["by_pattern"])
