@@ -145,17 +145,15 @@ def test_train_run_checkpoints_and_curve(tmp_path):
     from b2j.train import load_embeddings, train_run
     data, labels = load_embeddings("toy", cache=_fake_cache(tmp_path))
     run, states = train_run("toy", data, labels, "b2", 1e-3, 0.25, seed=0, epochs=2)
-    assert len(run["curve"]) == 8 and set(states) == {"bacc", "nll"}
+    assert len(run["curve"]) == 8 and set(states) == {"nll"}
     c = run["curve"]
-    best_bacc = max(range(len(c)), key=lambda i: (c[i]["val_bacc"], -i))
-    assert run["checkpoints"]["bacc"]["eval"] == best_bacc + 1                 # earliest of the best
     assert run["checkpoints"]["nll"]["eval"] == run["best_val_loss_eval"] == 1 + int(np.argmin([x["val_loss"] for x in c]))
     assert c[0]["lr"] == pytest.approx(1e-3 * S.lr_factors(2 * 5)[c[0]["step"] - 1])
     assert run["wd"] == pytest.approx(S.wd_for_level(0.25, 1e-3, 300, epochs=2))
     run2, _ = train_run("toy", data, labels, "b2", 1e-3, 0.25, seed=0, epochs=2)
     assert [x["val_loss"] for x in run2["curve"]] == [x["val_loss"] for x in c]   # same seed, same run
     run3, _ = train_run("toy", data, labels, "hard_bce", 1e-3, 1.0, seed=0, epochs=1)
-    assert set(run3["checkpoints"]) == {"bacc", "hardbce"} and run3["wd"] == 0.0
+    assert set(run3["checkpoints"]) == {"hardbce"} and run3["wd"] == 0.0
     assert run3["checkpoints"]["hardbce"]["eval"] == run3["best_val_loss_eval"]
 
 
@@ -202,7 +200,7 @@ def test_experiment_tune_select_final(tmp_path, monkeypatch):
     E.final("toy", seeds=(1,), root=root, epochs=1, allow_edge=True)
     d = root / "final" / "toy" / "b2" / "seed1"
     run = json.loads((d / "run.json").read_text())
-    assert set(run["checkpoints"]) == {"bacc", "nll"} and (d / "head_nll.pt").exists()
+    assert set(run["checkpoints"]) == {"nll"} and (d / "head_nll.pt").exists()
     out = json.loads((d / "outputs_nll.json").read_text())
     assert out["outputs"] == ["alpha0", "alpha1"] and {i["split"] for i in out["images"]} == {"val", "test"}
     assert len(out["images"]) == 120 and len(out["images"][0]["out"]) == 3 and out["images"][0]["n"] == [3, 3, 3]
@@ -210,11 +208,11 @@ def test_experiment_tune_select_final(tmp_path, monkeypatch):
     assert set(run["checkpoints"]["nll"]["metrics"]) == {"train", "val", "test"}
     assert set((root / "final" / "toy").iterdir()) == {root / "final" / "toy" / x for x in ("b2", "hard_bce", "soft_bce")}
     assert set(json.loads((root / "final" / "toy" / "soft_bce" / "seed1" / "run.json").read_text())["checkpoints"]) \
-        == {"bacc", "softbce"}
-    h = json.loads((root / "final" / "toy" / "hard_bce" / "seed1" / "outputs_bacc.json").read_text())
+        == {"softbce"}
+    h = json.loads((root / "final" / "toy" / "hard_bce" / "seed1" / "outputs_hardbce.json").read_text())
     assert h["outputs"] == ["logit"] and len(h["images"][0]["out"]) == 3 and len(h["images"][0]["out"][0]) == 1
     assert sorted(p.name for p in (root / "final" / "toy" / "hard_bce" / "seed1").iterdir()) == \
-        ["head_bacc.pt", "head_hardbce.pt", "outputs_bacc.json", "outputs_hardbce.json", "run.json"]
+        ["head_hardbce.pt", "outputs_hardbce.json", "run.json"]
     E.final("toy", seeds=(2,), root=root, epochs=1, allow_edge=True, losses=("hard_bce",), out="rerun")
     assert [p.relative_to(root / "rerun").as_posix() for p in (root / "rerun").glob("*/*/*")] == ["toy/hard_bce/seed2"]
 

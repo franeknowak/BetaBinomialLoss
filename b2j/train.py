@@ -6,12 +6,11 @@ val in eval mode (dropout off) gives train loss, val loss and val BACC (macro), 
 step and the learning rate. A NaN/inf loss or gradient stops the run: it is returned with status "diverged", the curve
 up to that point and no checkpoints (agreed: diverged settings are excluded from selection).
 
-Checkpoints (raw best evaluation, ties -> the earlier one): "bacc" = highest val BACC (every loss); "nll" = lowest
-val loss for B² (its Beta-Binomial NLL); "softbce" = lowest val loss for soft BCE; "hardbce" = lowest val loss for
-hard BCE. `best_val_loss` (lowest val loss,
-any loss) is what tuning selects on.
+Checkpoint (raw best evaluation, ties -> the earlier one): one per run, at the lowest val loss of the model's own
+loss, named "nll" for B² (its Beta-Binomial NLL), "softbce" for soft BCE and "hardbce" for hard BCE. Val BACC is
+logged in the curve only; it chooses nothing. `best_val_loss` (the same lowest val loss) is what tuning selects on.
 
-Tuning mode returns run.json content only. Final mode also writes, per checkpoint: head_<ckpt>.pt (head weights),
+Tuning mode returns run.json content only. Final mode also writes, for the checkpoint: head_<ckpt>.pt (head weights),
 outputs_<ckpt>.json (val + test: id, split, outputs per label = logit for the BCE losses, (α₀, α₁) for B², k, n) and phase-1 metrics on train/val/test.
 """
 import json
@@ -29,7 +28,7 @@ from b2j.schedule import BATCH, EPOCHS, EVALS_PER_EPOCH, eval_steps, lr_factors,
 
 REPO = Path(__file__).resolve().parents[1]
 CACHE = REPO / "cache" / "embeddings"
-EXTRA_CKPT = {"b2": "nll", "soft_bce": "softbce", "hard_bce": "hardbce"}   # second checkpoint (lowest val loss)
+CKPT = {"b2": "nll", "soft_bce": "softbce", "hard_bce": "hardbce"}   # the only checkpoint: lowest val loss
 OUTPUT_NAMES = {"hard_bce": ["logit"], "soft_bce": ["logit"], "b2": ["alpha0", "alpha1"]}   # saved per label
 
 
@@ -70,7 +69,7 @@ def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu"
     spe = steps_per_epoch(N)
     factors = lr_factors(epochs * spe)
     evals = eval_steps(N, epochs)
-    ckpt_names = ["bacc", EXTRA_CKPT[loss_name]]
+    ckpt_names = [CKPT[loss_name]]
     best = {c: None for c in ckpt_names}                    # (value, eval index)
     states, curve = {}, []
     best_loss = [float("inf"), None]
@@ -114,7 +113,7 @@ def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu"
         if va_loss < best_loss[0]:
             best_loss[:] = [va_loss, e]
         for c in ckpt_names:
-            v = va_bacc if c == "bacc" else -va_loss                # higher is better; strict -> earlier wins ties
+            v = -va_loss                                           # higher is better; strict -> earlier wins ties
             if best[c] is None or v > best[c][0]:
                 best[c] = (v, e)
                 states[c] = {kk: vv.detach().cpu().clone() for kk, vv in model.state_dict().items()}
