@@ -2,8 +2,8 @@
 
 AdamW, batch 64 (shuffled by the seed), 25 epochs, cosine decay per step from the learning rate to 0, no warmup,
 no gradient clipping, no early stopping. At each of the 100 evaluations (4 per epoch): a full pass over train and
-val in eval mode (dropout off) gives train loss, val loss and val BACC (macro), plus the gradient norm of the last
-step and the learning rate. A NaN/inf loss or gradient stops the run: it is returned with status "diverged", the curve
+val in eval mode (dropout off) gives train loss, val loss and val BACC (macro; a diagnostic, not a reported
+metric), plus the gradient norm of the last step and the learning rate. A NaN/inf loss or gradient stops the run: it is returned with status "diverged", the curve
 up to that point and no checkpoints (agreed: diverged settings are excluded from selection).
 
 Checkpoint (raw best evaluation, ties -> the earlier one): one per run, at the lowest val loss of the model's own
@@ -153,7 +153,7 @@ def save_final(out_dir, dataset, data, labels, run, states, device="cpu"):
         for s in ("train", "val", "test"):
             X, k, n, ids = data[s]
             out = _outputs(model, X)
-            mets[s] = M.compute(loss_name, out, k, n, labels, dataset)
+            mets[s] = M.compute(loss_name, out, k, n, labels)
             if s == "train":
                 continue
             raw = torch.stack(alphas(out.double()), -1) if loss_name == "b2" else out.double()   # alphas / logits
