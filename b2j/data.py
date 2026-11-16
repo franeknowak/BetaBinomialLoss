@@ -195,13 +195,15 @@ INPUT_SIZE = {"endoscapes": 256, "cifar10h": 256, "mhist": 256, "amibr": 256, "f
 IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)                      # = DINOv3 timm cfg
 
 
-def transform(dataset: str):
+def transform(dataset: str, size=None, mean=IMAGENET_MEAN, std=IMAGENET_STD):
     """No augmentation; every dataset resized to 256² (bicubic, antialiased). Endoscapes (854×480) is first centre-cropped
-    to 480×480. CIFAR-10H 32², MHIST 224², AMi-Br 128², FER+ 112² grayscale (→ RGB at loading) are resized directly."""
+    to 480×480. CIFAR-10H 32², MHIST 224², AMi-Br 128², FER+ 112² grayscale (→ RGB at loading) are resized directly.
+    size / mean / std override the input size and normalisation (another encoder's own input, e.g. EndoViT)."""
     from torchvision import transforms as T
+    size = INPUT_SIZE[dataset] if size is None else size
     steps = [T.CenterCrop(480)] if dataset == "endoscapes" else []
-    steps += [T.Resize((INPUT_SIZE[dataset],) * 2, interpolation=T.InterpolationMode.BICUBIC, antialias=True),
-              T.ToTensor(), T.Normalize(IMAGENET_MEAN, IMAGENET_STD)]
+    steps += [T.Resize((size,) * 2, interpolation=T.InterpolationMode.BICUBIC, antialias=True),
+              T.ToTensor(), T.Normalize(mean, std)]
     return T.Compose(steps)
 
 
@@ -242,8 +244,8 @@ def image_exists(path) -> bool:
 class ImageSet:
     """torch-style dataset over a LabelTable: returns (image, k, n, index)."""
 
-    def __init__(self, table: LabelTable, dataset: str):
-        self.table, self.tf = table, transform(dataset)
+    def __init__(self, table: LabelTable, dataset: str, tf=None):
+        self.table, self.tf = table, transform(dataset) if tf is None else tf
 
     def __len__(self):
         return len(self.table.ids)
