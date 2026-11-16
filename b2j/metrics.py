@@ -104,6 +104,26 @@ def compute(loss_name, out, k, n, labels):
             "n_images": int(len(k))}
 
 
+def compute_pmf(pmf, k, n, labels):
+    """The same metrics from a predicted distribution of the vote count, P(k = 0..J) [N, K, J + 1] (numpy), for models
+    that are not a Beta-Binomial or Binomial (e.g. the rater-bias variants). Predicted fraction = E[k]/n; predicted
+    Var(k/n) = Var(k)/n²; k, n [N, K] numpy."""
+    k = np.rint(k).astype(int)
+    n = np.rint(n).astype(int)
+    j = np.arange(pmf.shape[-1])
+    ek = (pmf * j).sum(-1)
+    m, var = ek / n, ((pmf * j ** 2).sum(-1) - ek ** 2) / n ** 2
+    F = np.minimum(np.cumsum(pmf, -1), 1.0)
+    nll = -np.log(np.clip(np.take_along_axis(pmf, k[..., None], -1)[..., 0], 1e-300, None))
+    rps = rps_over_n(F, k, n)
+    y, frac = (k > n / 2).astype(int), k / n
+    per = {lab: label_metrics(m[:, i], y[:, i], frac[:, i], nll[:, i], rps[:, i]) for i, lab in enumerate(labels)}
+    return {"per_label": per,
+            "macro": {x: float(np.mean([per[lab][x] for lab in labels])) for x in MACRO},
+            "pooled": {"spread_ratio": spread_ratio(m, var, k, n), "coverage": coverage(F, k)},
+            "n_images": int(len(k))}
+
+
 def macro_bacc(loss_name, out, k, n):
     """Validation BACC (macro over labels, cut-off 0.5). Training-curve diagnostic only: logged at every evaluation
     and a non-finite value stops the run; it chooses nothing and is not a reported metric."""
