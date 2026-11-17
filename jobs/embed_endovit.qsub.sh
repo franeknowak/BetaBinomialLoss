@@ -9,9 +9,9 @@
 #$ -pe gpu 1
 #$ -R y
 #$ -l h_rt=4:00:00
-# EndoViT [CLS] embeddings of one dataset (downloads the HF weights first): qsub -N endovit_<dataset> jobs/embed_endovit.qsub.sh <dataset>
+# EndoViT embeddings of one dataset (downloads the HF weights first): qsub -N endovit_<dataset> jobs/embed_endovit.qsub.sh <dataset> [--pool mean]
 set -eo pipefail
-DATASET=$1
+DATASET=$1; shift || true
 [ -n "$DATASET" ] || { echo "usage: qsub jobs/embed_endovit.qsub.sh <dataset>"; exit 1; }
 hostname; date
 source /share/apps/source_files/python/python-3.11.9.source
@@ -23,5 +23,5 @@ git log --oneline -1
 nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv
 python3 -m b2j.cluster preflight
 python3 -c "from huggingface_hub import hf_hub_download as d; print(d('egeozsoy/EndoViT', 'pytorch_model.bin'))"
-python3 -m b2j.embed "$DATASET" --workers 4 --encoder endovit
+python3 -m b2j.embed "$DATASET" --workers 4 --encoder endovit "$@"
 date

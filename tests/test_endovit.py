@@ -47,3 +47,23 @@ def test_endovit_transform_size_and_normalisation():
     x = transform("endoscapes", embed.ENDOVIT["size"], embed.ENDOVIT["mean"], embed.ENDOVIT["std"])(img)
     assert x.shape == (3, 224, 224)
     assert torch.allclose(x[0, 0, 0], torch.tensor((128 / 255 - 0.3464) / 0.2520), atol=1e-4)
+
+
+def test_endovit_mean_pool_matches_authors_global_pool(tmp_path, monkeypatch):
+    # Reference: EndoViT models_vit.py global_pool = fc_norm(mean(blocks(x)[:, 1:])) with fc_norm freshly initialised.
+    p = tmp_path / "w.bin"
+    ref = _fake_ckpt(p).eval()
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", lambda repo, f: str(p))
+    m = embed.load_endovit("cpu")
+    x = torch.randn(2, 3, 224, 224)
+    with torch.no_grad():
+        t = ref.patch_embed(x)
+        t = torch.cat([ref.cls_token.expand(2, -1, -1), t], 1) + ref.pos_embed
+        for blk in ref.blocks:
+            t = blk(t)
+        expect = nn.LayerNorm(768, eps=1e-6)(t[:, 1:].mean(1))
+        got = embed.mean_patch_embedding(m, x)
+        # The pre-norm tokens also give back timm's forward_features after the pretrained final norm.
+        assert torch.allclose(ref.norm(t), ref.forward_features(x), atol=1e-5)
+    assert got.shape == (2, 768)
+    assert torch.allclose(got, expect, atol=1e-5)
