@@ -1,9 +1,11 @@
 """Tuning, selection and final runs for one dataset (PLAN §1.7-1.8).
 
   python -m b2j.experiment tune <dataset> [--lrs 5e-3 --losses b2]   tuning grid (seed 0); results/tuning/<dataset>/
+  python -m b2j.experiment tune <dataset> --extend                   grid, then the grid extension until no edge
   python -m b2j.experiment select <dataset>                          per loss: lowest smoothed val loss; edge flags
   python -m b2j.experiment final <dataset> [--seeds 1 2 3 4 5] [--allow-edge] [--losses hard_bce --out <dir>]
                                          [--cache cache/embeddings_endovit]   another encoder's embeddings
+  --root <dir> (every stage): results root to read and write instead of results/ (tuning/ and the final runs below it)
 
 Tuning: every loss x learning rate x weight-decay level (3 x 4 x 3 = 36 runs), one seed (0); only run.json is kept.
 A run whose run.json exists is skipped, so a job can be resubmitted. A diverged run is saved with status "diverged"
@@ -18,6 +20,7 @@ while a learning rate is still at the grid edge unless --allow-edge.
 """
 import argparse
 import json
+import math
 from pathlib import Path
 
 import torch
@@ -40,9 +43,10 @@ def tuning_dir(dataset, loss, lr, level, root=RESULTS):
     return Path(root) / "tuning" / dataset / loss / f"lr{lr:g}_wd{level:g}"
 
 
-def tune(dataset, lrs=LRS, levels=WD_LEVELS, losses=tuple(LOSSES), root=RESULTS, epochs=25):
+def tune(dataset, lrs=LRS, levels=WD_LEVELS, losses=tuple(LOSSES), root=RESULTS, epochs=25, data=None, cache=None):
+    """data: (split dict, labels) to train on instead of the cached embeddings; cache: another embedding cache."""
     dev = _device()
-    data, labels = load_embeddings(dataset, device=dev)
+    data, labels = data if data is not None else _load(dataset, cache, dev)
     for loss in losses:
         for lr in lrs:
             for level in levels:
@@ -58,6 +62,52 @@ def tune(dataset, lrs=LRS, levels=WD_LEVELS, losses=tuple(LOSSES), root=RESULTS,
                     continue
                 print(f"{dataset} {loss} lr {lr:g} level {level:g} wd {run['wd']:.4g}: best val loss "
                       f"{run['best_val_loss']:.5f} at eval {run['best_val_loss_eval']} ({run['seconds']} s)", flush=True)
+
+
+def _load(dataset, cache, dev):
+    return load_embeddings(dataset, device=dev) if cache is None else load_embeddings(dataset, cache, dev)
+
+
+def next_lr(lr, direction):
+    """One step beyond the grid edge on the 1-5-10 pattern: up 1e-3 -> 5e-3 -> 1e-2; down 5e-5 -> 1e-5 -> 5e-6."""
+    e = math.floor(math.log10(lr) + 1e-9)
+    m = round(lr / 10 ** e)
+    if m not in (1, 5):
+        raise ValueError(f"learning rate {lr:g} is not on the 1-5-10 pattern")
+    if direction == "high":
+        return float(f"{5 * 10 ** e:g}") if m == 1 else float(f"{10 ** (e + 1):g}")
+    if direction == "low":
+        return float(f"{10 ** e:g}") if m == 5 else float(f"{5 * 10 ** (e - 1):g}")
+    raise ValueError(direction)
+
+
+def tune_and_extend(dataset, root=RESULTS, epochs=25, data=None, cache=None, max_steps=6):
+    """The grid, then the agreed grid extension (learning rate only, all three levels, only the loss at the edge),
+    repeated until no chosen learning rate is at the edge. Stops (edge left flagged, final refuses) if the next
+    learning rate was already tried, i.e. all its runs diverged, or after max_steps extensions per loss."""
+    dev = _device()
+    data = data if data is not None else _load(dataset, cache, dev)
+    tune(dataset, root=root, epochs=epochs, data=data)
+    steps = {}
+    while True:
+        sel = select(dataset, root)
+        todo = {}
+        for loss, s in sel.items():
+            if not s["lr_at_edge"]:
+                continue
+            lr = next_lr(s["lr"], s["lr_at_edge"])
+            done = tuning_dir(dataset, loss, lr, WD_LEVELS[0], root).exists()
+            if done or steps.get(loss, 0) >= max_steps:
+                print(f"{dataset} {loss}: lr {s['lr']:g} still at the {s['lr_at_edge']} edge; extension stopped",
+                      flush=True)
+                continue
+            todo[loss] = lr
+        if not todo:
+            return sel
+        for loss, lr in todo.items():
+            steps[loss] = steps.get(loss, 0) + 1
+            print(f"{dataset} {loss}: grid extension to lr {lr:g}", flush=True)
+            tune(dataset, lrs=(lr,), losses=(loss,), root=root, epochs=epochs, data=data)
 
 
 def smoothed_min(curve, window=SMOOTH_WINDOW):
@@ -97,14 +147,15 @@ def select(dataset, root=RESULTS):
     return sel
 
 
-def final(dataset, seeds=FINAL_SEEDS, root=RESULTS, epochs=25, allow_edge=False, losses=None, out="final", cache=None):
+def final(dataset, seeds=FINAL_SEEDS, root=RESULTS, epochs=25, allow_edge=False, losses=None, out="final", cache=None,
+          data=None):
     sel = json.loads((Path(root) / "tuning" / dataset / "selection.json").read_text())
     edge = {loss: s["lr_at_edge"] for loss, s in sel.items() if s["lr_at_edge"]}
     if edge and not allow_edge:
         raise SystemExit(f"{dataset}: learning rate still at the grid edge for {edge}; extend the grid first "
                          "(or pass --allow-edge)")
     dev = _device()
-    data, labels = load_embeddings(dataset, device=dev) if cache is None else load_embeddings(dataset, cache, dev)
+    data, labels = data if data is not None else _load(dataset, cache, dev)
     for loss, s in sel.items():
         if losses and loss not in losses:
             continue
@@ -134,13 +185,20 @@ if __name__ == "__main__":
     ap.add_argument("--seeds", type=int, nargs="+", default=list(FINAL_SEEDS))
     ap.add_argument("--allow-edge", action="store_true")
     ap.add_argument("--out", default="final", help="final: results sub-directory to write to")
-    ap.add_argument("--cache", default=None, help="final: embedding cache directory (default: the DINOv3 cache)")
+    ap.add_argument("--cache", default=None, help="tune / final: embedding cache directory (default: the DINOv3 cache)")
+    ap.add_argument("--root", default=str(RESULTS), help="results root (default: results/)")
+    ap.add_argument("--extend", action="store_true", help="tune: the grid, then the grid extension until no edge")
     a = ap.parse_args()
     if a.stage == "tune":
-        if a.lrs and not a.losses:
-            raise SystemExit("grid extension: give --losses (only the loss(es) whose learning rate is at the edge)")
-        tune(a.dataset, lrs=tuple(a.lrs) if a.lrs else LRS, losses=tuple(a.losses) if a.losses else tuple(LOSSES))
+        if a.extend:
+            tune_and_extend(a.dataset, root=a.root, cache=a.cache)
+        else:
+            if a.lrs and not a.losses:
+                raise SystemExit("grid extension: give --losses (only the loss(es) whose learning rate is at the edge)")
+            tune(a.dataset, lrs=tuple(a.lrs) if a.lrs else LRS, losses=tuple(a.losses) if a.losses else tuple(LOSSES),
+                 root=a.root, cache=a.cache)
     elif a.stage == "select":
-        select(a.dataset)
+        select(a.dataset, root=a.root)
     else:
-        final(a.dataset, seeds=tuple(a.seeds), allow_edge=a.allow_edge, losses=a.losses, out=a.out, cache=a.cache)
+        final(a.dataset, seeds=tuple(a.seeds), allow_edge=a.allow_edge, losses=a.losses, out=a.out, cache=a.cache,
+              root=a.root)
