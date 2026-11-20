@@ -17,12 +17,17 @@ patch tokens of the last block ([CLS] excluded, before the final LayerNorm), the
 bias 0, eps 1e-6; its learned affine is absorbed by our linear head). Writes cache/embeddings_endovit_mean/.
 
 --encoder surgenetxl: DINOv3 ViT-B/16 initialised from the LVD-1689M weights (= our DINOv3 encoder) and further
-pretrained on SurgeNetXL (de Jong et al., MIDL 2026), Hugging Face rlpddejong/SurgeNetXL_DINOv1-v3,
-DINOv3_ViTb16_size336_SurgeNetXL.pth (weights CC-BY-NC-SA). Built as in the authors' load_models.py (timm
-vit_base_patch16_dinov3.lvd1689m architecture at img_size 336, checkpoint keys in timm format), but every encoder
-weight must load and the weights must differ from LVD-1689M. Input 336² (its pretraining size), ImageNet mean / std
-(the DINOv3 default; the authors give none), same centre crop and bicubic resize; [CLS] after the final LayerNorm,
-as for DINOv3. Writes cache/embeddings_surgenetxl/<dataset>.npz.
+pretrained on SurgeNetXL (de Jong et al., MIDL 2026, §3.2), Hugging Face rlpddejong/SurgeNetXL_DINOv1-v3,
+DINOv3_ViTb16_size336_SurgeNetXL.pth (weights CC-BY-NC-SA). The authors' pretraining config
+(SurgeNetDINO dinov3_configs/config_dinov3_vitb.yaml) differs from LVD-1689M's architecture: no storage (register)
+tokens, a learned, unmasked key bias, RoPE base 100. The model is therefore built as in the authors' own downstream
+code (SurgeNetDINO segmentation_finetuning/models/vit.py): Hugging Face transformers DINOv3ViTModel with that
+config and their key conversion; every encoder weight must load, only the DINO / iBOT heads may be left over, the
+stored RoPE periods must match, and the weights must differ from LVD-1689M. (timm's
+vit_base_patch16_dinov3.lvd1689m, used by the authors' load_models.py with strict=False, would drop the trained key /
+query / value biases and add random register tokens.) Input 336² (its pretraining size), ImageNet mean / std (as in
+the authors' downstream code), same centre crop and bicubic resize; [CLS] after the final LayerNorm, as for DINOv3.
+Writes cache/embeddings_surgenetxl/<dataset>.npz.
 """
 import argparse
 import json
@@ -85,30 +90,89 @@ def load_endovit(device):
     return model
 
 
+class SurgeNetXLEncoder(torch.nn.Module):
+    """HF DINOv3ViTModel with timm's forward_features interface (tokens after the final LayerNorm, [CLS] first)."""
+    def __init__(self, hf):
+        super().__init__()
+        self.hf = hf
+
+    def forward_features(self, x):
+        return self.hf(pixel_values=x).last_hidden_state
+
+
+def surgenetxl_config():
+    """The SurgeNetDINO ViT-B/16 pretraining architecture, as in the authors' models/vit.py."""
+    from transformers import DINOv3ViTConfig
+    return DINOv3ViTConfig(hidden_size=768, num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072,
+                           patch_size=16, image_size=SURGENETXL["size"], num_register_tokens=0, key_bias=True,
+                           layer_norm_eps=1e-6, rope_theta=100.0, pos_embed_shift=None, pos_embed_jitter=None,
+                           pos_embed_rescale=None)
+
+
+def hf_layer_prefix(hf):
+    """Block prefix of HF DINOv3ViTModel: "layer." (transformers 4.x) or "model.layer." (5.x)."""
+    return "model.layer." if "model.layer.0.norm1.weight" in hf.state_dict() else "layer."
+
+
+def convert_surgenetxl(sd, layer_prefix="layer."):
+    """DINOv3-repo checkpoint keys -> HF DINOv3ViTModel keys (the authors' load_dinov3_weights; layer_prefix from
+    hf_layer_prefix). Returns the converted dict and the stored RoPE periods (not learned; None if absent)."""
+    sd = dict(sd)
+    periods = sd.pop("rope_embed.periods", None)
+    out = {}
+    for k, v in sd.items():
+        if k == "mask_token":
+            k, v = "embeddings.mask_token", v.reshape(1, 1, -1)
+        elif k == "cls_token":
+            k = "embeddings.cls_token"
+        elif k.startswith("patch_embed.proj."):
+            k = k.replace("patch_embed.proj.", "embeddings.patch_embeddings.")
+        elif k.startswith("blocks."):
+            k = layer_prefix + k[len("blocks."):]
+            if ".attn.qkv." in k:
+                for name, part in zip(("q", "k", "v"), v.chunk(3, dim=0)):
+                    out[k.replace("attn.qkv.", f"attention.{name}_proj.")] = part
+                continue
+            k = (k.replace(".attn.proj.", ".attention.o_proj.").replace(".gamma_1", ".layer_scale1.lambda1")
+                 .replace(".gamma_2", ".layer_scale2.lambda1").replace(".mlp.fc1.", ".mlp.up_proj.")
+                 .replace(".mlp.fc2.", ".mlp.down_proj."))
+        out[k] = v
+    return out, periods
+
+
 def load_surgenetxl(device, base_pretrained=True):
-    """SurgeNetXL DINOv3 ViT-B/16 in timm's DINOv3 architecture at 336². No encoder weight may be missing; leftover
-    checkpoint keys (e.g. a projection head) are listed. base_pretrained: also load the LVD-1689M weights and check the
-    checkpoint is not identical to them."""
-    import timm
+    """SurgeNetXL DINOv3 ViT-B/16 in the authors' architecture at 336². No encoder weight may be missing and nothing
+    but the DINO / iBOT heads may be left over. base_pretrained: also load the LVD-1689M weights (timm) and check the
+    checkpoint differs from them; prints the cosine similarity per tensor (evidence of the LVD-1689M initialisation)."""
     from huggingface_hub import hf_hub_download
-    model = timm.create_model(MODEL, pretrained=False, img_size=SURGENETXL["size"], num_classes=0)
-    sd = torch.load(hf_hub_download(SURGENETXL["repo"], SURGENETXL["file"]), map_location="cpu", weights_only=False)
-    for key in ("model", "state_dict", "teacher"):
-        if isinstance(sd, dict) and key in sd and isinstance(sd[key], dict):
+    from transformers import DINOv3ViTModel
+    hf = DINOv3ViTModel(surgenetxl_config())
+    sd = torch.load(hf_hub_download(SURGENETXL["repo"], SURGENETXL["file"]), map_location="cpu", weights_only=True)
+    for key in ("teacher", "model", "state_dict"):
+        if isinstance(sd, dict) and isinstance(sd.get(key), dict):
             sd = sd[key]
-    res = model.load_state_dict(sd, strict=False)
-    if res.missing_keys:
-        raise ValueError(f"SurgeNetXL: encoder weights missing from the checkpoint: {res.missing_keys}")
-    print(f"SurgeNetXL loaded: {len(sd)} tensors, unused: {res.unexpected_keys}", flush=True)
+    conv, periods = convert_surgenetxl(sd, hf_layer_prefix(hf))
+    if periods is not None and not torch.allclose(periods.float(), 1 / hf.rope_embeddings.inv_freq, rtol=1e-2):
+        raise ValueError("SurgeNetXL: RoPE periods in the checkpoint do not match the model")
+    res = hf.load_state_dict(conv, strict=False)
+    missing = [k for k in res.missing_keys if k != "embeddings.register_tokens"]   # 0 register tokens: empty
+    if missing:
+        raise ValueError(f"SurgeNetXL: encoder weights missing from the checkpoint: {missing}")
+    left = [k for k in res.unexpected_keys if not k.startswith(("dino_head.", "ibot_head."))]
+    if left:
+        raise ValueError(f"SurgeNetXL: unexpected checkpoint keys: {left}")
+    print(f"SurgeNetXL loaded: {len(sd)} tensors, all encoder weights; unused heads: {len(res.unexpected_keys)}",
+          flush=True)
     if base_pretrained:
+        import timm
         base = timm.create_model(MODEL, pretrained=True, num_classes=0).state_dict()
-        mine = model.state_dict()
-        diff = {k: float((mine[k].float() - base[k].float()).abs().mean() / (base[k].float().abs().mean() + 1e-12))
-                for k in ("patch_embed.proj.weight", "blocks.0.attn.qkv.weight", "blocks.11.mlp.fc2.weight", "norm.weight")}
-        if max(diff.values()) == 0:
+        cos = {k: float(torch.nn.functional.cosine_similarity(sd[k].float().flatten(), base[k].float().flatten(), dim=0))
+               for k in ("patch_embed.proj.weight", "blocks.0.gamma_1", "blocks.0.attn.qkv.weight",
+                         "blocks.11.mlp.fc2.weight", "norm.weight")}
+        if all(torch.equal(sd[k].float(), base[k].float()) for k in cos):
             raise ValueError("SurgeNetXL weights are identical to LVD-1689M")
-        print(f"SurgeNetXL vs LVD-1689M, mean relative weight change: {diff}", flush=True)
-    model = model.to(device).eval()
+        print(f"SurgeNetXL vs LVD-1689M, cosine similarity per tensor: {cos}", flush=True)
+    model = SurgeNetXLEncoder(hf).to(device).eval()
     for p in model.parameters():
         p.requires_grad_(False)
     return model

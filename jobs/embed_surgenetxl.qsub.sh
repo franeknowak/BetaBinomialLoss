@@ -9,7 +9,7 @@
 #$ -pe gpu 1
 #$ -R y
 #$ -l h_rt=4:00:00
-# SurgeNetXL (DINOv3 ViT-B/16) embeddings of one dataset (downloads the HF weights first): qsub -N surgenetxl_<dataset> jobs/embed_surgenetxl.qsub.sh <dataset>
+# SurgeNetXL (DINOv3 ViT-B/16, authors' architecture via transformers; see jobs/install_transformers.qsub.sh) embeddings of one dataset (downloads the HF weights first): qsub -N surgenetxl_<dataset> jobs/embed_surgenetxl.qsub.sh <dataset>
 set -eo pipefail
 DATASET=$1; shift || true
 [ -n "$DATASET" ] || { echo "usage: qsub jobs/embed_surgenetxl.qsub.sh <dataset>"; exit 1; }
