@@ -15,6 +15,14 @@ as in the model card; its own input (224², Endo700k mean / std; same centre cro
 --pool mean (EndoViT only): the authors' downstream pooling ("global_pool" in their models_vit.py): mean of the
 patch tokens of the last block ([CLS] excluded, before the final LayerNorm), then a fresh LayerNorm (weight 1,
 bias 0, eps 1e-6; its learned affine is absorbed by our linear head). Writes cache/embeddings_endovit_mean/.
+
+--encoder surgenetxl: DINOv3 ViT-B/16 initialised from the LVD-1689M weights (= our DINOv3 encoder) and further
+pretrained on SurgeNetXL (de Jong et al., MIDL 2026), Hugging Face rlpddejong/SurgeNetXL_DINOv1-v3,
+DINOv3_ViTb16_size336_SurgeNetXL.pth (weights CC-BY-NC-SA). Built as in the authors' load_models.py (timm
+vit_base_patch16_dinov3.lvd1689m architecture at img_size 336, checkpoint keys in timm format), but every encoder
+weight must load and the weights must differ from LVD-1689M. Input 336² (its pretraining size), ImageNet mean / std
+(the DINOv3 default; the authors give none), same centre crop and bicubic resize; [CLS] after the final LayerNorm,
+as for DINOv3. Writes cache/embeddings_surgenetxl/<dataset>.npz.
 """
 import argparse
 import json
@@ -32,7 +40,9 @@ REPO = Path(__file__).resolve().parents[1]
 CACHE = REPO / "cache" / "embeddings"
 ENDOVIT = {"repo": "egeozsoy/EndoViT", "file": "pytorch_model.bin", "size": 224,
            "mean": (0.3464, 0.2280, 0.2228), "std": (0.2520, 0.2128, 0.2093)}    # from the model card
+SURGENETXL = {"repo": "rlpddejong/SurgeNetXL_DINOv1-v3", "file": "DINOv3_ViTb16_size336_SurgeNetXL.pth", "size": 336}
 CACHES = {"dinov3": CACHE, "endovit": REPO / "cache" / "embeddings_endovit",
+          "surgenetxl": REPO / "cache" / "embeddings_surgenetxl",
           "endovit_mean": REPO / "cache" / "embeddings_endovit_mean"}
 LABELS = {"endoscapes": ["C1", "C2", "C3"],
           "cifar10h": ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"],
@@ -75,6 +85,35 @@ def load_endovit(device):
     return model
 
 
+def load_surgenetxl(device, base_pretrained=True):
+    """SurgeNetXL DINOv3 ViT-B/16 in timm's DINOv3 architecture at 336². No encoder weight may be missing; leftover
+    checkpoint keys (e.g. a projection head) are listed. base_pretrained: also load the LVD-1689M weights and check the
+    checkpoint is not identical to them."""
+    import timm
+    from huggingface_hub import hf_hub_download
+    model = timm.create_model(MODEL, pretrained=False, img_size=SURGENETXL["size"], num_classes=0)
+    sd = torch.load(hf_hub_download(SURGENETXL["repo"], SURGENETXL["file"]), map_location="cpu", weights_only=False)
+    for key in ("model", "state_dict", "teacher"):
+        if isinstance(sd, dict) and key in sd and isinstance(sd[key], dict):
+            sd = sd[key]
+    res = model.load_state_dict(sd, strict=False)
+    if res.missing_keys:
+        raise ValueError(f"SurgeNetXL: encoder weights missing from the checkpoint: {res.missing_keys}")
+    print(f"SurgeNetXL loaded: {len(sd)} tensors, unused: {res.unexpected_keys}", flush=True)
+    if base_pretrained:
+        base = timm.create_model(MODEL, pretrained=True, num_classes=0).state_dict()
+        mine = model.state_dict()
+        diff = {k: float((mine[k].float() - base[k].float()).abs().mean() / (base[k].float().abs().mean() + 1e-12))
+                for k in ("patch_embed.proj.weight", "blocks.0.attn.qkv.weight", "blocks.11.mlp.fc2.weight", "norm.weight")}
+        if max(diff.values()) == 0:
+            raise ValueError("SurgeNetXL weights are identical to LVD-1689M")
+        print(f"SurgeNetXL vs LVD-1689M, mean relative weight change: {diff}", flush=True)
+    model = model.to(device).eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
+    return model
+
+
 def cls_embedding(model, x):
     """[CLS] after the final LayerNorm: token 0 of forward_features."""
     return model.forward_features(x)[:, 0]
@@ -110,6 +149,9 @@ def main(dataset, batch=128, workers=8, encoder="dinov3", pool="cls"):
     if encoder == "endovit":
         ds = ImageSet(table, dataset, transform(dataset, ENDOVIT["size"], ENDOVIT["mean"], ENDOVIT["std"]))
         model = load_endovit(device)
+    elif encoder == "surgenetxl":
+        ds = ImageSet(table, dataset, transform(dataset, SURGENETXL["size"]))
+        model = load_surgenetxl(device)
     else:
         ds = ImageSet(table, dataset)
         model = load_model(device)
@@ -129,9 +171,11 @@ def main(dataset, batch=128, workers=8, encoder="dinov3", pool="cls"):
     commit = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], capture_output=True,
                             text=True).stdout.strip()
     meta = {"dataset": dataset, "encoder": encoder,
-            "model": MODEL if encoder == "dinov3" else f"{ENDOVIT['repo']}/{ENDOVIT['file']}",
-            "input_size": INPUT_SIZE[dataset] if encoder == "dinov3" else ENDOVIT["size"],
-            "normalisation": [IMAGENET_MEAN, IMAGENET_STD] if encoder == "dinov3" else [ENDOVIT["mean"], ENDOVIT["std"]],
+            "model": {"dinov3": MODEL, "endovit": f"{ENDOVIT['repo']}/{ENDOVIT['file']}",
+                      "surgenetxl": f"{SURGENETXL['repo']}/{SURGENETXL['file']}"}[encoder],
+            "input_size": {"dinov3": INPUT_SIZE[dataset], "endovit": ENDOVIT["size"],
+                           "surgenetxl": SURGENETXL["size"]}[encoder],
+            "normalisation": [ENDOVIT["mean"], ENDOVIT["std"]] if encoder == "endovit" else [IMAGENET_MEAN, IMAGENET_STD],
             "token": "cls after final norm" if pool == "cls" else
                      "mean of patch tokens before final norm, then LayerNorm without affine (EndoViT global_pool)",
             "dtype": "float32", "tf32": False, "n_images": int(len(emb)), "labels": LABELS[dataset],
@@ -147,7 +191,7 @@ if __name__ == "__main__":
     ap.add_argument("dataset")
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--encoder", choices=["dinov3", "endovit"], default="dinov3")
+    ap.add_argument("--encoder", choices=["dinov3", "endovit", "surgenetxl"], default="dinov3")
     ap.add_argument("--pool", choices=list(POOLS), default="cls")
     a = ap.parse_args()
     main(a.dataset, a.batch, a.workers, a.encoder, a.pool)
