@@ -8,8 +8,7 @@
 #$ -l gpu_type=a6000
 #$ -pe gpu 1
 #$ -R y
-#$ -l h_rt=24:00:00
-# Tuning grid + extension, selection and final runs of one dataset, with options passed to both stages, e.g.
+#$ -l h_rt=4:00:00
 # KL-prior ablation of B² (uniform and moment-matched priors, B²'s phase-1 settings, seeds 1-5): qsub -N ablation_kl jobs/ablation_kl.qsub.sh endoscapes
 set -eo pipefail
 [ -n "$1" ] || { echo "usage: qsub jobs/ablation_kl.qsub.sh <dataset> [--variants ...] [--seeds ...]"; exit 1; }
