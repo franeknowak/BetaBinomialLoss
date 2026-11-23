@@ -54,13 +54,17 @@ def _commit():
                           text=True).stdout.strip()
 
 
-def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu", epochs=EPOCHS):
-    """Train one head. Returns (run dict, {checkpoint: head state_dict on CPU}); run["status"] is "ok" or "diverged"."""
+def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu", epochs=EPOCHS, loss_fn=None,
+              ckpt=None):
+    """Train one head. Returns (run dict, {checkpoint: head state_dict on CPU}); run["status"] is "ok" or "diverged".
+    loss_fn / ckpt (ablations): train and checkpoint on this loss module instead of loss_name's own loss, under this
+    checkpoint name; loss_name still sets the head width and how the outputs are read (e.g. "b2" for B² + KL)."""
     torch.backends.cuda.matmul.allow_tf32 = False
     Xtr, ktr, ntr, _ = data["train"]
     Xva, kva, nva, _ = data["val"]
     N, K = ktr.shape
-    loss_fn, width = make_loss(loss_name)
+    own, width = make_loss(loss_name)
+    loss_fn = own if loss_fn is None else loss_fn
     wd = wd_for_level(wd_level, lr, N, epochs)
     torch.manual_seed(seed)
     model = MultiHead(Xtr.shape[1], K, width).to(device)
@@ -69,7 +73,7 @@ def train_run(dataset, data, labels, loss_name, lr, wd_level, seed, device="cpu"
     spe = steps_per_epoch(N)
     factors = lr_factors(epochs * spe)
     evals = eval_steps(N, epochs)
-    ckpt_names = [CKPT[loss_name]]
+    ckpt_names = [CKPT[loss_name] if ckpt is None else ckpt]
     best = {c: None for c in ckpt_names}                    # (value, eval index)
     states, curve = {}, []
     best_loss = [float("inf"), None]
