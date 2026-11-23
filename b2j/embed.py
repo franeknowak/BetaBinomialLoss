@@ -28,6 +28,15 @@ vit_base_patch16_dinov3.lvd1689m, used by the authors' load_models.py with stric
 query / value biases and add random register tokens.) Input 336² (its pretraining size), ImageNet mean / std (as in
 the authors' downstream code), same centre crop and bicubic resize; [CLS] after the final LayerNorm, as for DINOv3.
 Writes cache/embeddings_surgenetxl/<dataset>.npz.
+
+--encoder lemonfm: LemonFM (Che et al., CVPR 2026; ConvNeXt-L, DINO-style self-distillation on the LEMON surgical
+video set), Hugging Face visurg/LemonFM, lemonfm.pth (Apache-2.0). Built as in the authors' model_loader.py:
+torchvision convnext_large with classifier[2] = Identity, teacher weights with the "backbone." prefix removed; every
+weight must load (the authors load with strict=False onto ImageNet weights, which would hide a missing key). The
+embedding is the model's output, as in the authors' feature-extraction example: global average pool of the last
+stage, then the final LayerNorm (1536-d). Input 224² (pretraining crop size and model card), ImageNet mean / std (the
+authors' pretraining and downstream transforms), same centre crop and bicubic resize. Writes
+cache/embeddings_lemonfm/<dataset>.npz.
 """
 import argparse
 import json
@@ -46,8 +55,11 @@ CACHE = REPO / "cache" / "embeddings"
 ENDOVIT = {"repo": "egeozsoy/EndoViT", "file": "pytorch_model.bin", "size": 224,
            "mean": (0.3464, 0.2280, 0.2228), "std": (0.2520, 0.2128, 0.2093)}    # from the model card
 SURGENETXL = {"repo": "rlpddejong/SurgeNetXL_DINOv1-v3", "file": "DINOv3_ViTb16_size336_SurgeNetXL.pth", "size": 336}
+LEMONFM = {"repo": "visurg/LemonFM", "file": "lemonfm.pth", "size": 224}
+DIM = {"dinov3": 768, "endovit": 768, "surgenetxl": 768, "lemonfm": 1536}
 CACHES = {"dinov3": CACHE, "endovit": REPO / "cache" / "embeddings_endovit",
           "surgenetxl": REPO / "cache" / "embeddings_surgenetxl",
+          "lemonfm": REPO / "cache" / "embeddings_lemonfm",
           "endovit_mean": REPO / "cache" / "embeddings_endovit_mean"}
 LABELS = {"endoscapes": ["C1", "C2", "C3"],
           "cifar10h": ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"],
@@ -178,6 +190,35 @@ def load_surgenetxl(device, base_pretrained=True):
     return model
 
 
+def load_lemonfm(device):
+    """LemonFM ConvNeXt-L as in the authors' model_loader.py (no ImageNet weights underneath). Every backbone weight
+    must load; only non-backbone entries (DINO head) may be left over."""
+    import argparse
+    import torchvision
+    from huggingface_hub import hf_hub_download
+    net = torchvision.models.convnext_large(weights=None)
+    net.classifier[2] = torch.nn.Identity()
+    torch.serialization.add_safe_globals([argparse.Namespace])
+    ck = torch.load(hf_hub_download(LEMONFM["repo"], LEMONFM["file"]), map_location="cpu", weights_only=True)
+    sd = ck["teacher"] if isinstance(ck, dict) and "teacher" in ck else ck
+    sd = {k.replace("module.", "", 1) if k.startswith("module.") else k: v for k, v in sd.items()}
+    bb = {k[len("backbone."):]: v for k, v in sd.items() if k.startswith("backbone.")}
+    res = net.load_state_dict(bb, strict=False)
+    if res.missing_keys or res.unexpected_keys:
+        raise ValueError(f"LemonFM: missing {res.missing_keys}, unexpected {res.unexpected_keys}")
+    print(f"LemonFM loaded: {len(bb)} backbone tensors, all weights; unused non-backbone: {len(sd) - len(bb)}",
+          flush=True)
+    net = net.to(device).eval()
+    for p in net.parameters():
+        p.requires_grad_(False)
+    return net
+
+
+def output_embedding(model, x):
+    """The model's own output (LemonFM: global average pool + final LayerNorm, classifier[2] = Identity)."""
+    return model(x)
+
+
 def cls_embedding(model, x):
     """[CLS] after the final LayerNorm: token 0 of forward_features."""
     return model.forward_features(x)[:, 0]
@@ -191,7 +232,7 @@ def mean_patch_embedding(model, x):
     return torch.nn.functional.layer_norm(x, x.shape[-1:], eps=1e-6)
 
 
-POOLS = {"cls": cls_embedding, "mean": mean_patch_embedding}
+POOLS = {"cls": cls_embedding, "mean": mean_patch_embedding, "output": output_embedding}
 
 
 @torch.no_grad()
@@ -203,8 +244,12 @@ def embed(model, loader, device, pool="cls"):
 
 
 def main(dataset, batch=128, workers=8, encoder="dinov3", pool="cls"):
-    if pool != "cls" and encoder != "endovit":
+    if pool == "mean" and encoder != "endovit":
         raise ValueError("--pool mean is implemented for EndoViT only")
+    if encoder == "lemonfm":
+        pool = "output"                                       # a CNN: no [CLS] token
+    elif pool == "output":
+        raise ValueError("--pool output is for LemonFM only")
     torch.backends.cuda.matmul.allow_tf32 = False             # full float32 (agreed)
     torch.backends.cudnn.allow_tf32 = False
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -216,19 +261,22 @@ def main(dataset, batch=128, workers=8, encoder="dinov3", pool="cls"):
     elif encoder == "surgenetxl":
         ds = ImageSet(table, dataset, transform(dataset, SURGENETXL["size"]))
         model = load_surgenetxl(device)
+    elif encoder == "lemonfm":
+        ds = ImageSet(table, dataset, transform(dataset, LEMONFM["size"]))
+        model = load_lemonfm(device)
     else:
         ds = ImageSet(table, dataset)
         model = load_model(device)
     loader = torch.utils.data.DataLoader(ds, batch_size=batch, shuffle=False, num_workers=workers)
     emb = embed(model, loader, device, pool)
-    if emb.shape != (len(table.ids), 768) or not np.isfinite(emb).all():
+    if emb.shape != (len(table.ids), DIM[encoder]) or not np.isfinite(emb).all():
         raise ValueError(f"bad embeddings: shape {emb.shape}, finite {np.isfinite(emb).all()}")
     first = embed(model, torch.utils.data.DataLoader(torch.utils.data.Subset(ds, range(min(batch, len(ds)))),
                                                      batch_size=batch, num_workers=0), device, pool)
     drift = float(np.abs(first - emb[:len(first)]).max())
     if drift > 1e-4:
         raise ValueError(f"recomputed embeddings differ by {drift}")
-    out_dir = Path(CACHES[encoder if pool == "cls" else f"{encoder}_{pool}"])
+    out_dir = Path(CACHES[encoder if pool in ("cls", "output") else f"{encoder}_{pool}"])
     out_dir.mkdir(parents=True, exist_ok=True)
     np.savez(out_dir / f"{dataset}.npz", emb=emb, ids=table.ids, split=table.split, k=table.k, n=table.n,
              labels=np.array(LABELS[dataset]))
@@ -236,12 +284,14 @@ def main(dataset, batch=128, workers=8, encoder="dinov3", pool="cls"):
                             text=True).stdout.strip()
     meta = {"dataset": dataset, "encoder": encoder,
             "model": {"dinov3": MODEL, "endovit": f"{ENDOVIT['repo']}/{ENDOVIT['file']}",
-                      "surgenetxl": f"{SURGENETXL['repo']}/{SURGENETXL['file']}"}[encoder],
+                      "surgenetxl": f"{SURGENETXL['repo']}/{SURGENETXL['file']}",
+                      "lemonfm": f"{LEMONFM['repo']}/{LEMONFM['file']}"}[encoder],
             "input_size": {"dinov3": INPUT_SIZE[dataset], "endovit": ENDOVIT["size"],
-                           "surgenetxl": SURGENETXL["size"]}[encoder],
+                           "surgenetxl": SURGENETXL["size"], "lemonfm": LEMONFM["size"]}[encoder],
             "normalisation": [ENDOVIT["mean"], ENDOVIT["std"]] if encoder == "endovit" else [IMAGENET_MEAN, IMAGENET_STD],
-            "token": "cls after final norm" if pool == "cls" else
-                     "mean of patch tokens before final norm, then LayerNorm without affine (EndoViT global_pool)",
+            "token": {"cls": "cls after final norm",
+                      "mean": "mean of patch tokens before final norm, then LayerNorm without affine (EndoViT global_pool)",
+                      "output": "model output: global average pool + final LayerNorm (ConvNeXt classifier[0])"}[pool],
             "dtype": "float32", "tf32": False, "n_images": int(len(emb)), "labels": LABELS[dataset],
             "splits": {s: int((table.split == s).sum()) for s in ("train", "val", "test")},
             "recompute_max_abs_diff": drift, "device": torch.cuda.get_device_name() if device == "cuda" else "cpu",
@@ -255,7 +305,7 @@ if __name__ == "__main__":
     ap.add_argument("dataset")
     ap.add_argument("--batch", type=int, default=128)
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--encoder", choices=["dinov3", "endovit", "surgenetxl"], default="dinov3")
+    ap.add_argument("--encoder", choices=["dinov3", "endovit", "surgenetxl", "lemonfm"], default="dinov3")
     ap.add_argument("--pool", choices=list(POOLS), default="cls")
     a = ap.parse_args()
     main(a.dataset, a.batch, a.workers, a.encoder, a.pool)
