@@ -7,14 +7,12 @@
 #$ -j y
 #$ -l h_rt=4:00:00
 #$ -N inspect_sages
-# Inspect the SAGES download (labels, video properties, black borders); outputs in results/sages_inspect/.
+# Inspect the SAGES labels against the extracted frames (run after extract_sages for train and test).
 set -eo pipefail
 hostname; date
 source /share/apps/source_files/python/python-3.11.9.source
 source ./dino_env/bin/activate
 git log --oneline -1
 export MPLBACKEND=Agg
-export LD_LIBRARY_PATH=/share/apps/ffmpeg-4.2.2/lib:${LD_LIBRARY_PATH:-}
-/share/apps/ffmpeg-4.2.2/bin/ffprobe -version | head -1
 python3 -m b2j.inspect_sages /cluster/project7/FranekLapChole/datasets/sages results/sages_inspect
 date
