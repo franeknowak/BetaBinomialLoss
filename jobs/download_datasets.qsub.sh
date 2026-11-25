@@ -11,11 +11,12 @@
 #        qsub jobs/download_datasets.qsub.sh mhist
 #        qsub jobs/download_datasets.qsub.sh amibr
 #        qsub jobs/download_datasets.qsub.sh ferplus   (fer2013new.csv + Kaggle zip copied into datasets/ferplus first)
+#        qsub jobs/download_datasets.qsub.sh sages     (SAGES CVS Challenge 2024, Hugging Face, ~64 GB of videos)
 # MHIST links are time-limited and never committed: write them to datasets/mhist/.urls (chmod 600),
 # one per line: MD5SUMs.txt, annotations.csv, images.zip. The job deletes the file.
 set -euo pipefail
 hostname; date
-WHAT=${1:?usage: qsub download_datasets.qsub.sh cifar10h|mhist|amibr|ferplus}
+WHAT=${1:?usage: qsub download_datasets.qsub.sh cifar10h|mhist|amibr|ferplus|sages}
 ROOT=/cluster/project7/FranekLapChole
 DS=$ROOT/datasets
 CURL="curl -f -L --retry 5 --retry-delay 15 -sS"
@@ -95,6 +96,43 @@ elif [ "$WHAT" = ferplus ]; then
     set -u
     PYTHONPATH="$ROOT/BetaBinomialLoss" python3 -m b2j.prepare_ferplus "$ZIP" "$DS/ferplus"
     wc -l zip_index.csv
+elif [ "$WHAT" = sages ]; then
+    # Every file of the public Hugging Face repo CAMMA-public/SAGES_CVS_Challenge_2024 at one fixed revision, except
+    # macOS metadata (._*), lock files and the banner image. Sizes are checked against the repo listing.
+    REPO=CAMMA-public/SAGES_CVS_Challenge_2024
+    mkdir -p "$DS/sages" && cd "$DS/sages"
+    $CURL -o .listing.json "https://huggingface.co/api/datasets/$REPO?blobs=true"
+    set +u
+    source /share/apps/source_files/python/python-3.11.9.source
+    set -u
+    python3 - <<'PYEOF' > .files.tsv
+import json
+d = json.load(open(".listing.json"))
+print(d["sha"], 0, "REVISION")
+for s in d["siblings"]:
+    f = s["rfilename"]
+    name = f.rsplit("/", 1)[-1]
+    if name.startswith("._") or name.startswith(".~lock") or name in (".gitattributes", "banner_sages.png"):
+        continue
+    size = s.get("lfs", {}).get("size", s.get("size", -1))
+    print(f, size, "FILE")
+PYEOF
+    REV=$(awk '$3=="REVISION"{print $1}' .files.tsv)
+    echo "$REPO revision $REV" | tee SOURCE_REVISION.txt
+    BAD=0
+    while read -r F SIZE KIND; do
+        [ "$KIND" = FILE ] || continue
+        if [ ! -f "$F" ] || [ "$(stat -c %s "$F")" != "$SIZE" ]; then
+            mkdir -p "$(dirname "$F")"
+            $CURL -o "$F" "https://huggingface.co/datasets/$REPO/resolve/$REV/$F"
+        fi
+        [ "$(stat -c %s "$F")" = "$SIZE" ] || { echo "size mismatch: $F"; BAD=1; }
+    done < .files.tsv
+    [ "$BAD" = 0 ] || exit 1
+    rm -f .listing.json
+    echo "SAGES: train $(ls train/videos | wc -l) videos, $(ls -d train/labels/*/ | wc -l) label dirs;" \
+         "test $(ls test/videos | wc -l) videos, $(ls -d test/labels/*/ | wc -l) label dirs"
+    du -sh .
 else
     echo "unknown dataset $WHAT"; exit 1
 fi
