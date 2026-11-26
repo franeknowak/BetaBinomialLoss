@@ -64,7 +64,7 @@ CACHES = {"dinov3": CACHE, "endovit": REPO / "cache" / "embeddings_endovit",
 LABELS = {"endoscapes": ["C1", "C2", "C3"],
           "cifar10h": ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"],
           "mhist": ["SSA"], "amibr": ["atypical"],
-          "ferplus": list(FERPLUS_EMOTIONS)}
+          "ferplus": list(FERPLUS_EMOTIONS), "sages": ["C1", "C2", "C3"]}
 
 
 def load_model(device, pretrained=True):

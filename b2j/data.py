@@ -190,18 +190,67 @@ def ferplus_labels(root) -> LabelTable:
     return t
 
 
+# ---------------------------------------------------------------- SAGES CVS Challenge 2024
+SAGES_CRITERIA = ("c1", "c2", "c3")
+SAGES_RATERS = ("rater1", "rater2", "rater3")
+SAGES_VAL_VIDEOS = 140   # of the 700 official training videos (user, 2026-11-25: random ~20%, seed 0, no balancing)
+
+
+def sages_labels(root, seed=0) -> LabelTable:
+    """SAGES CVS Challenge 2024 (Alapatt et al., MedIA 2026): 1,000 clips of 90 s, 18 labelled frames each (every 5 s);
+    per frame 3 raters' yes/no on C1-C3 (raters differ between videos, so no per-rater votes are kept). k = yes votes,
+    n = 3. Official 700 train / 300 test videos; val = SAGES_VAL_VIDEOS train videos drawn at random (seed), by video.
+    Frames: extracted by the organisers' tools/preprocess_videos.py (--fps 0.2) into derived/<split>/frames/<video>/,
+    located through each video's frame_map.csv (source_frame_id = frame_id). Cluster = video.
+    """
+    root = Path(root)
+    rows = []
+    for official in ("train", "test"):
+        for vdir in sorted(p for p in (root / official / "labels").iterdir() if p.is_dir()):
+            d = pd.read_csv(vdir / "frame.csv")
+            fdir = root / "derived" / official / "frames" / vdir.name
+            fmap = pd.read_csv(fdir / "frame_map.csv").set_index("source_frame_id")["file_name"]
+            missing = set(d["frame_id"]) - set(fmap.index)
+            if missing:
+                raise ValueError(f"{vdir.name}: labelled frames not extracted: {sorted(missing)}")
+            votes = np.stack([d[[f"{c}_{r}" for r in SAGES_RATERS]].values for c in SAGES_CRITERIA], -1)  # [F, R, K]
+            if not np.isin(votes, (0, 1)).all():
+                raise ValueError(f"{vdir.name}: votes not all 0/1")
+            for fid, k in zip(d["frame_id"], votes.sum(1)):
+                rows.append((f"{vdir.name}_{fid}", vdir.name, official, str(fdir / fmap[fid]), k))
+    ids, video, official, paths, k = (np.array(x) for x in zip(*rows))
+    split = official.astype(object)
+    train_videos = np.unique(video[official == "train"])
+    val = np.random.default_rng(seed).choice(train_videos, SAGES_VAL_VIDEOS, replace=False)
+    split[np.isin(video, val)] = "val"
+    k = k.astype(np.float64)
+    return LabelTable(ids.astype(str), k, np.full_like(k, 3.0), video.astype(str), split.astype(str),
+                      paths.astype(str))
+
+
 # ---------------------------------------------------------------- images
-INPUT_SIZE = {"endoscapes": 256, "cifar10h": 256, "mhist": 256, "amibr": 256, "ferplus": 256}   # agreed 2026-10-27
+INPUT_SIZE = {"endoscapes": 256, "cifar10h": 256, "mhist": 256, "amibr": 256, "ferplus": 256,   # agreed 2026-10-27
+              "sages": 256}                                                                       # 2026-11-26
 IMAGENET_MEAN, IMAGENET_STD = (0.485, 0.456, 0.406), (0.229, 0.224, 0.225)                      # = DINOv3 timm cfg
+
+
+class CenterSquare:
+    """Centre crop to a square whose side is the image's shorter side."""
+
+    def __call__(self, img):
+        from torchvision.transforms import functional as F
+        return F.center_crop(img, min(img.size))
 
 
 def transform(dataset: str, size=None, mean=IMAGENET_MEAN, std=IMAGENET_STD):
     """No augmentation; every dataset resized to 256² (bicubic, antialiased). Endoscapes (854×480) is first centre-cropped
-    to 480×480. CIFAR-10H 32², MHIST 224², AMi-Br 128², FER+ 112² grayscale (→ RGB at loading) are resized directly.
+    to 480×480; SAGES (13 frame sizes) to the centre square whose side is the frame's shorter side (as for Endoscapes;
+    user, 2026-11-26). CIFAR-10H 32², MHIST 224², AMi-Br 128², FER+ 112² grayscale (→ RGB at loading) are resized
+    directly.
     size / mean / std override the input size and normalisation (another encoder's own input, e.g. EndoViT)."""
     from torchvision import transforms as T
     size = INPUT_SIZE[dataset] if size is None else size
-    steps = [T.CenterCrop(480)] if dataset == "endoscapes" else []
+    steps = [T.CenterCrop(480)] if dataset == "endoscapes" else [CenterSquare()] if dataset == "sages" else []
     steps += [T.Resize((size,) * 2, interpolation=T.InterpolationMode.BICUBIC, antialias=True),
               T.ToTensor(), T.Normalize(mean, std)]
     return T.Compose(steps)
@@ -274,4 +323,6 @@ def load_table(dataset: str, root=None) -> LabelTable:
         return amibr_labels(root)
     if dataset == "ferplus":
         return ferplus_labels(root)
+    if dataset == "sages":
+        return sages_labels(root)
     raise ValueError(f"unknown dataset {dataset}")

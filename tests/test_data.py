@@ -239,3 +239,83 @@ def test_ferplus_reads_unpacked_copy_once_zip_is_gone(tmp_path):
     t = D.ferplus_labels(tmp_path)
     assert t.paths.tolist() == [str(tmp_path / "train/neutral/fer0000000.png"), str(tmp_path / "test/surprise/fer0000006.png")]
     assert all(D.image_exists(p) for p in t.paths) and np.asarray(D.open_image(t.paths[1])).max() == 2
+
+
+def _fake_sages(root, n_train=700, n_test=300, seed=0):
+    rng = np.random.default_rng(seed)
+    for official, n_vid in (("train", n_train), ("test", n_test)):
+        for v in range(n_vid):
+            name = f"{official}{v:04d}"
+            ids = list(range(0, 2700, 150))
+            d = {"frame_id": ids}
+            for c in D.SAGES_CRITERIA:
+                for r in D.SAGES_RATERS:
+                    d[f"{c}_{r}"] = rng.integers(0, 2, len(ids))
+            (root / official / "labels" / name).mkdir(parents=True)
+            pd.DataFrame(d).to_csv(root / official / "labels" / name / "frame.csv", index=False)
+            fdir = root / "derived" / official / "frames" / name
+            fdir.mkdir(parents=True)
+            pd.DataFrame({"extracted_frame_id": range(len(ids)), "file_name": [f"frame_{j:04d}.jpg" for j in range(len(ids))],
+                          "source_frame_id": ids, "timestamp_sec": [i / 30 for i in ids]}).to_csv(fdir / "frame_map.csv", index=False)
+    return root
+
+
+def test_sages_parsing_and_val_split(tmp_path):
+    root = _fake_sages(tmp_path)
+    t = D.sages_labels(root)
+    assert {s: (t.split == s).sum() for s in ("train", "val", "test")} == {"train": 560 * 18, "val": 140 * 18, "test": 300 * 18}
+    assert {s: len(np.unique(t.take(s).cluster)) for s in ("train", "val", "test")} == {"train": 560, "val": 140, "test": 300}
+    assert all(c.startswith("train") for c in t.take("val").cluster)            # val comes from the official train videos
+    for a, b in (("train", "val"), ("train", "test"), ("val", "test")):
+        assert len(np.intersect1d(t.take(a).cluster, t.take(b).cluster)) == 0
+    assert (t.n == 3).all() and set(np.unique(t.k)) <= {0, 1, 2, 3} and t.k.shape == (18000, 3)
+    d = pd.read_csv(root / "train" / "labels" / "train0003" / "frame.csv")      # k = sum of the 3 raters, per criterion
+    i = np.flatnonzero(t.ids == "train0003_300")[0]
+    for j, c in enumerate(D.SAGES_CRITERIA):
+        assert t.k[i, j] == d.loc[d.frame_id == 300, [f"{c}_{r}" for r in D.SAGES_RATERS]].values.sum()
+    assert t.paths[i].endswith("derived/train/frames/train0003/frame_0002.jpg")
+    assert (D.sages_labels(root).split == t.split).all()                         # fixed seed: same draw every time
+    assert len(set(t.ids)) == len(t.ids) and t.ids.dtype.kind == "U"
+
+
+def test_sages_missing_frame_fails(tmp_path):
+    root = _fake_sages(tmp_path, n_train=2, n_test=1)
+    fm = root / "derived" / "train" / "frames" / "train0000" / "frame_map.csv"
+    pd.read_csv(fm).iloc[:-1].to_csv(fm, index=False)
+    with pytest.raises(ValueError, match="not extracted"):
+        _sages_small(root)
+
+
+def _sages_small(root):
+    old = D.SAGES_VAL_VIDEOS
+    D.SAGES_VAL_VIDEOS = 1
+    try:
+        return D.sages_labels(root)
+    finally:
+        D.SAGES_VAL_VIDEOS = old
+
+
+def test_sages_crop_is_central_square_of_shorter_side():
+    from PIL import Image
+    for w, h in ((1280, 720), (720, 576), (1920, 1080), (320, 240)):
+        a = np.zeros((h, w, 3), np.uint8)
+        a[:, (w - h) // 2:(w - h) // 2 + h] = 200                                # bright centre square, black sides
+        x = D.transform("sages")(Image.fromarray(a))
+        assert tuple(x.shape) == (3, 256, 256)
+        raw = (x * torch_std() + torch_mean()) * 255
+        assert raw.min() > 190                                                   # no black side column left in the crop
+    for w, h in ((480, 640),):                                                   # portrait: side = width
+        a = np.zeros((h, w, 3), np.uint8)
+        a[(h - w) // 2:(h - w) // 2 + w] = 200
+        raw = (D.transform("sages")(Image.fromarray(a)) * torch_std() + torch_mean()) * 255
+        assert raw.min() > 190
+
+
+def torch_mean():
+    import torch
+    return torch.tensor(D.IMAGENET_MEAN).view(3, 1, 1)
+
+
+def torch_std():
+    import torch
+    return torch.tensor(D.IMAGENET_STD).view(3, 1, 1)
